@@ -7,10 +7,20 @@ export const metadata = { title: 'Empresas — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function EmpresasPage() {
-  const empresas = await prisma.empresa.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: { _count: { select: { accesos: true } } },
-  });
+  const [empresas, arls] = await Promise.all([
+    prisma.empresa.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { accesos: true } },
+        arl: { select: { codigo: true } },
+      },
+    }),
+    prisma.arl.findMany({
+      where: { active: true },
+      orderBy: { codigo: 'asc' },
+      select: { id: true, codigo: true, nombre: true },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -21,7 +31,7 @@ export default async function EmpresasPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold">Crear nueva</h2>
-        <CreateEmpresaForm />
+        <CreateEmpresaForm arls={arls} />
       </section>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -30,7 +40,8 @@ export default async function EmpresasPage() {
             <tr>
               <th className="px-4 py-2">NIT</th>
               <th className="px-4 py-2">Nombre</th>
-              <th className="px-4 py-2">Usuarios con acceso</th>
+              <th className="px-4 py-2">ARL</th>
+              <th className="px-4 py-2">Usuarios</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -38,7 +49,7 @@ export default async function EmpresasPage() {
           <tbody className="divide-y divide-slate-100">
             {empresas.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay empresas
                 </td>
               </tr>
@@ -47,6 +58,7 @@ export default async function EmpresasPage() {
               <tr key={e.id}>
                 <td className="px-4 py-3 font-mono text-xs">{e.nit}</td>
                 <td className="px-4 py-3">{e.nombre}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.arl?.codigo ?? '—'}</td>
                 <td className="px-4 py-3 text-slate-500">{e._count.accesos}</td>
                 <td className="px-4 py-3">
                   <span

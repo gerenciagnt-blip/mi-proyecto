@@ -28,6 +28,7 @@ function parseForm(formData: FormData) {
     telefono: get('telefono'),
     email: get('email'),
     ciiuPrincipal: get('ciiuPrincipal'),
+    arlId: get('arlId'),
   };
 }
 

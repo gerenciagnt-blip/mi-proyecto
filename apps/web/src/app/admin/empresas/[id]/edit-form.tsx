@@ -20,16 +20,20 @@ type Empresa = {
   telefono: string | null;
   email: string | null;
   ciiuPrincipal: string | null;
+  arlId: string | null;
   active: boolean;
 };
 
-export function EditEmpresaForm({ empresa }: { empresa: Empresa }) {
+type Arl = { id: string; codigo: string; nombre: string };
+
+export function EditEmpresaForm({ empresa, arls }: { empresa: Empresa; arls: Arl[] }) {
   const bound = updateEmpresaAction.bind(null, empresa.id);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
 
   return (
     <form action={action} className="space-y-4">
       <EmpresaFields
+        arls={arls}
         initial={{
           nit: empresa.nit,
           dv: empresa.dv ?? '',
@@ -45,6 +49,7 @@ export function EditEmpresaForm({ empresa }: { empresa: Empresa }) {
           telefono: empresa.telefono ?? '',
           email: empresa.email ?? '',
           ciiuPrincipal: empresa.ciiuPrincipal ?? '',
+          arlId: empresa.arlId ?? '',
         }}
       />
 

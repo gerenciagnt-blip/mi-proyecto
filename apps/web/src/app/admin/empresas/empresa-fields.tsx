@@ -18,7 +18,10 @@ type InitialValues = Partial<{
   telefono: string;
   email: string;
   ciiuPrincipal: string;
+  arlId: string;
 }>;
+
+type Arl = { id: string; codigo: string; nombre: string };
 
 const input =
   'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
@@ -26,7 +29,13 @@ const label = 'block text-xs font-medium text-slate-600';
 const section = 'rounded-lg border border-slate-200 bg-white p-4';
 const sectionTitle = 'mb-3 text-sm font-semibold';
 
-export function EmpresaFields({ initial }: { initial?: InitialValues }) {
+export function EmpresaFields({
+  initial,
+  arls = [],
+}: {
+  initial?: InitialValues;
+  arls?: Arl[];
+}) {
   const [nit, setNit] = useState(initial?.nit ?? '');
   const [dv, setDv] = useState(initial?.dv ?? '');
   const [dvAuto, setDvAuto] = useState(!initial?.dv);
@@ -86,20 +95,11 @@ export function EmpresaFields({ initial }: { initial?: InitialValues }) {
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Razón social</label>
-            <input
-              name="nombre"
-              required
-              defaultValue={initial?.nombre}
-              className={input}
-            />
+            <input name="nombre" required defaultValue={initial?.nombre} className={input} />
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Nombre comercial (opcional)</label>
-            <input
-              name="nombreComercial"
-              defaultValue={initial?.nombreComercial}
-              className={input}
-            />
+            <input name="nombreComercial" defaultValue={initial?.nombreComercial} className={input} />
           </div>
         </div>
       </section>
@@ -152,39 +152,19 @@ export function EmpresaFields({ initial }: { initial?: InitialValues }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label className={label}>Dirección</label>
-            <input
-              name="direccion"
-              required
-              defaultValue={initial?.direccion}
-              className={input}
-            />
+            <input name="direccion" required defaultValue={initial?.direccion} className={input} />
           </div>
           <div>
             <label className={label}>Ciudad</label>
-            <input
-              name="ciudad"
-              required
-              defaultValue={initial?.ciudad}
-              className={input}
-            />
+            <input name="ciudad" required defaultValue={initial?.ciudad} className={input} />
           </div>
           <div>
             <label className={label}>Departamento</label>
-            <input
-              name="departamento"
-              required
-              defaultValue={initial?.departamento}
-              className={input}
-            />
+            <input name="departamento" required defaultValue={initial?.departamento} className={input} />
           </div>
           <div>
             <label className={label}>Teléfono</label>
-            <input
-              name="telefono"
-              required
-              defaultValue={initial?.telefono}
-              className={input}
-            />
+            <input name="telefono" required defaultValue={initial?.telefono} className={input} />
           </div>
           <div className="sm:col-span-3">
             <label className={label}>Correo electrónico</label>
@@ -216,10 +196,27 @@ export function EmpresaFields({ initial }: { initial?: InitialValues }) {
             />
             <p className="mt-1 text-[10px] text-slate-400">4 dígitos</p>
           </div>
-          <div className="sm:col-span-3">
-            <p className="mt-6 text-xs text-slate-500">
-              ARL, niveles de riesgo permitidos, tipos/subtipos de cotizante y actividades
-              adicionales se configuran en Fase 1.5.3 (después de los catálogos).
+          <div className="sm:col-span-2">
+            <label className={label}>ARL actual</label>
+            <select name="arlId" defaultValue={initial?.arlId ?? ''} className={input}>
+              <option value="">— Sin asignar —</option>
+              {arls.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.codigo} — {a.nombre}
+                </option>
+              ))}
+            </select>
+            {arls.length === 0 && (
+              <p className="mt-1 text-[10px] text-amber-700">
+                No hay ARLs en el catálogo — agrégalas en /admin/catalogos/arl
+              </p>
+            )}
+          </div>
+          <div className="sm:col-span-4">
+            <p className="mt-2 text-xs text-slate-500">
+              Niveles de riesgo permitidos, actividades adicionales y tipos/subtipos de cotizante se
+              configuran en la pestaña <strong>Configuración PILA</strong> de la empresa (solo en
+              edición).
             </p>
           </div>
         </div>

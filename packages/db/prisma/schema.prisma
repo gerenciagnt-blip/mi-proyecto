@@ -97,8 +97,16 @@ model Empresa {
   telefono     String?
   email        String?
 
-  // PILA (catálogos reales vendrán en Fase 1.5.2 — por ahora texto)
+  // PILA
   ciiuPrincipal String?
+  arlId         String?
+  arl           Arl?    @relation(fields: [arlId], references: [id], onDelete: SetNull)
+
+  // Relaciones de "permitidos" (Fase 1.5.3)
+  nivelesPermitidos   EmpresaNivelRiesgo[]
+  actividadesPermitidas EmpresaActividad[]
+  tiposPermitidos     EmpresaTipoCotizante[]
+  subtiposPermitidos  EmpresaSubtipoCotizante[]
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -106,7 +114,51 @@ model Empresa {
 
   accesos UsuarioEmpresa[]
 
+  @@index([arlId])
   @@map("empresas")
+}
+
+// Empresa ↔ niveles de riesgo ARL permitidos (I, II, III, IV, V)
+model EmpresaNivelRiesgo {
+  empresaId String
+  nivel     NivelRiesgo
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@id([empresaId, nivel])
+  @@map("empresa_nivel_riesgo")
+}
+
+// Empresa ↔ actividades económicas adicionales permitidas
+model EmpresaActividad {
+  empresaId            String
+  actividadEconomicaId String
+  empresa              Empresa            @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  actividad            ActividadEconomica @relation(fields: [actividadEconomicaId], references: [id], onDelete: Cascade)
+
+  @@id([empresaId, actividadEconomicaId])
+  @@map("empresa_actividad")
+}
+
+// Empresa ↔ tipos de cotizante permitidos
+model EmpresaTipoCotizante {
+  empresaId       String
+  tipoCotizanteId String
+  empresa         Empresa       @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  tipoCotizante   TipoCotizante @relation(fields: [tipoCotizanteId], references: [id], onDelete: Cascade)
+
+  @@id([empresaId, tipoCotizanteId])
+  @@map("empresa_tipo_cotizante")
+}
+
+// Empresa ↔ subtipos de cotizante permitidos
+model EmpresaSubtipoCotizante {
+  empresaId String
+  subtipoId String
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  subtipo   Subtipo @relation(fields: [subtipoId], references: [id], onDelete: Cascade)
+
+  @@id([empresaId, subtipoId])
+  @@map("empresa_subtipo_cotizante")
 }
 
 // --- Permiso granular: qué usuario puede ver qué empresa ---
@@ -132,6 +184,8 @@ model Arl {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  empresas Empresa[]
+
   @@map("arls")
 }
 
@@ -142,6 +196,8 @@ model ActividadEconomica {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  empresasPermitidas EmpresaActividad[]
 
   @@map("actividades_economicas")
 }
@@ -154,7 +210,8 @@ model TipoCotizante {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  subtipos Subtipo[]
+  subtipos           Subtipo[]
+  empresasPermitidas EmpresaTipoCotizante[]
 
   @@map("tipos_cotizante")
 }
@@ -168,7 +225,8 @@ model Subtipo {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  tipoCotizante TipoCotizante @relation(fields: [tipoCotizanteId], references: [id], onDelete: Cascade)
+  tipoCotizante      TipoCotizante             @relation(fields: [tipoCotizanteId], references: [id], onDelete: Cascade)
+  empresasPermitidas EmpresaSubtipoCotizante[]
 
   @@unique([codigo, tipoCotizanteId])
   @@index([tipoCotizanteId])

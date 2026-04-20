@@ -52,6 +52,12 @@ export const EmpresaCreateSchema = z.object({
     .string()
     .trim()
     .regex(/^[0-9]{4}$/, 'Código CIIU de 4 dígitos'),
+  arlId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === '' ? null : v))
+    .nullable(),
 });
 
 export const EmpresaUpdateSchema = EmpresaCreateSchema.extend({
