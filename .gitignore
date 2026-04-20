@@ -1,3 +1,35 @@
 # Claude Code — archivos locales, no compartir
 .claude/settings.local.json
 .claude/worktrees/
+
+# Código legado de Apps Script — ignorar hasta auditar secretos
+legacy-appscript/
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Build outputs
+dist/
+build/
+
+# Variables de entorno (todas, solo se commitea .env.example)
+.env
+.env.local
+.env.*.local
+
+# Prisma
+packages/db/prisma/*.db
+packages/db/prisma/*.db-journal
+
+# Logs y editor
+*.log
+.DS_Store
+.idea/
+.vscode/

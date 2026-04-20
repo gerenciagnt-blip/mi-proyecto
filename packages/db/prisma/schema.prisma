@@ -1,0 +1,42 @@
+// Sistema PILA — esquema base
+// Se expandirá por fases según el legacy. Aquí solo el núcleo mínimo para Fase 0.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Usuarios y roles (Fase 1) ---
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  passwordHash String?
+  role        Role     @default(USER)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+// --- Empresas / tenants (Fase 1) ---
+model Empresa {
+  id        String   @id @default(cuid())
+  nit       String   @unique
+  nombre    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("empresas")
+}
