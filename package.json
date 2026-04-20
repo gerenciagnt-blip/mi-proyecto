@@ -15,7 +15,7 @@
     "db:generate": "pnpm --filter @pila/db prisma:generate",
     "db:migrate": "pnpm --filter @pila/db prisma:migrate",
     "db:studio": "pnpm --filter @pila/db prisma:studio",
-    "cli": "pnpm --filter @pila/cli start"
+    "cli": "pnpm --filter @pila/cli start --"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

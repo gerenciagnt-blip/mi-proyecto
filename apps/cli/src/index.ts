@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { APP_NAME, APP_VERSION } from '@pila/core';
+import { adminCreateCommand } from './commands/admin-create.js';
 
 const program = new Command();
 
@@ -16,19 +17,19 @@ program
     console.log(`✅ ${APP_NAME} CLI v${APP_VERSION} — OK`);
   });
 
-// Los siguientes comandos se implementan en Fase 1:
-program
-  .command('seed')
-  .description('Carga datos iniciales (roles, admin, parámetros) — TODO Fase 1')
-  .action(() => {
-    console.log('⏳ Por implementar en Fase 1');
-  });
-
 program
   .command('admin:create')
-  .description('Crea un usuario administrador — TODO Fase 1')
-  .action(() => {
-    console.log('⏳ Por implementar en Fase 1');
+  .description('Crea un usuario administrador (interactivo)')
+  .action(async () => {
+    try {
+      await adminCreateCommand();
+    } catch (err) {
+      if (err instanceof Error && err.name === 'ExitPromptError') {
+        console.log('\n↩  Cancelado');
+        process.exit(130);
+      }
+      throw err;
+    }
   });
 
-program.parse();
+program.parseAsync();

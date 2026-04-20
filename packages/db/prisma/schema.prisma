@@ -1,5 +1,6 @@
 // Sistema PILA — esquema base
-// Se expandirá por fases según el legacy. Aquí solo el núcleo mínimo para Fase 0.
+// Multi-tenant por Sucursal (cada aliado = una sucursal).
+// Empresas son globales (admin-gestionadas), accesibles por usuarios vía UsuarioEmpresa.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,33 +11,69 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- Usuarios y roles (Fase 1) ---
-model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  name        String
-  passwordHash String?
-  role        Role     @default(USER)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("users")
-}
-
+// --- Roles del sistema ---
 enum Role {
-  ADMIN
-  USER
+  ADMIN         // staff plataforma — ve todo, sin sucursal
+  ALIADO_OWNER  // dueño del aliado — ve todas las empresas de su sucursal
+  ALIADO_USER   // empleado del aliado — solo empresas con acceso explícito
 }
 
-// --- Empresas / tenants (Fase 1) ---
-model Empresa {
+// --- Sucursal = tenant (cada aliado tiene la suya) ---
+model Sucursal {
   id        String   @id @default(cuid())
-  nit       String   @unique
+  codigo    String   @unique // ej. "ALI-001"
   nombre    String
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  users User[]
+
+  @@map("sucursales")
+}
+
+// --- Usuario del sistema ---
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  sucursalId   String? // NULL solo para ADMIN
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sucursal Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  empresas UsuarioEmpresa[]
+
+  @@index([sucursalId])
+  @@map("users")
+}
+
+// --- Empresa cliente — global, administrada solo por ADMIN ---
+model Empresa {
+  id        String   @id @default(cuid())
+  nit       String   @unique // único globalmente
+  nombre    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accesos UsuarioEmpresa[]
+
   @@map("empresas")
+}
+
+// --- Permiso granular: qué usuario puede ver qué empresa ---
+model UsuarioEmpresa {
+  userId    String
+  empresaId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@id([userId, empresaId])
+  @@map("usuarios_empresas")
 }
