@@ -18,6 +18,21 @@ enum Role {
   ALIADO_USER   // empleado del aliado — solo empresas con acceso explícito
 }
 
+enum TipoPersona {
+  NATURAL
+  JURIDICA
+}
+
+enum TipoDocumento {
+  CC
+  CE
+  NIT
+  PAS
+  TI
+  RC
+  NIP
+}
+
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
   id        String   @id @default(cuid())
@@ -55,7 +70,28 @@ model User {
 model Empresa {
   id        String   @id @default(cuid())
   nit       String   @unique // único globalmente
-  nombre    String
+  nombre    String // razón social
+
+  // Identificación adicional (Fase 1.5.1 — nullable para migración no destructiva)
+  dv              String?
+  nombreComercial String?
+  tipoPersona     TipoPersona?
+
+  // Representante legal
+  repLegalTipoDoc   TipoDocumento?
+  repLegalNumeroDoc String?
+  repLegalNombre    String?
+
+  // Ubicación y contacto
+  direccion    String?
+  ciudad       String?
+  departamento String?
+  telefono     String?
+  email        String?
+
+  // PILA (catálogos reales vendrán en Fase 1.5.2 — por ahora texto)
+  ciiuPrincipal String?
+
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

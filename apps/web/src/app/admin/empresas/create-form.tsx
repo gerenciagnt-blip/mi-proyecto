@@ -2,50 +2,39 @@
 
 import { useActionState, useRef, useEffect } from 'react';
 import { createEmpresaAction, type ActionState } from './actions';
+import { EmpresaFields } from './empresa-fields';
 
 export function CreateEmpresaForm() {
   const [state, action, pending] = useActionState<ActionState, FormData>(createEmpresaAction, {});
   const ref = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    if (state.ok) ref.current?.reset();
+    if (state.ok) {
+      ref.current?.reset();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, [state.ok]);
 
   return (
-    <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
-      <div className="flex-1 min-w-[180px]">
-        <label className="block text-xs font-medium text-slate-600">NIT</label>
-        <input
-          name="nit"
-          required
-          placeholder="900123456-7"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
-      </div>
-      <div className="flex-[2] min-w-[240px]">
-        <label className="block text-xs font-medium text-slate-600">Nombre</label>
-        <input
-          name="nombre"
-          required
-          placeholder="Empresa Cliente S.A.S."
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
-      </div>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-      >
-        {pending ? 'Creando…' : 'Crear empresa'}
-      </button>
+    <form ref={ref} action={action} className="space-y-4">
+      <EmpresaFields />
+
       {state.error && (
-        <p className="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
       )}
       {state.ok && (
-        <p className="w-full rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           Empresa creada
         </p>
       )}
+
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-md bg-slate-900 px-6 py-2 text-sm font-medium text-white disabled:opacity-60"
+      >
+        {pending ? 'Creando…' : 'Crear empresa'}
+      </button>
     </form>
   );
 }

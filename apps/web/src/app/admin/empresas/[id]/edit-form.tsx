@@ -2,37 +2,58 @@
 
 import { useActionState } from 'react';
 import { updateEmpresaAction, type ActionState } from '../actions';
+import { EmpresaFields } from '../empresa-fields';
 
-type Empresa = { id: string; nit: string; nombre: string; active: boolean };
+type Empresa = {
+  id: string;
+  nit: string;
+  dv: string | null;
+  nombre: string;
+  nombreComercial: string | null;
+  tipoPersona: string | null;
+  repLegalTipoDoc: string | null;
+  repLegalNumeroDoc: string | null;
+  repLegalNombre: string | null;
+  direccion: string | null;
+  ciudad: string | null;
+  departamento: string | null;
+  telefono: string | null;
+  email: string | null;
+  ciiuPrincipal: string | null;
+  active: boolean;
+};
 
 export function EditEmpresaForm({ empresa }: { empresa: Empresa }) {
-  const boundAction = updateEmpresaAction.bind(null, empresa.id);
-  const [state, action, pending] = useActionState<ActionState, FormData>(boundAction, {});
+  const bound = updateEmpresaAction.bind(null, empresa.id);
+  const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
 
   return (
     <form action={action} className="space-y-4">
-      <div>
-        <label className="block text-xs font-medium text-slate-600">NIT</label>
-        <input
-          name="nit"
-          required
-          defaultValue={empresa.nit}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
+      <EmpresaFields
+        initial={{
+          nit: empresa.nit,
+          dv: empresa.dv ?? '',
+          nombre: empresa.nombre,
+          nombreComercial: empresa.nombreComercial ?? '',
+          tipoPersona: empresa.tipoPersona ?? 'JURIDICA',
+          repLegalTipoDoc: empresa.repLegalTipoDoc ?? 'CC',
+          repLegalNumeroDoc: empresa.repLegalNumeroDoc ?? '',
+          repLegalNombre: empresa.repLegalNombre ?? '',
+          direccion: empresa.direccion ?? '',
+          ciudad: empresa.ciudad ?? '',
+          departamento: empresa.departamento ?? '',
+          telefono: empresa.telefono ?? '',
+          email: empresa.email ?? '',
+          ciiuPrincipal: empresa.ciiuPrincipal ?? '',
+        }}
+      />
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="active" defaultChecked={empresa.active} />
+          <span>Activa</span>
+        </label>
       </div>
-      <div>
-        <label className="block text-xs font-medium text-slate-600">Nombre</label>
-        <input
-          name="nombre"
-          required
-          defaultValue={empresa.nombre}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
-      </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="active" defaultChecked={empresa.active} />
-        <span>Activa</span>
-      </label>
 
       {state.error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
@@ -41,7 +62,7 @@ export function EditEmpresaForm({ empresa }: { empresa: Empresa }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        className="rounded-md bg-slate-900 px-6 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
         {pending ? 'Guardando…' : 'Guardar cambios'}
       </button>

@@ -8,16 +8,36 @@ import { EmpresaCreateSchema, EmpresaUpdateSchema } from '@/lib/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
 
+function parseForm(formData: FormData) {
+  const get = (k: string) => {
+    const v = formData.get(k);
+    return v == null ? '' : String(v).trim();
+  };
+  return {
+    nit: get('nit'),
+    dv: get('dv'),
+    nombre: get('nombre'),
+    nombreComercial: get('nombreComercial'),
+    tipoPersona: get('tipoPersona'),
+    repLegalTipoDoc: get('repLegalTipoDoc'),
+    repLegalNumeroDoc: get('repLegalNumeroDoc'),
+    repLegalNombre: get('repLegalNombre'),
+    direccion: get('direccion'),
+    ciudad: get('ciudad'),
+    departamento: get('departamento'),
+    telefono: get('telefono'),
+    email: get('email'),
+    ciiuPrincipal: get('ciiuPrincipal'),
+  };
+}
+
 export async function createEmpresaAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   await requireAdmin();
 
-  const parsed = EmpresaCreateSchema.safeParse({
-    nit: String(formData.get('nit') ?? '').trim(),
-    nombre: String(formData.get('nombre') ?? '').trim(),
-  });
+  const parsed = EmpresaCreateSchema.safeParse(parseForm(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
@@ -43,8 +63,7 @@ export async function updateEmpresaAction(
   await requireAdmin();
 
   const parsed = EmpresaUpdateSchema.safeParse({
-    nit: String(formData.get('nit') ?? '').trim(),
-    nombre: String(formData.get('nombre') ?? '').trim(),
+    ...parseForm(formData),
     active: formData.get('active') === 'on',
   });
   if (!parsed.success) {
