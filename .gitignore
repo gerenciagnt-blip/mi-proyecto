@@ -1,0 +1,3 @@
+# Claude Code — archivos locales, no compartir
+.claude/settings.local.json
+.claude/worktrees/
