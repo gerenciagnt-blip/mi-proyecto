@@ -1,5 +1,9 @@
-import { auth } from '@/auth';
+import NextAuth from 'next-auth';
 import { NextResponse } from 'next/server';
+import { authConfig } from '@/auth.config';
+
+// Middleware usa solo authConfig (sin Prisma/bcrypt) para correr en Edge runtime
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
