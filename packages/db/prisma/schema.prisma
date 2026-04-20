@@ -33,6 +33,14 @@ enum TipoDocumento {
   NIP
 }
 
+enum NivelRiesgo {
+  I
+  II
+  III
+  IV
+  V
+}
+
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
   id        String   @id @default(cuid())
@@ -112,4 +120,58 @@ model UsuarioEmpresa {
 
   @@id([userId, empresaId])
   @@map("usuarios_empresas")
+}
+
+// --- Catálogos (Fase 1.5.2) ---
+
+model Arl {
+  id        String   @id @default(cuid())
+  codigo    String   @unique
+  nombre    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("arls")
+}
+
+model ActividadEconomica {
+  id          String       @id @default(cuid())
+  codigoCiiu  String       @unique
+  descripcion String
+  nivelRiesgo NivelRiesgo?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("actividades_economicas")
+}
+
+model TipoCotizante {
+  id        String    @id @default(cuid())
+  codigo    String    @unique
+  nombre    String
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  subtipos Subtipo[]
+
+  @@map("tipos_cotizante")
+}
+
+model Subtipo {
+  id              String   @id @default(cuid())
+  codigo          String
+  nombre          String
+  tipoCotizanteId String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tipoCotizante TipoCotizante @relation(fields: [tipoCotizanteId], references: [id], onDelete: Cascade)
+
+  @@unique([codigo, tipoCotizanteId])
+  @@index([tipoCotizanteId])
+  @@map("subtipos_cotizante")
 }

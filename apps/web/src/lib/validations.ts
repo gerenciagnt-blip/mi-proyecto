@@ -88,3 +88,28 @@ export const UserUpdateSchema = z
 export const UserPasswordSchema = z.object({
   password: z.string().min(8, 'Mínimo 8 caracteres'),
 });
+
+// --- Catálogos ---
+
+export const NivelRiesgoEnum = z.enum(['I', 'II', 'III', 'IV', 'V']);
+
+export const ArlSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(20),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+});
+
+export const ActividadSchema = z.object({
+  codigoCiiu: z.string().trim().regex(/^[0-9]{4}$/, 'CIIU de 4 dígitos'),
+  descripcion: z.string().trim().min(1).max(300),
+  nivelRiesgo: NivelRiesgoEnum.nullable().optional(),
+});
+
+export const TipoCotizanteSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(10),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+});
+
+export const SubtipoSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(10),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+});
