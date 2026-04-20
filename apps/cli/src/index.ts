@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { APP_NAME, APP_VERSION } from '@pila/core';
 import { adminCreateCommand } from './commands/admin-create.js';
+import { resetPasswordCommand } from './commands/reset-password.js';
 
 const program = new Command();
 
@@ -23,6 +24,21 @@ program
   .action(async () => {
     try {
       await adminCreateCommand();
+    } catch (err) {
+      if (err instanceof Error && err.name === 'ExitPromptError') {
+        console.log('\n↩  Cancelado');
+        process.exit(130);
+      }
+      throw err;
+    }
+  });
+
+program
+  .command('admin:reset-password')
+  .description('Resetea la contraseña de un usuario por email (interactivo)')
+  .action(async () => {
+    try {
+      await resetPasswordCommand();
     } catch (err) {
       if (err instanceof Error && err.name === 'ExitPromptError') {
         console.log('\n↩  Cancelado');
