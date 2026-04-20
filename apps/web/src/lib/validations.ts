@@ -101,7 +101,6 @@ export const ArlSchema = z.object({
 export const ActividadSchema = z.object({
   codigoCiiu: z.string().trim().regex(/^[0-9]{4}$/, 'CIIU de 4 dígitos'),
   descripcion: z.string().trim().min(1).max(300),
-  nivelRiesgo: NivelRiesgoEnum.nullable().optional(),
 });
 
 export const TipoCotizanteSchema = z.object({

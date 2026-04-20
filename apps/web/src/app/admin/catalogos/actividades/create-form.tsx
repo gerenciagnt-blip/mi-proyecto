@@ -35,21 +35,6 @@ export function CreateActividadForm() {
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
-      <div className="min-w-[120px]">
-        <label className="block text-xs font-medium text-slate-600">Nivel riesgo</label>
-        <select
-          name="nivelRiesgo"
-          defaultValue=""
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        >
-          <option value="">—</option>
-          <option value="I">I</option>
-          <option value="II">II</option>
-          <option value="III">III</option>
-          <option value="IV">IV</option>
-          <option value="V">V</option>
-        </select>
-      </div>
       <button
         type="submit"
         disabled={pending}

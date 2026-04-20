@@ -136,13 +136,12 @@ model Arl {
 }
 
 model ActividadEconomica {
-  id          String       @id @default(cuid())
-  codigoCiiu  String       @unique
+  id          String   @id @default(cuid())
+  codigoCiiu  String   @unique
   descripcion String
-  nivelRiesgo NivelRiesgo?
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("actividades_economicas")
 }

@@ -3,19 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
-import { ActividadSchema, NivelRiesgoEnum } from '@/lib/validations';
+import { ActividadSchema } from '@/lib/validations';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
 import type { ImportState } from '../_components/import-form';
-import type { NivelRiesgo } from '@pila/db';
 
 export type ActionState = { error?: string; ok?: boolean };
-
-function normalizeNivel(v: unknown): NivelRiesgo | null {
-  const s = String(v ?? '').trim().toUpperCase();
-  if (!s) return null;
-  const parsed = NivelRiesgoEnum.safeParse(s);
-  return parsed.success ? parsed.data : null;
-}
 
 export async function createActividadAction(
   _prev: ActionState,
@@ -23,11 +15,9 @@ export async function createActividadAction(
 ): Promise<ActionState> {
   await requireAdmin();
 
-  const nivel = normalizeNivel(formData.get('nivelRiesgo'));
   const parsed = ActividadSchema.safeParse({
     codigoCiiu: String(formData.get('codigoCiiu') ?? '').trim(),
     descripcion: String(formData.get('descripcion') ?? '').trim(),
-    nivelRiesgo: nivel,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
@@ -76,7 +66,6 @@ export async function importActividadesAction(
     const parsed = ActividadSchema.safeParse({
       codigoCiiu: String(row.codigoCiiu ?? row.codigo ?? '').trim(),
       descripcion: String(row.descripcion ?? row.nombre ?? '').trim(),
-      nivelRiesgo: normalizeNivel(row.nivelRiesgo ?? row.nivel),
     });
     if (!parsed.success) {
       result.errors.push(`Fila ${i + 2}: ${parsed.error.issues[0]?.message ?? 'inválida'}`);

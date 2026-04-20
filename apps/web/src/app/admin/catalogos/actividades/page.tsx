@@ -35,8 +35,8 @@ export default async function ActividadesPage() {
         <h2 className="mb-3 text-sm font-semibold">Importar desde Excel</h2>
         <ImportForm
           action={importActividadesAction}
-          headers={['codigoCiiu', 'descripcion', 'nivelRiesgo']}
-          example="6202 | Programación informática | III"
+          headers={['codigoCiiu', 'descripcion']}
+          example="6202 | Programación informática"
         />
       </section>
 
@@ -46,7 +46,6 @@ export default async function ActividadesPage() {
             <tr>
               <th className="px-4 py-2">CIIU</th>
               <th className="px-4 py-2">Descripción</th>
-              <th className="px-4 py-2">Riesgo</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -54,7 +53,7 @@ export default async function ActividadesPage() {
           <tbody className="divide-y divide-slate-100">
             {actividades.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay actividades — importa desde Excel
                 </td>
               </tr>
@@ -63,7 +62,6 @@ export default async function ActividadesPage() {
               <tr key={a.id}>
                 <td className="px-4 py-3 font-mono text-xs">{a.codigoCiiu}</td>
                 <td className="px-4 py-3">{a.descripcion}</td>
-                <td className="px-4 py-3 text-xs font-mono">{a.nivelRiesgo ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
