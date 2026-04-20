@@ -8,8 +8,6 @@ import { NivelRiesgoEnum } from '@/lib/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
 
-const NIVELES: NivelRiesgo[] = ['I', 'II', 'III', 'IV', 'V'];
-
 export async function updateEmpresaConfigAction(
   empresaId: string,
   _prev: ActionState,
@@ -77,5 +75,3 @@ export async function updateEmpresaConfigAction(
   revalidatePath(`/admin/empresas/${empresaId}`);
   return { ok: true };
 }
-
-export { NIVELES };
