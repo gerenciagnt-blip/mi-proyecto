@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { auth } from '@/auth';
 import { LogoutButton } from './logout-button';
 
@@ -16,6 +17,7 @@ export default async function DashboardPage() {
   if (!session?.user) return null;
 
   const { name, email, role, sucursalId } = session.user;
+  const isAdmin = role === 'ADMIN';
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -49,16 +51,16 @@ export default async function DashboardPage() {
         </dl>
       </section>
 
-      <section className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-          Próximos pasos
-        </h2>
-        <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-slate-700">
-          <li>CRUD de usuarios (Fase 1.5)</li>
-          <li>CRUD de sucursales (Fase 1.5)</li>
-          <li>CRUD de empresas + asignación UsuarioEmpresa (Fase 1.6)</li>
-        </ul>
-      </section>
+      {isAdmin && (
+        <section className="mt-6">
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+          >
+            Ir al panel de administración →
+          </Link>
+        </section>
+      )}
     </main>
   );
 }
