@@ -1,5 +1,9 @@
 import Link from 'next/link';
+import { Mail, Shield, Building, ArrowRight } from 'lucide-react';
 import { auth } from '@/auth';
+import { PilaLogo } from '@/components/brand/pila-logo';
+import { Avatar } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import { LogoutButton } from './logout-button';
 
 export const metadata = {
@@ -20,44 +24,70 @@ export default async function DashboardPage() {
   const isAdmin = role === 'ADMIN';
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">Sistema PILA — Fase 1 (auth)</p>
+    <main className="mx-auto max-w-4xl px-6 py-10">
+      {/* Header */}
+      <header className="flex items-center justify-between border-b border-slate-200 pb-6">
+        <PilaLogo size="sm" />
+        <div className="flex items-center gap-3">
+          <div className="text-right leading-tight">
+            <p className="text-sm font-medium text-slate-900">{name}</p>
+            <p className="text-[11px] text-slate-500">{ROLE_LABELS[role] ?? role}</p>
+          </div>
+          <Avatar name={name} />
+          <LogoutButton compact />
         </div>
-        <LogoutButton />
       </header>
 
-      <section className="mt-8 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Tu sesión</h2>
-        <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="font-medium text-slate-500">Nombre</dt>
-            <dd className="mt-0.5">{name}</dd>
+      {/* Bienvenida */}
+      <section className="mt-8">
+        <h1 className="font-heading text-3xl font-bold tracking-tight text-slate-900">
+          Hola, {name.split(' ')[0]} 👋
+        </h1>
+        <p className="mt-1 text-sm text-slate-500">Este es tu panel de Sistema PILA.</p>
+      </section>
+
+      {/* Info de sesión */}
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="font-heading text-sm font-semibold uppercase tracking-wider text-slate-500">
+          Tu sesión
+        </h2>
+        <dl className="mt-4 grid grid-cols-1 gap-5 text-sm sm:grid-cols-3">
+          <div className="flex items-start gap-3">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <div>
+              <dt className="text-xs text-slate-500">Correo</dt>
+              <dd className="mt-0.5 font-medium text-slate-900">{email}</dd>
+            </div>
           </div>
-          <div>
-            <dt className="font-medium text-slate-500">Correo</dt>
-            <dd className="mt-0.5">{email}</dd>
+          <div className="flex items-start gap-3">
+            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <div>
+              <dt className="text-xs text-slate-500">Rol</dt>
+              <dd className="mt-0.5 font-medium text-slate-900">
+                {ROLE_LABELS[role] ?? role}
+              </dd>
+            </div>
           </div>
-          <div>
-            <dt className="font-medium text-slate-500">Rol</dt>
-            <dd className="mt-0.5">{ROLE_LABELS[role] ?? role}</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-500">Sucursal</dt>
-            <dd className="mt-0.5">{sucursalId ?? '— (acceso global)'}</dd>
+          <div className="flex items-start gap-3">
+            <Building className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <div>
+              <dt className="text-xs text-slate-500">Sucursal</dt>
+              <dd className="mt-0.5 font-medium text-slate-900">
+                {sucursalId ?? '— (acceso global)'}
+              </dd>
+            </div>
           </div>
         </dl>
       </section>
 
+      {/* CTA admin */}
       {isAdmin && (
         <section className="mt-6">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-          >
-            Ir al panel de administración →
+          <Link href="/admin">
+            <Button size="lg">
+              <span>Ir al panel de administración</span>
+              <ArrowRight className="h-4 w-4" />
+            </Button>
           </Link>
         </section>
       )}

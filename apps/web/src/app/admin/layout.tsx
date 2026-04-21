@@ -1,60 +1,46 @@
-import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth-helpers';
-import { logoutAction } from '@/app/dashboard/actions';
+import { PilaLogo } from '@/components/brand/pila-logo';
+import { AdminNav } from '@/components/admin/admin-nav';
+import { Avatar } from '@/components/ui/avatar';
+import { LogoutButton } from '@/app/dashboard/logout-button';
 
-const NAV = [
-  { href: '/admin', label: 'Inicio' },
-  { href: '/admin/sucursales', label: 'Sucursales' },
-  { href: '/admin/empresas', label: 'Empresas' },
-  { href: '/admin/usuarios', label: 'Usuarios' },
-  { href: '/admin/catalogos', label: 'Catálogos' },
-] as const;
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Administrador',
+  ALIADO_OWNER: 'Dueño Aliado',
+  ALIADO_USER: 'Usuario Aliado',
+};
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await requireAdmin();
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-60 shrink-0 border-r border-slate-200 bg-white">
-        <div className="flex h-14 items-center border-b border-slate-200 px-4">
-          <span className="text-sm font-bold tracking-tight">Sistema PILA</span>
+    <div className="flex min-h-screen bg-slate-50">
+      {/* Sidebar */}
+      <aside className="w-64 shrink-0 border-r border-slate-200 bg-white">
+        <div className="flex h-16 items-center justify-center border-b border-slate-100 px-4">
+          <PilaLogo size="sm" />
         </div>
-        <nav className="flex flex-col p-2 text-sm">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2 text-slate-700 transition hover:bg-slate-100"
-            >
-              {item.label}
-            </Link>
-          ))}
-          <div className="mt-auto border-t border-slate-200 pt-2">
-            <Link
-              href="/dashboard"
-              className="block rounded-md px-3 py-2 text-slate-500 transition hover:bg-slate-100"
-            >
-              ← Dashboard
-            </Link>
-          </div>
-        </nav>
+        <AdminNav />
       </aside>
 
+      {/* Main */}
       <div className="flex flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6">
-          <p className="text-sm text-slate-500">
-            Administración — <span className="font-medium text-slate-700">{session.user.name}</span>
+        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+            Panel de administración
           </p>
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className="text-sm font-medium text-slate-500 transition hover:text-slate-900"
-            >
-              Cerrar sesión
-            </button>
-          </form>
+          <div className="flex items-center gap-3">
+            <div className="text-right leading-tight">
+              <p className="text-sm font-medium text-slate-900">{session.user.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {ROLE_LABELS[session.user.role] ?? session.user.role}
+              </p>
+            </div>
+            <Avatar name={session.user.name} />
+            <LogoutButton compact />
+          </div>
         </header>
-        <main className="flex-1 bg-slate-50 px-6 py-6">{children}</main>
+        <main className="flex-1 px-6 py-6">{children}</main>
       </div>
     </div>
   );

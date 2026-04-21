@@ -1,16 +1,16 @@
 'use client';
 
+import { LogOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { logoutAction } from './actions';
 
-export function LogoutButton() {
+export function LogoutButton({ compact = false }: { compact?: boolean }) {
   return (
     <form action={logoutAction}>
-      <button
-        type="submit"
-        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-      >
-        Cerrar sesión
-      </button>
+      <Button type="submit" variant="outline" size={compact ? 'sm' : 'md'}>
+        <LogOut className="h-4 w-4" />
+        <span>Cerrar sesión</span>
+      </Button>
     </form>
   );
 }
