@@ -44,7 +44,7 @@ function parseAfiliacion(fd: FormData) {
     tipoCotizanteId: g('tipoCotizanteId'),
     subtipoId: g('subtipoId'),
     nivelRiesgo: g('nivelRiesgo'),
-    regimen: g('regimen') || 'ORDINARIO',
+    regimen: g('regimen'),
     estado: g('estado') || 'ACTIVA',
     salario: g('salario'),
     valorAdministracion: g('valorAdministracion'),
@@ -52,6 +52,7 @@ function parseAfiliacion(fd: FormData) {
     comentarios: g('comentarios'),
     epsId: g('epsId'),
     afpId: g('afpId'),
+    arlId: g('arlId'),
     ccfId: g('ccfId'),
   };
 }
@@ -60,7 +61,7 @@ function parseAfiliacion(fd: FormData) {
 
 async function validateAfiliacion(data: {
   modalidad: string;
-  empresaId: string;
+  empresaId: string | null;
   nivelRiesgo: string;
   tipoCotizanteId: string;
   subtipoId: string | null;
@@ -68,6 +69,7 @@ async function validateAfiliacion(data: {
   planSgssId: string | null;
   epsId: string | null;
   afpId: string | null;
+  arlId: string | null;
   ccfId: string | null;
   salario: number;
 }): Promise<string | null> {
@@ -86,45 +88,52 @@ async function validateAfiliacion(data: {
     return `El tipo "${tipo.nombre}" no corresponde a la modalidad ${data.modalidad.toLowerCase()}`;
   }
 
-  const empresa = await prisma.empresa.findUnique({
-    where: { id: data.empresaId },
-    include: {
-      nivelesPermitidos: { select: { nivel: true } },
-      tiposPermitidos: { select: { tipoCotizanteId: true } },
-      subtiposPermitidos: { select: { subtipoId: true } },
-      actividadesPermitidas: { select: { actividadEconomicaId: true } },
-    },
-  });
-  if (!empresa) return 'Empresa no existe';
+  // Rama DEPENDIENTE — empresa obligatoria y aplica toda la validación cruzada
+  if (data.modalidad === 'DEPENDIENTE') {
+    if (!data.empresaId) return 'Empresa planilla requerida para dependientes';
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: data.empresaId },
+      include: {
+        nivelesPermitidos: { select: { nivel: true } },
+        tiposPermitidos: { select: { tipoCotizanteId: true } },
+        subtiposPermitidos: { select: { subtipoId: true } },
+        actividadesPermitidas: { select: { actividadEconomicaId: true } },
+      },
+    });
+    if (!empresa) return 'Empresa no existe';
 
-  const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
-  const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
-  const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
-  const actividadesOK = new Set(
-    empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
-  );
+    const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
+    const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
+    const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
+    const actividadesOK = new Set(
+      empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
+    );
 
-  if (nivelesOK.size > 0 && !nivelesOK.has(data.nivelRiesgo as never)) {
-    return `El nivel ${data.nivelRiesgo} no está permitido en esta empresa`;
-  }
-  if (tiposOK.size > 0 && !tiposOK.has(data.tipoCotizanteId)) {
-    return 'El tipo de cotizante no está permitido en esta empresa';
-  }
-  if (data.subtipoId && subtiposOK.size > 0 && !subtiposOK.has(data.subtipoId)) {
-    return 'El subtipo no está permitido en esta empresa';
-  }
-  if (data.actividadEconomicaId) {
-    const actId = data.actividadEconomicaId;
-    const actPrincipalMatch = empresa.ciiuPrincipal
-      ? await prisma.actividadEconomica.findFirst({
-          where: { id: actId, codigoCiiu: empresa.ciiuPrincipal },
-          select: { id: true },
-        })
-      : null;
-    if (!actPrincipalMatch && actividadesOK.size > 0 && !actividadesOK.has(actId)) {
-      return 'La actividad económica no está permitida en esta empresa';
+    if (nivelesOK.size > 0 && !nivelesOK.has(data.nivelRiesgo as never)) {
+      return `El nivel ${data.nivelRiesgo} no está permitido en esta empresa`;
+    }
+    if (tiposOK.size > 0 && !tiposOK.has(data.tipoCotizanteId)) {
+      return 'El tipo de cotizante no está permitido en esta empresa';
+    }
+    if (data.subtipoId && subtiposOK.size > 0 && !subtiposOK.has(data.subtipoId)) {
+      return 'El subtipo no está permitido en esta empresa';
+    }
+    if (data.actividadEconomicaId) {
+      const actId = data.actividadEconomicaId;
+      const actPrincipalMatch = empresa.ciiuPrincipal
+        ? await prisma.actividadEconomica.findFirst({
+            where: { id: actId, codigoCiiu: empresa.ciiuPrincipal },
+            select: { id: true },
+          })
+        : null;
+      if (!actPrincipalMatch && actividadesOK.size > 0 && !actividadesOK.has(actId)) {
+        return 'La actividad económica no está permitida en esta empresa';
+      }
     }
   }
+
+  // Plan SGSS — aplica a ambas modalidades. En INDEPENDIENTE, ARL proviene
+  // del selector directo; en DEPENDIENTE la ARL se hereda de la empresa.
   if (data.planSgssId) {
     const plan = await prisma.planSgss.findUnique({ where: { id: data.planSgssId } });
     if (plan) {
@@ -132,6 +141,9 @@ async function validateAfiliacion(data: {
       if (plan.incluyeAfp && !data.afpId) return `El plan "${plan.nombre}" requiere AFP`;
       if (plan.incluyeCcf && !data.ccfId)
         return `El plan "${plan.nombre}" requiere Caja de Compensación`;
+      if (plan.incluyeArl && data.modalidad === 'INDEPENDIENTE' && !data.arlId) {
+        return `El plan "${plan.nombre}" requiere ARL`;
+      }
     }
   }
   return null;
@@ -224,6 +236,7 @@ export async function createAfiliacionAction(
           comentarios: afParsed.data.comentarios,
           epsId: afParsed.data.epsId,
           afpId: afParsed.data.afpId,
+          arlId: afParsed.data.arlId,
           ccfId: afParsed.data.ccfId,
         },
       });
@@ -306,6 +319,7 @@ export async function updateAfiliacionAction(
           comentarios: afParsed.data.comentarios,
           epsId: afParsed.data.epsId,
           afpId: afParsed.data.afpId,
+          arlId: afParsed.data.arlId,
           ccfId: afParsed.data.ccfId,
         },
       });

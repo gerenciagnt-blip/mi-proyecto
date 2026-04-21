@@ -43,7 +43,7 @@ export type AfiliacionRow = {
     primerApellido: string;
     segundoApellido: string | null;
   };
-  empresa: { nit: string; nombre: string };
+  empresa: { nit: string; nombre: string } | null;
   tipoCotizante: { codigo: string; nombre: string };
   initial: InitialAfiliacion;
 };
@@ -132,8 +132,16 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-xs text-slate-500">{a.empresa.nit}</p>
-                    <p>{a.empresa.nombre}</p>
+                    {a.empresa ? (
+                      <>
+                        <p className="text-xs text-slate-500">{a.empresa.nit}</p>
+                        <p>{a.empresa.nombre}</p>
+                      </>
+                    ) : (
+                      <span className="text-xs italic text-slate-400">
+                        — sin empresa (independiente) —
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <span className="font-mono text-slate-500">{a.tipoCotizante.codigo}</span>
@@ -147,12 +155,18 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                   <td className="px-4 py-3">
                     <span
                       className={cn(
-                        'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
                         isActiva
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-200 text-slate-600',
+                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          : 'bg-red-50 text-red-700 ring-red-200',
                       )}
                     >
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 rounded-full',
+                          isActiva ? 'bg-emerald-500' : 'bg-red-500',
+                        )}
+                      />
                       {a.estado}
                     </span>
                   </td>

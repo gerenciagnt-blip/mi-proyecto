@@ -43,7 +43,7 @@ export function ComprobanteForm({
   const hasCurrentLogo = !!initial.logoUrl && !removeCurrent;
 
   return (
-    <form action={action} className="space-y-5" encType="multipart/form-data">
+    <form action={action} className="space-y-5">
       <div>
         <Label htmlFor="nombre">Nombre del formato</Label>
         <Input

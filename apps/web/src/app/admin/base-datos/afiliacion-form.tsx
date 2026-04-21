@@ -79,7 +79,7 @@ export type CotizanteSnapshot = {
 
 export type InitialAfiliacion = {
   modalidad: Modalidad;
-  empresaId: string;
+  empresaId: string | null;
   cuentaCobroId: string | null;
   asesorComercialId: string | null;
   planSgssId: string | null;
@@ -87,7 +87,7 @@ export type InitialAfiliacion = {
   tipoCotizanteId: string;
   subtipoId: string | null;
   nivelRiesgo: string;
-  regimen: string;
+  regimen: string | null;
   estado: string;
   salario: number;
   valorAdministracion: number;
@@ -95,6 +95,7 @@ export type InitialAfiliacion = {
   comentarios: string | null;
   epsId: string | null;
   afpId: string | null;
+  arlId: string | null;
   ccfId: string | null;
   serviciosIds: string[];
 };
@@ -113,6 +114,7 @@ export type AfiliacionFormProps = {
   planes: PlanOpt[];
   eps: EntidadOpt[];
   afp: EntidadOpt[];
+  arl: EntidadOpt[];
   ccf: EntidadOpt[];
   cuentasCobro: CuentaCobroOpt[];
   asesores: AsesorOpt[];
@@ -132,6 +134,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
   const readOnly = mode === 'view';
   const isEdit = mode === 'edit';
   const isCreate = mode === 'create';
+  const isIndep = modalidad === 'INDEPENDIENTE';
 
   // Acción según modo. Edit y create usan distintas signatures.
   const boundAction = useMemo(() => {
@@ -283,7 +286,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             </h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <div>
-                <Label htmlFor="tipoDocumento">Tipo doc.</Label>
+                <Label htmlFor="tipoDocumento">
+                  Tipo doc. <Req />
+                </Label>
                 <select
                   id="tipoDocumento"
                   name="tipoDocumento"
@@ -300,7 +305,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 </select>
               </div>
               <div>
-                <Label htmlFor="numeroDocumento">Número</Label>
+                <Label htmlFor="numeroDocumento">
+                  Número <Req />
+                </Label>
                 <Input id="numeroDocumento" name="numeroDocumento" required className="mt-1" />
               </div>
               <div>
@@ -313,7 +320,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 />
               </div>
               <div>
-                <Label htmlFor="fechaNacimiento">Fecha nacimiento</Label>
+                <Label htmlFor="fechaNacimiento">
+                  Fecha nacimiento <Req />
+                </Label>
                 <Input
                   id="fechaNacimiento"
                   name="fechaNacimiento"
@@ -324,7 +333,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               </div>
 
               <div>
-                <Label htmlFor="primerNombre">Primer nombre</Label>
+                <Label htmlFor="primerNombre">
+                  Primer nombre <Req />
+                </Label>
                 <Input id="primerNombre" name="primerNombre" required className="mt-1" />
               </div>
               <div>
@@ -332,7 +343,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 <Input id="segundoNombre" name="segundoNombre" className="mt-1" />
               </div>
               <div>
-                <Label htmlFor="primerApellido">Primer apellido</Label>
+                <Label htmlFor="primerApellido">
+                  Primer apellido <Req />
+                </Label>
                 <Input id="primerApellido" name="primerApellido" required className="mt-1" />
               </div>
               <div>
@@ -341,7 +354,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               </div>
 
               <div>
-                <Label htmlFor="genero">Género</Label>
+                <Label htmlFor="genero">
+                  Género <Req />
+                </Label>
                 <select
                   id="genero"
                   name="genero"
@@ -434,7 +449,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               <option value="">— Sin plan (todas las entidades visibles) —</option>
               {props.planes.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.codigo} — {p.nombre}
+                  {p.nombre}
                 </option>
               ))}
             </select>
@@ -453,24 +468,33 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             )}
           </div>
 
-          {/* 2) Régimen */}
-          <div>
-            <Label htmlFor="regimen">Régimen</Label>
-            <select
-              id="regimen"
-              name="regimen"
-              required
-              defaultValue={initial?.regimen ?? 'ORDINARIO'}
-              disabled={readOnly}
-              className={selectClass}
-            >
-              <option value="ORDINARIO">Ordinario</option>
-              <option value="RESOLUCION">Resolución</option>
-            </select>
-          </div>
+          {/* 2) Régimen — sólo DEPENDIENTE */}
+          {!isIndep ? (
+            <div>
+              <Label htmlFor="regimen">
+                Régimen <Req />
+              </Label>
+              <select
+                id="regimen"
+                name="regimen"
+                required
+                defaultValue={initial?.regimen ?? 'ORDINARIO'}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="ORDINARIO">Ordinario</option>
+                <option value="RESOLUCION">Resolución</option>
+              </select>
+            </div>
+          ) : (
+            // valor vacío para que el server detecte "null" en INDEPENDIENTE
+            <input type="hidden" name="regimen" value="" />
+          )}
 
           <div>
-            <Label htmlFor="estado">Estado</Label>
+            <Label htmlFor="estado">
+              Estado <Req />
+            </Label>
             <select
               id="estado"
               name="estado"
@@ -502,38 +526,44 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 </option>
               ))}
             </select>
-            {actividad && isCreate && (
+            {actividad && isCreate && !isIndep && (
               <p className="mt-1 text-[10px] text-slate-400">
                 Filtra empresas que tienen esta actividad permitida
               </p>
             )}
           </div>
 
-          {/* Empresa planilla */}
-          <div className="sm:col-span-2">
-            <Label htmlFor="empresaId">Empresa planilla</Label>
-            <select
-              id="empresaId"
-              name="empresaId"
-              required
-              value={empresaId}
-              onChange={(e) => {
-                setEmpresaId(e.target.value);
-                setTipoId('');
-              }}
-              disabled={readOnly}
-              className={selectClass}
-            >
-              <option value="">— Seleccionar —</option>
-              {empresasFiltered.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nit} — {e.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Empresa planilla — sólo DEPENDIENTE */}
+          {!isIndep ? (
+            <div className="sm:col-span-2">
+              <Label htmlFor="empresaId">
+                Empresa planilla <Req />
+              </Label>
+              <select
+                id="empresaId"
+                name="empresaId"
+                required
+                value={empresaId}
+                onChange={(e) => {
+                  setEmpresaId(e.target.value);
+                  setTipoId('');
+                }}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="">— Seleccionar —</option>
+                {empresasFiltered.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.nit} — {e.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <input type="hidden" name="empresaId" value="" />
+          )}
 
-          {/* Empresa CC (independiente) */}
+          {/* Empresa CC — libre (ambas modalidades) */}
           <div className="sm:col-span-2">
             <Label htmlFor="cuentaCobroId">Empresa CC (opcional)</Label>
             <select
@@ -557,7 +587,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 
           {/* Tipo / subtipo / nivel */}
           <div>
-            <Label htmlFor="tipoCotizanteId">Tipo cotizante</Label>
+            <Label htmlFor="tipoCotizanteId">
+              Tipo cotizante <Req />
+            </Label>
             <select
               id="tipoCotizanteId"
               name="tipoCotizanteId"
@@ -594,7 +626,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             </select>
           </div>
           <div>
-            <Label htmlFor="nivelRiesgo">Nivel riesgo ARL</Label>
+            <Label htmlFor="nivelRiesgo">
+              Nivel riesgo ARL <Req />
+            </Label>
             <select
               id="nivelRiesgo"
               name="nivelRiesgo"
@@ -613,7 +647,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           </div>
 
           <div>
-            <Label htmlFor="fechaIngreso">Fecha de ingreso</Label>
+            <Label htmlFor="fechaIngreso">
+              Fecha de ingreso <Req />
+            </Label>
             <Input
               id="fechaIngreso"
               name="fechaIngreso"
@@ -626,7 +662,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           </div>
 
           <div>
-            <Label htmlFor="salario">Salario (COP)</Label>
+            <Label htmlFor="salario">
+              Salario (COP) <Req />
+            </Label>
             <Input
               id="salario"
               name="salario"
@@ -645,7 +683,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 
           <div>
             <Label htmlFor="valorAdministracion">
-              Valor administración <span className="text-red-600">*</span>
+              Valor administración <Req />
             </Label>
             <Input
               id="valorAdministracion"
@@ -687,7 +725,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           Entidades SGSS{' '}
           {plan && (
             <span className="ml-1 text-xs font-normal text-slate-500">
-              (según plan {plan.codigo})
+              (según plan {plan.nombre})
             </span>
           )}
         </h3>
@@ -695,7 +733,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           {showEps && (
             <div>
               <Label htmlFor="epsId">
-                EPS {plan?.incluyeEps && <span className="text-red-600">*</span>}
+                EPS {plan?.incluyeEps && <Req />}
               </Label>
               <select
                 id="epsId"
@@ -717,7 +755,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           {showAfp && (
             <div>
               <Label htmlFor="afpId">
-                AFP {plan?.incluyeAfp && <span className="text-red-600">*</span>}
+                AFP {plan?.incluyeAfp && <Req />}
               </Label>
               <select
                 id="afpId"
@@ -739,8 +777,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           {showCcf && (
             <div>
               <Label htmlFor="ccfId">
-                Caja Compensación{' '}
-                {plan?.incluyeCcf && <span className="text-red-600">*</span>}
+                Caja Compensación {plan?.incluyeCcf && <Req />}
               </Label>
               <select
                 id="ccfId"
@@ -759,8 +796,31 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               </select>
             </div>
           )}
+          {/* ARL — sólo para INDEPENDIENTE */}
+          {isIndep && (
+            <div>
+              <Label htmlFor="arlId">
+                ARL {plan?.incluyeArl && <Req />}
+              </Label>
+              <select
+                id="arlId"
+                name="arlId"
+                defaultValue={initial?.arlId ?? ''}
+                required={!!plan?.incluyeArl}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="">— Ninguna —</option>
+                {props.arl.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.codigo} — {a.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
-        {plan?.incluyeArl && (
+        {plan?.incluyeArl && !isIndep && (
           <p className="mt-3 text-xs text-slate-500">
             <strong>ARL:</strong> se toma de la ARL configurada en la empresa planilla seleccionada.
           </p>
@@ -832,4 +892,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
       )}
     </form>
   );
+}
+
+function Req() {
+  return <span className="text-red-600" aria-label="campo obligatorio">*</span>;
 }

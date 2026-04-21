@@ -240,25 +240,38 @@ export const PlanSgssSchema = z.object({
   incluyeCcf: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
 });
 
-export const AfiliacionSchema = z.object({
-  modalidad: ModalidadEnum,
-  empresaId: z.string().trim().min(1, 'Empresa requerida'),
-  cuentaCobroId: idOrNull,
-  asesorComercialId: idOrNull,
-  planSgssId: idOrNull,
-  actividadEconomicaId: idOrNull,
-  tipoCotizanteId: z.string().trim().min(1, 'Tipo de cotizante requerido'),
-  subtipoId: idOrNull,
-  nivelRiesgo: NivelRiesgoEnum,
-  regimen: RegimenEnum,
-  estado: EstadoAfiliacionEnum,
-  salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
-  valorAdministracion: z.coerce
-    .number({ message: 'Valor administración requerido' })
-    .min(0, 'No puede ser negativo'),
-  fechaIngreso: z.coerce.date({ message: 'Fecha inválida' }),
-  comentarios: optional,
-  epsId: idOrNull,
-  afpId: idOrNull,
-  ccfId: idOrNull,
-});
+export const AfiliacionSchema = z
+  .object({
+    modalidad: ModalidadEnum,
+    empresaId: idOrNull,
+    cuentaCobroId: idOrNull,
+    asesorComercialId: idOrNull,
+    planSgssId: idOrNull,
+    actividadEconomicaId: idOrNull,
+    tipoCotizanteId: z.string().trim().min(1, 'Tipo de cotizante requerido'),
+    subtipoId: idOrNull,
+    nivelRiesgo: NivelRiesgoEnum,
+    regimen: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      RegimenEnum.nullable(),
+    ),
+    estado: EstadoAfiliacionEnum,
+    salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
+    valorAdministracion: z.coerce
+      .number({ message: 'Valor administración requerido' })
+      .min(0, 'No puede ser negativo'),
+    fechaIngreso: z.coerce.date({ message: 'Fecha inválida' }),
+    comentarios: optional,
+    epsId: idOrNull,
+    afpId: idOrNull,
+    arlId: idOrNull,
+    ccfId: idOrNull,
+  })
+  .refine(
+    (v) => v.modalidad !== 'DEPENDIENTE' || !!v.empresaId,
+    { message: 'Empresa planilla requerida para dependientes', path: ['empresaId'] },
+  )
+  .refine(
+    (v) => v.modalidad !== 'DEPENDIENTE' || !!v.regimen,
+    { message: 'Régimen requerido para dependientes', path: ['regimen'] },
+  );

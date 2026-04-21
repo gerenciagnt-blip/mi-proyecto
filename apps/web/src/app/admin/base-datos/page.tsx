@@ -186,6 +186,9 @@ export default async function BaseDatosPage({
   const afp = entidades
     .filter((e) => e.tipo === 'AFP')
     .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+  const arl = entidades
+    .filter((e) => e.tipo === 'ARL')
+    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
   const ccf = entidades
     .filter((e) => e.tipo === 'CCF')
     .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
@@ -215,6 +218,7 @@ export default async function BaseDatosPage({
     planes,
     eps,
     afp,
+    arl,
     ccf,
     cuentasCobro,
     asesores,
@@ -258,6 +262,7 @@ export default async function BaseDatosPage({
       comentarios: a.comentarios,
       epsId: a.epsId,
       afpId: a.afpId,
+      arlId: a.arlId,
       ccfId: a.ccfId,
       serviciosIds: a.serviciosAdicionales.map((s) => s.servicioAdicionalId),
     },
