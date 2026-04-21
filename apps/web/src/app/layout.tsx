@@ -19,6 +19,11 @@ const roboto = Roboto({
 export const metadata: Metadata = {
   title: 'Sistema PILA',
   description: 'Tu seguridad social a un click',
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export const viewport: Viewport = {
