@@ -158,6 +158,16 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     [props.tipos, modalidad],
   );
 
+  // Plan → requiereArl (necesario para decidir filtros aguas abajo)
+  const [planId, setPlanId] = useState(initial?.planSgssId ?? '');
+  const plan = useMemo(
+    () => props.planes.find((p) => p.id === planId),
+    [props.planes, planId],
+  );
+  // Si el plan no incluye ARL, el nivel de riesgo y la actividad económica
+  // dejan de aplicar, y la lista de empresas planilla no se filtra.
+  const requiereArl = !plan || plan.incluyeArl;
+
   // Actividad económica
   const [actividadId, setActividadId] = useState(initial?.actividadEconomicaId ?? '');
   const actividad = useMemo(
@@ -165,15 +175,17 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     [props.actividades, actividadId],
   );
 
-  // Empresas filtradas por actividad
+  // Empresas filtradas por actividad (sólo si el plan requiere ARL).
+  // Cuando el plan no incluye ARL, el listado queda sin restricción.
   const empresasFiltered = useMemo(() => {
+    if (!requiereArl) return props.empresas;
     if (!actividad) return props.empresas;
     return props.empresas.filter(
       (e) =>
         e.actividadesIds.includes(actividad.id) ||
         e.ciiuPrincipal === actividad.codigoCiiu,
     );
-  }, [actividad, props.empresas]);
+  }, [requiereArl, actividad, props.empresas]);
 
   const [empresaId, setEmpresaId] = useState(initial?.empresaId ?? '');
   const empresa = useMemo(() => props.empresas.find((e) => e.id === empresaId), [
@@ -201,12 +213,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     }
   }, [tiposPorModalidad, tipoId]);
 
-  // Plan → entidades visibles
-  const [planId, setPlanId] = useState(initial?.planSgssId ?? '');
-  const plan = useMemo(
-    () => props.planes.find((p) => p.id === planId),
-    [props.planes, planId],
-  );
+  // (`planId`, `plan` y `requiereArl` ya declarados arriba)
 
   // Dirección (solo en create)
   const [deptoNombre, setDeptoNombre] = useState('');
@@ -454,17 +461,25 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               ))}
             </select>
             {plan && (
-              <p className="mt-1 text-[10px] text-slate-400">
-                Incluye:{' '}
-                {[
-                  plan.incluyeEps && 'EPS',
-                  plan.incluyeAfp && 'AFP',
-                  plan.incluyeArl && 'ARL',
-                  plan.incluyeCcf && 'CCF',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
+              <>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Incluye:{' '}
+                  {[
+                    plan.incluyeEps && 'EPS',
+                    plan.incluyeAfp && 'AFP',
+                    plan.incluyeArl && 'ARL',
+                    plan.incluyeCcf && 'CCF',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                {!plan.incluyeArl && (
+                  <p className="mt-1 text-[10px] text-amber-700">
+                    Sin ARL — se oculta actividad económica y nivel de riesgo.
+                    Empresa planilla sin filtro.
+                  </p>
+                )}
+              </>
             )}
           </div>
 
@@ -508,30 +523,34 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             </select>
           </div>
 
-          {/* Actividad económica */}
-          <div className="sm:col-span-2">
-            <Label htmlFor="actividadEconomicaId">Actividad económica (CIIU)</Label>
-            <select
-              id="actividadEconomicaId"
-              name="actividadEconomicaId"
-              value={actividadId}
-              onChange={(e) => setActividadId(e.target.value)}
-              disabled={readOnly}
-              className={selectClass}
-            >
-              <option value="">— Todas —</option>
-              {props.actividades.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.codigoCiiu} — {a.descripcion}
-                </option>
-              ))}
-            </select>
-            {actividad && isCreate && !isIndep && (
-              <p className="mt-1 text-[10px] text-slate-400">
-                Filtra empresas que tienen esta actividad permitida
-              </p>
-            )}
-          </div>
+          {/* Actividad económica — oculta cuando el plan no incluye ARL */}
+          {requiereArl ? (
+            <div className="sm:col-span-2">
+              <Label htmlFor="actividadEconomicaId">Actividad económica (CIIU)</Label>
+              <select
+                id="actividadEconomicaId"
+                name="actividadEconomicaId"
+                value={actividadId}
+                onChange={(e) => setActividadId(e.target.value)}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="">— Todas —</option>
+                {props.actividades.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.codigoCiiu} — {a.descripcion}
+                  </option>
+                ))}
+              </select>
+              {actividad && isCreate && !isIndep && (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Filtra empresas que tienen esta actividad permitida
+                </p>
+              )}
+            </div>
+          ) : (
+            <input type="hidden" name="actividadEconomicaId" value="" />
+          )}
 
           {/* Empresa planilla — sólo DEPENDIENTE */}
           {!isIndep ? (
@@ -625,26 +644,37 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               ))}
             </select>
           </div>
-          <div>
-            <Label htmlFor="nivelRiesgo">
-              Nivel riesgo ARL <Req />
-            </Label>
-            <select
-              id="nivelRiesgo"
+          {/* Nivel de riesgo ARL — oculto cuando el plan no incluye ARL */}
+          {requiereArl ? (
+            <div>
+              <Label htmlFor="nivelRiesgo">
+                Nivel riesgo ARL <Req />
+              </Label>
+              <select
+                id="nivelRiesgo"
+                name="nivelRiesgo"
+                required
+                defaultValue={initial?.nivelRiesgo ?? nivelesPermitidos[0] ?? 'I'}
+                key={empresaId + (initial?.nivelRiesgo ?? '')}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                {nivelesPermitidos.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            // El nivel sigue siendo obligatorio en BD. Cuando el plan no
+            // incluye ARL se envía el valor previo o 'I' como mínimo.
+            <input
+              type="hidden"
               name="nivelRiesgo"
-              required
-              defaultValue={initial?.nivelRiesgo ?? nivelesPermitidos[0] ?? 'I'}
-              key={empresaId + (initial?.nivelRiesgo ?? '')}
-              disabled={readOnly}
-              className={selectClass}
-            >
-              {nivelesPermitidos.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
+              value={initial?.nivelRiesgo ?? 'I'}
+            />
+          )}
 
           <div>
             <Label htmlFor="fechaIngreso">
