@@ -45,6 +45,8 @@ export default async function BaseDatosPage() {
     asesores,
     servicios,
     smlvConfig,
+    actividades,
+    planes,
   ] = await Promise.all([
     prisma.afiliacion.findMany({
       orderBy: { createdAt: 'desc' },
@@ -65,6 +67,7 @@ export default async function BaseDatosPage() {
         nivelesPermitidos: { select: { nivel: true } },
         tiposPermitidos: { select: { tipoCotizanteId: true } },
         subtiposPermitidos: { select: { subtipoId: true } },
+        actividadesPermitidas: { select: { actividadEconomicaId: true } },
       },
     }),
     prisma.tipoCotizante.findMany({
@@ -108,16 +111,36 @@ export default async function BaseDatosPage() {
       select: { id: true, codigo: true, nombre: true, precio: true },
     }),
     prisma.smlvConfig.findUnique({ where: { id: 'singleton' } }),
+    prisma.actividadEconomica.findMany({
+      where: { active: true },
+      orderBy: { codigoCiiu: 'asc' },
+      select: { id: true, codigoCiiu: true, descripcion: true },
+    }),
+    prisma.planSgss.findMany({
+      where: { active: true },
+      orderBy: { codigo: 'asc' },
+      select: {
+        id: true,
+        codigo: true,
+        nombre: true,
+        incluyeEps: true,
+        incluyeAfp: true,
+        incluyeArl: true,
+        incluyeCcf: true,
+      },
+    }),
   ]);
 
   const empresaOpts = empresas.map((e) => ({
     id: e.id,
     nit: e.nit,
     nombre: e.nombre,
+    ciiuPrincipal: e.ciiuPrincipal,
     sucursalId: null as string | null,
     niveles: e.nivelesPermitidos.map((n) => n.nivel as string),
     tiposIds: e.tiposPermitidos.map((t) => t.tipoCotizanteId),
     subtiposIds: e.subtiposPermitidos.map((s) => s.subtipoId),
+    actividadesIds: e.actividadesPermitidas.map((a) => a.actividadEconomicaId),
   }));
 
   const eps = entidades.filter((e) => e.tipo === 'EPS');
@@ -139,6 +162,8 @@ export default async function BaseDatosPage() {
         </div>
         <NuevaAfiliacionDialog
           empresas={empresaOpts}
+          actividades={actividades}
+          planes={planes}
           tipos={tiposCotizante.map((t) => ({
             id: t.id,
             codigo: t.codigo,

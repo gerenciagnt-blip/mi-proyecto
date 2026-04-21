@@ -35,9 +35,13 @@ function parseAfiliacion(fd: FormData) {
     empresaId: g('empresaId'),
     cuentaCobroId: g('cuentaCobroId'),
     asesorComercialId: g('asesorComercialId'),
+    planSgssId: g('planSgssId'),
+    actividadEconomicaId: g('actividadEconomicaId'),
     tipoCotizanteId: g('tipoCotizanteId'),
     subtipoId: g('subtipoId'),
     nivelRiesgo: g('nivelRiesgo'),
+    regimen: g('regimen') || 'ORDINARIO',
+    estado: g('estado') || 'ACTIVA',
     salario: g('salario'),
     valorAdministracion: g('valorAdministracion'),
     fechaIngreso: g('fechaIngreso'),
@@ -79,6 +83,7 @@ export async function createAfiliacionAction(
       nivelesPermitidos: { select: { nivel: true } },
       tiposPermitidos: { select: { tipoCotizanteId: true } },
       subtiposPermitidos: { select: { subtipoId: true } },
+      actividadesPermitidas: { select: { actividadEconomicaId: true } },
     },
   });
   if (!empresa) return { error: 'Empresa no existe' };
@@ -86,6 +91,9 @@ export async function createAfiliacionAction(
   const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
   const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
   const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
+  const actividadesOK = new Set(
+    empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
+  );
 
   if (nivelesOK.size > 0 && !nivelesOK.has(afParsed.data.nivelRiesgo)) {
     return { error: `El nivel ${afParsed.data.nivelRiesgo} no está permitido en esta empresa` };
@@ -99,6 +107,42 @@ export async function createAfiliacionAction(
     !subtiposOK.has(afParsed.data.subtipoId)
   ) {
     return { error: 'El subtipo no está permitido en esta empresa' };
+  }
+
+  // Validación: actividad económica debe estar en las permitidas de la empresa
+  // (o ser la actividad principal de la empresa, via codigoCiiu)
+  if (afParsed.data.actividadEconomicaId) {
+    const actId = afParsed.data.actividadEconomicaId;
+    const actPrincipalMatch = empresa.ciiuPrincipal
+      ? await prisma.actividadEconomica.findFirst({
+          where: { id: actId, codigoCiiu: empresa.ciiuPrincipal },
+          select: { id: true },
+        })
+      : null;
+    if (!actPrincipalMatch && actividadesOK.size > 0 && !actividadesOK.has(actId)) {
+      return {
+        error: 'La actividad económica no está permitida en esta empresa',
+      };
+    }
+  }
+
+  // Validación: plan SGSS requiere las entidades indicadas
+  if (afParsed.data.planSgssId) {
+    const plan = await prisma.planSgss.findUnique({
+      where: { id: afParsed.data.planSgssId },
+    });
+    if (plan) {
+      if (plan.incluyeEps && !afParsed.data.epsId) {
+        return { error: `El plan "${plan.nombre}" requiere EPS` };
+      }
+      if (plan.incluyeAfp && !afParsed.data.afpId) {
+        return { error: `El plan "${plan.nombre}" requiere AFP` };
+      }
+      if (plan.incluyeCcf && !afParsed.data.ccfId) {
+        return { error: `El plan "${plan.nombre}" requiere Caja de Compensación` };
+      }
+      // ARL viene de la empresa (empresa.arlId); se valida en la empresa, no en afiliación
+    }
   }
 
   // Servicios adicionales (array de IDs del form)
@@ -123,9 +167,13 @@ export async function createAfiliacionAction(
           empresaId: afParsed.data.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
           asesorComercialId: afParsed.data.asesorComercialId,
+          planSgssId: afParsed.data.planSgssId,
+          actividadEconomicaId: afParsed.data.actividadEconomicaId,
           tipoCotizanteId: afParsed.data.tipoCotizanteId,
           subtipoId: afParsed.data.subtipoId,
           nivelRiesgo: afParsed.data.nivelRiesgo,
+          regimen: afParsed.data.regimen,
+          estado: afParsed.data.estado,
           salario: afParsed.data.salario,
           valorAdministracion: afParsed.data.valorAdministracion,
           fechaIngreso: afParsed.data.fechaIngreso,

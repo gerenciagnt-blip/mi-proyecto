@@ -227,13 +227,29 @@ const idOrNull = z
   .transform((v) => (v && v !== '' ? v : null))
   .nullable();
 
+export const RegimenEnum = z.enum(['ORDINARIO', 'RESOLUCION']);
+
+export const PlanSgssSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(30),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+  descripcion: optional,
+  incluyeEps: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+  incluyeAfp: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+  incluyeArl: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+  incluyeCcf: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+});
+
 export const AfiliacionSchema = z.object({
   empresaId: z.string().trim().min(1, 'Empresa requerida'),
   cuentaCobroId: idOrNull,
   asesorComercialId: idOrNull,
+  planSgssId: idOrNull,
+  actividadEconomicaId: idOrNull,
   tipoCotizanteId: z.string().trim().min(1, 'Tipo de cotizante requerido'),
   subtipoId: idOrNull,
   nivelRiesgo: NivelRiesgoEnum,
+  regimen: RegimenEnum,
+  estado: EstadoAfiliacionEnum,
   salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
   valorAdministracion: z
     .string()

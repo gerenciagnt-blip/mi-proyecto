@@ -20,10 +20,12 @@ export type EmpresaOpt = {
   id: string;
   nit: string;
   nombre: string;
+  ciiuPrincipal: string | null;
   sucursalId: string | null;
-  niveles: string[]; // los permitidos; vacío = todos
+  niveles: string[];
   tiposIds: string[];
   subtiposIds: string[];
+  actividadesIds: string[];
 };
 
 export type TipoOpt = {
@@ -37,6 +39,18 @@ export type DeptoOpt = {
   id: string;
   nombre: string;
   municipios: { id: string; nombre: string }[];
+};
+
+export type ActividadOpt = { id: string; codigoCiiu: string; descripcion: string };
+
+export type PlanOpt = {
+  id: string;
+  codigo: string;
+  nombre: string;
+  incluyeEps: boolean;
+  incluyeAfp: boolean;
+  incluyeArl: boolean;
+  incluyeCcf: boolean;
 };
 
 export type EntidadOpt = { id: string; codigo: string; nombre: string };
@@ -53,6 +67,8 @@ export type NuevaAfiliacionFormProps = {
   empresas: EmpresaOpt[];
   tipos: TipoOpt[];
   departamentos: DeptoOpt[];
+  actividades: ActividadOpt[];
+  planes: PlanOpt[];
   eps: EntidadOpt[];
   afp: EntidadOpt[];
   ccf: EntidadOpt[];
@@ -75,18 +91,45 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
     {},
   );
 
-  // Cascadas empresa
+  // Cascada: actividad económica → empresas permitidas
+  const [actividadId, setActividadId] = useState('');
+  const actividad = useMemo(
+    () => props.actividades.find((a) => a.id === actividadId),
+    [props.actividades, actividadId],
+  );
+
+  // Empresas filtradas por actividad (permitida o principal)
+  const empresasFiltered = useMemo(() => {
+    if (!actividad) return props.empresas;
+    return props.empresas.filter(
+      (e) =>
+        e.actividadesIds.includes(actividad.id) ||
+        e.ciiuPrincipal === actividad.codigoCiiu,
+    );
+  }, [actividad, props.empresas]);
+
   const [empresaId, setEmpresaId] = useState('');
   const empresa = useMemo(() => props.empresas.find((e) => e.id === empresaId), [
     props.empresas,
     empresaId,
   ]);
 
-  // Cascada tipo cotizante → subtipos
+  // Si la empresa seleccionada deja de estar filtrada, limpiarla
+  useEffect(() => {
+    if (empresaId && !empresasFiltered.some((e) => e.id === empresaId)) {
+      setEmpresaId('');
+    }
+  }, [empresasFiltered, empresaId]);
+
+  // Cascada tipo → subtipos
   const [tipoId, setTipoId] = useState('');
   const tipo = useMemo(() => props.tipos.find((t) => t.id === tipoId), [props.tipos, tipoId]);
 
-  // Cascada departamento → municipio (via datalists)
+  // Cascada plan → entidades visibles
+  const [planId, setPlanId] = useState('');
+  const plan = useMemo(() => props.planes.find((p) => p.id === planId), [props.planes, planId]);
+
+  // Cascada depto → muni (datalists)
   const [deptoNombre, setDeptoNombre] = useState('');
   const [municipioNombre, setMunicipioNombre] = useState('');
   const depto = useMemo(
@@ -104,7 +147,7 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
     return props.cuentasCobro.filter((c) => c.sucursalId === empresa.sucursalId);
   }, [empresa, props.cuentasCobro]);
 
-  // Niveles permitidos (si la empresa declaró; si no, todos)
+  // Niveles permitidos
   const nivelesPermitidos = useMemo(() => {
     if (!empresa || empresa.niveles.length === 0) return NIVELES;
     return NIVELES.filter((n) => empresa.niveles.includes(n));
@@ -116,21 +159,25 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
     return props.tipos.filter((t) => empresa.tiposIds.includes(t.id));
   }, [empresa, props.tipos]);
 
-  // Subtipos permitidos (si la empresa restringe)
+  // Subtipos visibles
   const subtiposVisibles = useMemo(() => {
     if (!tipo) return [];
     if (!empresa || empresa.subtiposIds.length === 0) return tipo.subtipos;
     return tipo.subtipos.filter((s) => empresa.subtiposIds.includes(s.id));
   }, [tipo, empresa]);
 
-  // Éxito → llamar onSuccess (para cerrar modal)
+  // Entidades visibles según plan — si no hay plan, todas visibles
+  const showEps = !plan || plan.incluyeEps;
+  const showAfp = !plan || plan.incluyeAfp;
+  const showCcf = !plan || plan.incluyeCcf;
+
   useEffect(() => {
     if (state.ok) props.onSuccess?.();
   }, [state.ok, props]);
 
   return (
     <form action={action} className="space-y-4">
-      {/* Identificación */}
+      {/* Identificación cotizante */}
       <section className={sectionCls}>
         <h3 className={sectionTitle}>Identificación del cotizante</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
@@ -223,8 +270,6 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
             <Label htmlFor="direccion">Dirección</Label>
             <Input id="direccion" name="direccion" className="mt-1" />
           </div>
-
-          {/* Departamento + Municipio con datalist (filtro por texto) */}
           <div>
             <Label htmlFor="departamentoNombre">Departamento</Label>
             <input
@@ -233,15 +278,13 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
               value={deptoNombre}
               onChange={(e) => {
                 setDeptoNombre(e.target.value);
-                setMunicipioNombre(''); // reset municipio
+                setMunicipioNombre('');
               }}
               placeholder="Escribe o selecciona..."
               className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
             />
             <datalist id="depto-list">
-              {props.departamentos.map((d) => (
-                <option key={d.id} value={d.nombre} />
-              ))}
+              {props.departamentos.map((d) => <option key={d.id} value={d.nombre} />)}
             </datalist>
             <input type="hidden" name="departamentoId" value={depto?.id ?? ''} />
           </div>
@@ -268,6 +311,29 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
       <section className={sectionCls}>
         <h3 className={sectionTitle}>Afiliación</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          {/* Actividad económica — va primero y filtra empresas */}
+          <div className="sm:col-span-2">
+            <Label htmlFor="actividadEconomicaId">Actividad económica (CIIU)</Label>
+            <select
+              id="actividadEconomicaId"
+              name="actividadEconomicaId"
+              value={actividadId}
+              onChange={(e) => setActividadId(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">— Todas —</option>
+              {props.actividades.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.codigoCiiu} — {a.descripcion}
+                </option>
+              ))}
+            </select>
+            {actividad && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                Filtra empresas que tienen esta actividad permitida
+              </p>
+            )}
+          </div>
           <div className="sm:col-span-2">
             <Label htmlFor="empresaId">Empresa planilla</Label>
             <select
@@ -277,18 +343,24 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
               value={empresaId}
               onChange={(e) => {
                 setEmpresaId(e.target.value);
-                setTipoId(''); // reset tipo
+                setTipoId('');
               }}
               className={selectClass}
             >
               <option value="">— Seleccionar —</option>
-              {props.empresas.map((e) => (
+              {empresasFiltered.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.nit} — {e.nombre}
                 </option>
               ))}
             </select>
+            {actividad && empresasFiltered.length === 0 && (
+              <p className="mt-1 text-[10px] text-amber-700">
+                Ninguna empresa tiene esta actividad permitida
+              </p>
+            )}
           </div>
+
           <div className="sm:col-span-2">
             <Label htmlFor="cuentaCobroId">Empresa CC (opcional)</Label>
             <select
@@ -305,6 +377,36 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="planSgssId">Plan SGSS</Label>
+            <select
+              id="planSgssId"
+              name="planSgssId"
+              value={planId}
+              onChange={(e) => setPlanId(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">— Sin plan (todas las entidades visibles) —</option>
+              {props.planes.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.codigo} — {p.nombre}
+                </option>
+              ))}
+            </select>
+            {plan && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                Incluye:{' '}
+                {[
+                  plan.incluyeEps && 'EPS',
+                  plan.incluyeAfp && 'AFP',
+                  plan.incluyeArl && 'ARL',
+                  plan.incluyeCcf && 'CCF',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
           </div>
 
           <div>
@@ -349,6 +451,7 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
               name="nivelRiesgo"
               required
               defaultValue={nivelesPermitidos[0] ?? 'I'}
+              key={empresaId /* remonta al cambiar empresa para resetear default */}
               className={selectClass}
             >
               {nivelesPermitidos.map((n) => (
@@ -357,11 +460,33 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
                 </option>
               ))}
             </select>
-            {empresa && empresa.niveles.length > 0 && (
-              <p className="mt-1 text-[10px] text-slate-400">
-                Solo niveles permitidos de la empresa
-              </p>
-            )}
+          </div>
+          <div>
+            <Label htmlFor="regimen">Régimen</Label>
+            <select
+              id="regimen"
+              name="regimen"
+              required
+              defaultValue="ORDINARIO"
+              className={selectClass}
+            >
+              <option value="ORDINARIO">Ordinario</option>
+              <option value="RESOLUCION">Resolución</option>
+            </select>
+          </div>
+
+          <div>
+            <Label htmlFor="estado">Estado</Label>
+            <select
+              id="estado"
+              name="estado"
+              required
+              defaultValue="ACTIVA"
+              className={selectClass}
+            >
+              <option value="ACTIVA">Activa</option>
+              <option value="INACTIVA">Inactiva</option>
+            </select>
           </div>
           <div>
             <Label htmlFor="fechaIngreso">Fecha de ingreso</Label>
@@ -373,7 +498,6 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
               className="mt-1"
             />
           </div>
-
           <div>
             <Label htmlFor="salario">Salario (COP)</Label>
             <Input
@@ -391,18 +515,19 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
             </p>
           </div>
           <div>
-            <Label htmlFor="valorAdministracion">Valor administración (opcional)</Label>
+            <Label htmlFor="valorAdministracion">Valor administración</Label>
             <Input
               id="valorAdministracion"
               name="valorAdministracion"
               type="number"
               step="1"
               min="0"
+              placeholder="Opcional"
               className="mt-1"
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-4">
             <Label htmlFor="asesorComercialId">Asesor comercial</Label>
             <select
               id="asesorComercialId"
@@ -421,44 +546,86 @@ export function NuevaAfiliacionForm(props: NuevaAfiliacionFormProps) {
         </div>
       </section>
 
-      {/* Entidades SGSS */}
+      {/* Entidades SGSS — visibles según plan */}
       <section className={sectionCls}>
-        <h3 className={sectionTitle}>Entidades SGSS</h3>
+        <h3 className={sectionTitle}>
+          Entidades SGSS{' '}
+          {plan && (
+            <span className="ml-1 text-xs font-normal text-slate-500">
+              (según plan {plan.codigo})
+            </span>
+          )}
+        </h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <Label htmlFor="epsId">EPS</Label>
-            <select id="epsId" name="epsId" defaultValue="" className={selectClass}>
-              <option value="">— Ninguna —</option>
-              {props.eps.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.codigo} — {e.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="afpId">AFP</Label>
-            <select id="afpId" name="afpId" defaultValue="" className={selectClass}>
-              <option value="">— Ninguna —</option>
-              {props.afp.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.codigo} — {a.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="ccfId">Caja Compensación</Label>
-            <select id="ccfId" name="ccfId" defaultValue="" className={selectClass}>
-              <option value="">— Ninguna —</option>
-              {props.ccf.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.codigo} — {c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          {showEps && (
+            <div>
+              <Label htmlFor="epsId">
+                EPS {plan?.incluyeEps && <span className="text-red-600">*</span>}
+              </Label>
+              <select
+                id="epsId"
+                name="epsId"
+                defaultValue=""
+                required={!!plan?.incluyeEps}
+                className={selectClass}
+              >
+                <option value="">— Ninguna —</option>
+                {props.eps.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.codigo} — {e.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {showAfp && (
+            <div>
+              <Label htmlFor="afpId">
+                AFP {plan?.incluyeAfp && <span className="text-red-600">*</span>}
+              </Label>
+              <select
+                id="afpId"
+                name="afpId"
+                defaultValue=""
+                required={!!plan?.incluyeAfp}
+                className={selectClass}
+              >
+                <option value="">— Ninguna —</option>
+                {props.afp.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.codigo} — {a.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {showCcf && (
+            <div>
+              <Label htmlFor="ccfId">
+                Caja Compensación {plan?.incluyeCcf && <span className="text-red-600">*</span>}
+              </Label>
+              <select
+                id="ccfId"
+                name="ccfId"
+                defaultValue=""
+                required={!!plan?.incluyeCcf}
+                className={selectClass}
+              >
+                <option value="">— Ninguna —</option>
+                {props.ccf.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.codigo} — {c.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+        {plan?.incluyeArl && (
+          <p className="mt-3 text-xs text-slate-500">
+            <strong>ARL:</strong> se toma de la ARL configurada en la empresa planilla seleccionada.
+          </p>
+        )}
       </section>
 
       {/* Servicios adicionales */}

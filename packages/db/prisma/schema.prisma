@@ -59,6 +59,11 @@ enum EstadoAfiliacion {
   INACTIVA
 }
 
+enum Regimen {
+  ORDINARIO
+  RESOLUCION
+}
+
 // Permisos granulares: qué puede hacer cada rol en cada módulo.
 // Presencia en la tabla = permitido. Ausencia = denegado.
 // ADMIN implícitamente tiene todos los permisos (se saltea esta tabla).
@@ -272,8 +277,30 @@ model ActividadEconomica {
 
   empresasPermitidas EmpresaActividad[]
   cargos             Cargo[]
+  afiliaciones       Afiliacion[]
 
   @@map("actividades_economicas")
+}
+
+// Plan SGSS — combinación de entidades que un cotizante puede tener
+// en una afiliación (p.ej. "EPS + ARL", "EPS + AFP + ARL"). El plan
+// determina qué campos de entidades son requeridos/visibles en el form.
+model PlanSgss {
+  id          String   @id @default(cuid())
+  codigo      String   @unique
+  nombre      String
+  descripcion String?
+  incluyeEps  Boolean  @default(false)
+  incluyeAfp  Boolean  @default(false)
+  incluyeArl  Boolean  @default(false)
+  incluyeCcf  Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  afiliaciones Afiliacion[]
+
+  @@map("planes_sgss")
 }
 
 // Formato del comprobante de pago — uno por sucursal (aliado).
@@ -453,20 +480,23 @@ model Cotizante {
 
 // Afiliación — liga un cotizante a una empresa con su plan (tipo/subtipo/nivel/salario).
 model Afiliacion {
-  id                  String           @id @default(cuid())
-  cotizanteId         String
-  empresaId           String
-  cuentaCobroId       String?
-  asesorComercialId   String?
-  tipoCotizanteId     String
-  subtipoId           String?
-  nivelRiesgo         NivelRiesgo
-  salario             Decimal          @db.Decimal(12, 2)
-  valorAdministracion Decimal?         @db.Decimal(12, 2)
-  fechaIngreso        DateTime
-  fechaRetiro         DateTime?
-  estado              EstadoAfiliacion @default(ACTIVA)
-  comentarios         String?
+  id                   String           @id @default(cuid())
+  cotizanteId          String
+  empresaId            String
+  cuentaCobroId        String?
+  asesorComercialId    String?
+  planSgssId           String?
+  actividadEconomicaId String?
+  tipoCotizanteId      String
+  subtipoId            String?
+  nivelRiesgo          NivelRiesgo
+  regimen              Regimen          @default(ORDINARIO)
+  salario              Decimal          @db.Decimal(12, 2)
+  valorAdministracion  Decimal?         @db.Decimal(12, 2)
+  fechaIngreso         DateTime
+  fechaRetiro          DateTime?
+  estado               EstadoAfiliacion @default(ACTIVA)
+  comentarios          String?
 
   // Entidades SGSS asignadas (EntidadSgss filtrada por tipo)
   epsId String?
@@ -476,21 +506,24 @@ model Afiliacion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  cotizante       Cotizante        @relation(fields: [cotizanteId], references: [id], onDelete: Cascade)
-  empresa         Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  cuentaCobro     CuentaCobro?     @relation(fields: [cuentaCobroId], references: [id], onDelete: SetNull)
-  asesorComercial AsesorComercial? @relation(fields: [asesorComercialId], references: [id], onDelete: SetNull)
-  tipoCotizante   TipoCotizante    @relation(fields: [tipoCotizanteId], references: [id], onDelete: Restrict)
-  subtipo         Subtipo?         @relation(fields: [subtipoId], references: [id], onDelete: SetNull)
-  eps             EntidadSgss?     @relation("AfilEps", fields: [epsId], references: [id], onDelete: SetNull)
-  afp             EntidadSgss?     @relation("AfilAfp", fields: [afpId], references: [id], onDelete: SetNull)
-  ccf             EntidadSgss?     @relation("AfilCcf", fields: [ccfId], references: [id], onDelete: SetNull)
+  cotizante          Cotizante           @relation(fields: [cotizanteId], references: [id], onDelete: Cascade)
+  empresa            Empresa             @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  cuentaCobro        CuentaCobro?        @relation(fields: [cuentaCobroId], references: [id], onDelete: SetNull)
+  asesorComercial    AsesorComercial?    @relation(fields: [asesorComercialId], references: [id], onDelete: SetNull)
+  planSgss           PlanSgss?           @relation(fields: [planSgssId], references: [id], onDelete: SetNull)
+  actividadEconomica ActividadEconomica? @relation(fields: [actividadEconomicaId], references: [id], onDelete: SetNull)
+  tipoCotizante      TipoCotizante       @relation(fields: [tipoCotizanteId], references: [id], onDelete: Restrict)
+  subtipo            Subtipo?            @relation(fields: [subtipoId], references: [id], onDelete: SetNull)
+  eps                EntidadSgss?        @relation("AfilEps", fields: [epsId], references: [id], onDelete: SetNull)
+  afp                EntidadSgss?        @relation("AfilAfp", fields: [afpId], references: [id], onDelete: SetNull)
+  ccf                EntidadSgss?        @relation("AfilCcf", fields: [ccfId], references: [id], onDelete: SetNull)
 
   serviciosAdicionales AfiliacionServicio[]
 
   @@index([cotizanteId])
   @@index([empresaId])
   @@index([estado])
+  @@index([actividadEconomicaId])
   @@map("afiliaciones")
 }
 

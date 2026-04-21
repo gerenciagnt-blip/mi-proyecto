@@ -9,6 +9,7 @@ import {
   Sparkles,
   FileSignature,
   DollarSign,
+  Layers3,
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
@@ -50,6 +51,7 @@ export default async function CatalogosPage() {
     prisma.sucursal.count(),
   ]);
 
+  const planesCount = await prisma.planSgss.count();
   const smlvConfig = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
   const copFmt = new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -122,6 +124,13 @@ export default async function CatalogosPage() {
       icon: FileSignature,
       desc: 'Logo y plantilla personalizados por aliado',
       sub: `${comprobantes}/${sucursalesCount} sucursales configuradas`,
+    },
+    {
+      href: '/admin/catalogos/planes',
+      label: 'Planes SGSS',
+      count: planesCount,
+      icon: Layers3,
+      desc: 'Combinaciones EPS/AFP/ARL/CCF que definen un plan',
     },
     {
       href: '/admin/catalogos/smlv',
