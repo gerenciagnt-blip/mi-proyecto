@@ -64,6 +64,14 @@ enum Regimen {
   RESOLUCION
 }
 
+// Modalidad de afiliación — discrimina el flujo de independientes vs dependientes.
+// Se guarda tanto en el catálogo (TipoCotizante) como en la afiliación para
+// filtrado rápido y reglas de validación específicas por rama.
+enum Modalidad {
+  DEPENDIENTE
+  INDEPENDIENTE
+}
+
 // Bitácora transversal — registra cambios sobre entidades del sistema.
 // Patrón simple: guardamos antes/después como JSON para auditoría.
 model AuditLog {
@@ -435,6 +443,7 @@ model TipoCotizante {
   id        String    @id @default(cuid())
   codigo    String    @unique
   nombre    String
+  modalidad Modalidad @default(DEPENDIENTE)
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -508,10 +517,11 @@ model Afiliacion {
   actividadEconomicaId String?
   tipoCotizanteId      String
   subtipoId            String?
+  modalidad            Modalidad        @default(DEPENDIENTE)
   nivelRiesgo          NivelRiesgo
   regimen              Regimen          @default(ORDINARIO)
   salario              Decimal          @db.Decimal(12, 2)
-  valorAdministracion  Decimal?         @db.Decimal(12, 2)
+  valorAdministracion  Decimal          @db.Decimal(12, 2)
   fechaIngreso         DateTime
   fechaRetiro          DateTime?
   estado               EstadoAfiliacion @default(ACTIVA)
@@ -542,6 +552,7 @@ model Afiliacion {
   @@index([cotizanteId])
   @@index([empresaId])
   @@index([estado])
+  @@index([modalidad])
   @@index([actividadEconomicaId])
   @@map("afiliaciones")
 }

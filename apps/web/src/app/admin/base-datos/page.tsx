@@ -3,41 +3,15 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
-import { NuevaAfiliacionDialog } from './nueva-afiliacion-dialog';
-import { toggleEstadoAfiliacionAction } from './actions';
+import { NuevaAfiliacionButton } from './afiliacion-dialog';
+import { AfiliacionesTable, type AfiliacionRow } from './afiliaciones-table';
 
 export const metadata = { title: 'Base de datos — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-const DOC_LABELS: Record<string, string> = {
-  CC: 'CC',
-  CE: 'CE',
-  NIT: 'NIT',
-  PAS: 'PAS',
-  TI: 'TI',
-  RC: 'RC',
-  NIP: 'NIP',
-};
-
-const copFmt = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
-function fullName(c: {
-  primerNombre: string;
-  segundoNombre: string | null;
-  primerApellido: string;
-  segundoApellido: string | null;
-}) {
-  return [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
-    .filter(Boolean)
-    .join(' ');
-}
-
 type SP = {
   estado?: string;
+  modalidad?: string;
   q?: string;
 };
 
@@ -45,9 +19,15 @@ function buildHref(current: SP, patch: Partial<SP>) {
   const params = new URLSearchParams();
   const merged = { ...current, ...patch };
   if (merged.estado) params.set('estado', merged.estado);
+  if (merged.modalidad) params.set('modalidad', merged.modalidad);
   if (merged.q) params.set('q', merged.q);
   const s = params.toString();
   return `/admin/base-datos${s ? '?' + s : ''}`;
+}
+
+function dateInput(d: Date | null | undefined) {
+  if (!d) return '';
+  return d.toISOString().slice(0, 10);
 }
 
 export default async function BaseDatosPage({
@@ -58,11 +38,15 @@ export default async function BaseDatosPage({
   const sp = await searchParams;
   const estadoFilter =
     sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
+  const modalidadFilter =
+    sp.modalidad === 'DEPENDIENTE' || sp.modalidad === 'INDEPENDIENTE'
+      ? sp.modalidad
+      : undefined;
   const q = sp.q?.trim() ?? '';
 
-  // Where clause para afiliaciones
   const whereAfiliaciones: Prisma.AfiliacionWhereInput = {};
   if (estadoFilter) whereAfiliaciones.estado = estadoFilter;
+  if (modalidadFilter) whereAfiliaciones.modalidad = modalidadFilter;
   if (q) {
     whereAfiliaciones.cotizante = {
       OR: [
@@ -99,6 +83,7 @@ export default async function BaseDatosPage({
         cotizante: true,
         empresa: { select: { nit: true, nombre: true } },
         tipoCotizante: { select: { codigo: true, nombre: true } },
+        serviciosAdicionales: { select: { servicioAdicionalId: true } },
       },
     }),
     prisma.afiliacion.count({ where: { estado: 'ACTIVA' } }),
@@ -187,12 +172,96 @@ export default async function BaseDatosPage({
     actividadesIds: e.actividadesPermitidas.map((a) => a.actividadEconomicaId),
   }));
 
-  const eps = entidades.filter((e) => e.tipo === 'EPS');
-  const afp = entidades.filter((e) => e.tipo === 'AFP');
-  const ccf = entidades.filter((e) => e.tipo === 'CCF');
+  const tiposOpts = tiposCotizante.map((t) => ({
+    id: t.id,
+    codigo: t.codigo,
+    nombre: t.nombre,
+    modalidad: t.modalidad,
+    subtipos: t.subtipos,
+  }));
+
+  const eps = entidades
+    .filter((e) => e.tipo === 'EPS')
+    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+  const afp = entidades
+    .filter((e) => e.tipo === 'AFP')
+    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+  const ccf = entidades
+    .filter((e) => e.tipo === 'CCF')
+    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+
+  const serviciosOpts = servicios.map((s) => ({
+    id: s.id,
+    codigo: s.codigo,
+    nombre: s.nombre,
+    precio: Number(s.precio),
+  }));
+
+  const departamentosOpts = departamentos.map((d) => ({
+    id: d.id,
+    nombre: d.nombre,
+    municipios: d.municipios,
+  }));
 
   const smlv = smlvConfig ? Number(smlvConfig.valor) : 0;
   const totalCount = activasCount + inactivasCount;
+
+  // Catálogos compartidos (se pasan al trigger create y al modal edit/view)
+  const catalogos = {
+    empresas: empresaOpts,
+    tipos: tiposOpts,
+    departamentos: departamentosOpts,
+    actividades,
+    planes,
+    eps,
+    afp,
+    ccf,
+    cuentasCobro,
+    asesores,
+    servicios: serviciosOpts,
+    smlv,
+  };
+
+  // Filas de la tabla (con initial completo para rehidratar el modal)
+  const rows: AfiliacionRow[] = afiliaciones.map((a) => ({
+    id: a.id,
+    modalidad: a.modalidad,
+    estado: a.estado,
+    nivelRiesgo: a.nivelRiesgo,
+    salario: Number(a.salario),
+    fechaIngreso: dateInput(a.fechaIngreso),
+    cotizante: {
+      tipoDocumento: a.cotizante.tipoDocumento,
+      numeroDocumento: a.cotizante.numeroDocumento,
+      primerNombre: a.cotizante.primerNombre,
+      segundoNombre: a.cotizante.segundoNombre,
+      primerApellido: a.cotizante.primerApellido,
+      segundoApellido: a.cotizante.segundoApellido,
+    },
+    empresa: a.empresa,
+    tipoCotizante: a.tipoCotizante,
+    initial: {
+      modalidad: a.modalidad,
+      empresaId: a.empresaId,
+      cuentaCobroId: a.cuentaCobroId,
+      asesorComercialId: a.asesorComercialId,
+      planSgssId: a.planSgssId,
+      actividadEconomicaId: a.actividadEconomicaId,
+      tipoCotizanteId: a.tipoCotizanteId,
+      subtipoId: a.subtipoId,
+      nivelRiesgo: a.nivelRiesgo,
+      regimen: a.regimen,
+      estado: a.estado,
+      salario: Number(a.salario),
+      valorAdministracion: Number(a.valorAdministracion),
+      fechaIngreso: dateInput(a.fechaIngreso),
+      comentarios: a.comentarios,
+      epsId: a.epsId,
+      afpId: a.afpId,
+      ccfId: a.ccfId,
+      serviciosIds: a.serviciosAdicionales.map((s) => s.servicioAdicionalId),
+    },
+  }));
 
   const tabs = [
     { label: 'Todas', count: totalCount, href: buildHref(sp, { estado: undefined }) },
@@ -211,6 +280,17 @@ export default async function BaseDatosPage({
   ];
   const todasActive = !estadoFilter;
 
+  const modalidadChips: { label: string; value: SP['modalidad']; active: boolean }[] = [
+    { label: 'Todas', value: undefined, active: !modalidadFilter },
+    { label: 'Dependientes', value: 'DEPENDIENTE', active: modalidadFilter === 'DEPENDIENTE' },
+    { label: 'Independientes', value: 'INDEPENDIENTE', active: modalidadFilter === 'INDEPENDIENTE' },
+  ];
+
+  const emptyMessage =
+    q || estadoFilter || modalidadFilter
+      ? 'Sin resultados con los filtros actuales'
+      : 'Aún no hay afiliaciones — crea la primera con los botones de arriba.';
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -222,34 +302,14 @@ export default async function BaseDatosPage({
             Cotizantes afiliados a las empresas de la plataforma.
           </p>
         </div>
-        <NuevaAfiliacionDialog
-          empresas={empresaOpts}
-          actividades={actividades}
-          planes={planes}
-          tipos={tiposCotizante.map((t) => ({
-            id: t.id,
-            codigo: t.codigo,
-            nombre: t.nombre,
-            subtipos: t.subtipos,
-          }))}
-          departamentos={departamentos.map((d) => ({
-            id: d.id,
-            nombre: d.nombre,
-            municipios: d.municipios,
-          }))}
-          eps={eps.map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }))}
-          afp={afp.map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }))}
-          ccf={ccf.map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }))}
-          cuentasCobro={cuentasCobro}
-          asesores={asesores}
-          servicios={servicios.map((s) => ({
-            id: s.id,
-            codigo: s.codigo,
-            nombre: s.nombre,
-            precio: Number(s.precio),
-          }))}
-          smlv={smlv}
-        />
+        <div className="flex flex-wrap gap-2">
+          <NuevaAfiliacionButton modalidad="DEPENDIENTE" {...catalogos} />
+          <NuevaAfiliacionButton
+            modalidad="INDEPENDIENTE"
+            variant="secondary"
+            {...catalogos}
+          />
+        </div>
       </header>
 
       {/* Stat cards */}
@@ -278,32 +338,57 @@ export default async function BaseDatosPage({
         </div>
       </div>
 
-      {/* Tabla con tabs + search */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Tabs */}
-            <div className="flex gap-1">
-              {tabs.map((t, i) => (
-                <Link
-                  key={t.label}
-                  href={t.href}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                    (i === 0 ? todasActive : t.active)
-                      ? 'bg-brand-blue/10 text-brand-blue-dark'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-                  )}
-                >
-                  {t.label}{' '}
-                  <span className="ml-1 text-xs text-slate-400">({t.count})</span>
-                </Link>
-              ))}
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Tabs estado */}
+              <div className="flex gap-1">
+                {tabs.map((t, i) => (
+                  <Link
+                    key={t.label}
+                    href={t.href}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                      (i === 0 ? todasActive : t.active)
+                        ? 'bg-brand-blue/10 text-brand-blue-dark'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    )}
+                  >
+                    {t.label}{' '}
+                    <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+                  </Link>
+                ))}
+              </div>
+
+              {/* Chips modalidad */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                  Modalidad
+                </span>
+                {modalidadChips.map((m) => (
+                  <Link
+                    key={m.label}
+                    href={buildHref(sp, { modalidad: m.value })}
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition',
+                      m.active
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-100',
+                    )}
+                  >
+                    {m.label}
+                  </Link>
+                ))}
+              </div>
             </div>
 
             {/* Search form (GET) */}
             <form method="GET" action="/admin/base-datos" className="flex items-center gap-2">
               {estadoFilter && <input type="hidden" name="estado" value={estadoFilter} />}
+              {modalidadFilter && (
+                <input type="hidden" name="modalidad" value={modalidadFilter} />
+              )}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
@@ -326,88 +411,7 @@ export default async function BaseDatosPage({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-2">Documento</th>
-                <th className="px-4 py-2">Nombre</th>
-                <th className="px-4 py-2">Empresa</th>
-                <th className="px-4 py-2">Tipo</th>
-                <th className="px-4 py-2">Nivel</th>
-                <th className="px-4 py-2 text-right">Salario</th>
-                <th className="px-4 py-2">Ingreso</th>
-                <th className="px-4 py-2">Estado</th>
-                <th className="px-4 py-2"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {afiliaciones.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
-                    {q || estadoFilter
-                      ? 'Sin resultados con los filtros actuales'
-                      : 'Aún no hay afiliaciones — crea la primera con el botón de arriba.'}
-                  </td>
-                </tr>
-              )}
-              {afiliaciones.map((a) => (
-                <tr key={a.id}>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {DOC_LABELS[a.cotizante.tipoDocumento] ?? a.cotizante.tipoDocumento}{' '}
-                    {a.cotizante.numeroDocumento}
-                  </td>
-                  <td className="px-4 py-3">{fullName(a.cotizante)}</td>
-                  <td className="px-4 py-3">
-                    <p className="text-xs text-slate-500">{a.empresa.nit}</p>
-                    <p>{a.empresa.nombre}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    <span className="font-mono text-slate-500">{a.tipoCotizante.codigo}</span>
-                    <span className="ml-2">{a.tipoCotizante.nombre}</span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{a.nivelRiesgo}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs">
-                    {copFmt.format(Number(a.salario))}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {a.fechaIngreso.toISOString().slice(0, 10)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        a.estado === 'ACTIVA'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {a.estado}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-3">
-                      <Link
-                        href={`/admin/base-datos/${a.id}`}
-                        className="text-xs font-medium text-brand-blue hover:text-brand-blue-dark"
-                      >
-                        Editar
-                      </Link>
-                      <form action={toggleEstadoAfiliacionAction.bind(null, a.id)}>
-                        <button
-                          type="submit"
-                          className="text-xs font-medium text-slate-500 hover:text-slate-900"
-                          title={a.estado === 'ACTIVA' ? 'Inactivar' : 'Activar'}
-                        >
-                          {a.estado === 'ACTIVA' ? 'Inactivar' : 'Activar'}
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AfiliacionesTable rows={rows} emptyMessage={emptyMessage} catalogos={catalogos} />
       </section>
     </div>
   );

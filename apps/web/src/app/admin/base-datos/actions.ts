@@ -35,6 +35,7 @@ function parseCotizante(fd: FormData) {
 function parseAfiliacion(fd: FormData) {
   const g = (k: string) => String(fd.get(k) ?? '').trim();
   return {
+    modalidad: g('modalidad') || 'DEPENDIENTE',
     empresaId: g('empresaId'),
     cuentaCobroId: g('cuentaCobroId'),
     asesorComercialId: g('asesorComercialId'),
@@ -58,6 +59,7 @@ function parseAfiliacion(fd: FormData) {
 // ============ Validación cruzada ============
 
 async function validateAfiliacion(data: {
+  modalidad: string;
   empresaId: string;
   nivelRiesgo: string;
   tipoCotizanteId: string;
@@ -72,6 +74,16 @@ async function validateAfiliacion(data: {
   const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
   if (smlv && data.salario < Number(smlv.valor)) {
     return `Salario (${data.salario}) debe ser mayor o igual al SMLV (${Number(smlv.valor)})`;
+  }
+
+  // El tipo de cotizante debe coincidir con la modalidad elegida.
+  const tipo = await prisma.tipoCotizante.findUnique({
+    where: { id: data.tipoCotizanteId },
+    select: { modalidad: true, nombre: true },
+  });
+  if (!tipo) return 'Tipo de cotizante no existe';
+  if (tipo.modalidad !== data.modalidad) {
+    return `El tipo "${tipo.nombre}" no corresponde a la modalidad ${data.modalidad.toLowerCase()}`;
   }
 
   const empresa = await prisma.empresa.findUnique({
@@ -195,6 +207,7 @@ export async function createAfiliacionAction(
       const af = await tx.afiliacion.create({
         data: {
           cotizanteId: cotizante.id,
+          modalidad: afParsed.data.modalidad,
           empresaId: afParsed.data.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
           asesorComercialId: afParsed.data.asesorComercialId,
@@ -276,6 +289,7 @@ export async function updateAfiliacionAction(
       await tx.afiliacion.update({
         where: { id: afiliacionId },
         data: {
+          modalidad: afParsed.data.modalidad,
           empresaId: afParsed.data.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
           asesorComercialId: afParsed.data.asesorComercialId,
@@ -320,7 +334,6 @@ export async function updateAfiliacionAction(
   }
 
   revalidatePath('/admin/base-datos');
-  revalidatePath(`/admin/base-datos/${afiliacionId}`);
   return { ok: true };
 }
 
@@ -349,5 +362,4 @@ export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
   });
 
   revalidatePath('/admin/base-datos');
-  revalidatePath(`/admin/base-datos/${afiliacionId}`);
 }

@@ -228,6 +228,7 @@ const idOrNull = z
   .nullable();
 
 export const RegimenEnum = z.enum(['ORDINARIO', 'RESOLUCION']);
+export const ModalidadEnum = z.enum(['DEPENDIENTE', 'INDEPENDIENTE']);
 
 export const PlanSgssSchema = z.object({
   codigo: z.string().trim().min(1, 'Requerido').max(30),
@@ -240,6 +241,7 @@ export const PlanSgssSchema = z.object({
 });
 
 export const AfiliacionSchema = z.object({
+  modalidad: ModalidadEnum,
   empresaId: z.string().trim().min(1, 'Empresa requerida'),
   cuentaCobroId: idOrNull,
   asesorComercialId: idOrNull,
@@ -251,11 +253,9 @@ export const AfiliacionSchema = z.object({
   regimen: RegimenEnum,
   estado: EstadoAfiliacionEnum,
   salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
-  valorAdministracion: z
-    .string()
-    .optional()
-    .transform((v) => (v && v !== '' ? Number(v) : null))
-    .nullable(),
+  valorAdministracion: z.coerce
+    .number({ message: 'Valor administración requerido' })
+    .min(0, 'No puede ser negativo'),
   fechaIngreso: z.coerce.date({ message: 'Fecha inválida' }),
   comentarios: optional,
   epsId: idOrNull,
