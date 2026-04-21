@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { AdminNav } from '@/components/admin/admin-nav';
@@ -30,13 +31,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Panel de administración
           </p>
           <div className="flex items-center gap-3">
-            <div className="text-right leading-tight">
-              <p className="text-sm font-medium text-slate-900">{session.user.name}</p>
-              <p className="text-[11px] text-slate-500">
-                {ROLE_LABELS[session.user.role] ?? session.user.role}
-              </p>
-            </div>
-            <Avatar name={session.user.name} />
+            <Link
+              href="/admin/perfil"
+              title="Ver mi perfil"
+              className="flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-slate-50"
+            >
+              <div className="hidden text-right leading-tight sm:block">
+                <p className="text-sm font-medium text-slate-900">{session.user.name}</p>
+                <p className="text-[11px] text-slate-500">
+                  {ROLE_LABELS[session.user.role] ?? session.user.role}
+                </p>
+              </div>
+              <Avatar name={session.user.name} />
+            </Link>
             <LogoutButton compact />
           </div>
         </header>

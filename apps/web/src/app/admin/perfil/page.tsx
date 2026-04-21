@@ -1,13 +1,10 @@
-import { redirect } from 'next/navigation';
-import { Mail, Shield, Building } from 'lucide-react';
+import Link from 'next/link';
+import { Mail, Shield, Building, ArrowLeft } from 'lucide-react';
 import { auth } from '@/auth';
-import { PilaLogo } from '@/components/brand/pila-logo';
 import { Avatar } from '@/components/ui/avatar';
-import { LogoutButton } from './logout-button';
 
-export const metadata = {
-  title: 'Dashboard — Sistema PILA',
-};
+export const metadata = { title: 'Mi perfil — Sistema PILA' };
+export const dynamic = 'force-dynamic';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
@@ -15,42 +12,41 @@ const ROLE_LABELS: Record<string, string> = {
   ALIADO_USER: 'Usuario Aliado',
 };
 
-export default async function DashboardPage() {
+export default async function AdminPerfilPage() {
   const session = await auth();
   if (!session?.user) return null;
-
-  // Los admins entran directo a su panel
-  if (session.user.role === 'ADMIN') redirect('/admin');
 
   const { name, email, role, sucursalId } = session.user;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-slate-200 pb-6">
-        <PilaLogo size="sm" />
-        <div className="flex items-center gap-3">
-          <div className="text-right leading-tight">
-            <p className="text-sm font-medium text-slate-900">{name}</p>
-            <p className="text-[11px] text-slate-500">{ROLE_LABELS[role] ?? role}</p>
-          </div>
-          <Avatar name={name} />
-          <LogoutButton compact />
-        </div>
+    <div className="max-w-3xl space-y-6">
+      <header>
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-slate-900"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span>Panel</span>
+        </Link>
+        <h1 className="mt-2 font-heading text-3xl font-bold tracking-tight text-slate-900">
+          Mi perfil
+        </h1>
+        <p className="mt-1 text-sm text-slate-500">Información de tu sesión actual.</p>
       </header>
 
-      {/* Bienvenida */}
-      <section className="mt-8">
-        <h1 className="font-heading text-3xl font-bold tracking-tight text-slate-900">
-          Hola, {name.split(' ')[0]} 👋
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Este es tu panel de Sistema PILA.</p>
+      {/* Identidad */}
+      <section className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <Avatar name={name} size="lg" />
+        <div>
+          <p className="font-heading text-xl font-semibold text-slate-900">{name}</p>
+          <p className="text-sm text-slate-500">{ROLE_LABELS[role] ?? role}</p>
+        </div>
       </section>
 
-      {/* Info de sesión */}
-      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {/* Detalle de sesión */}
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="font-heading text-sm font-semibold uppercase tracking-wider text-slate-500">
-          Tu sesión
+          Detalle
         </h2>
         <dl className="mt-4 grid grid-cols-1 gap-5 text-sm sm:grid-cols-3">
           <div className="flex items-start gap-3">
@@ -64,9 +60,7 @@ export default async function DashboardPage() {
             <Shield className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <div>
               <dt className="text-xs text-slate-500">Rol</dt>
-              <dd className="mt-0.5 font-medium text-slate-900">
-                {ROLE_LABELS[role] ?? role}
-              </dd>
+              <dd className="mt-0.5 font-medium text-slate-900">{ROLE_LABELS[role] ?? role}</dd>
             </div>
           </div>
           <div className="flex items-start gap-3">
@@ -80,7 +74,6 @@ export default async function DashboardPage() {
           </div>
         </dl>
       </section>
-
-    </main>
+    </div>
   );
 }

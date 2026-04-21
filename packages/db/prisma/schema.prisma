@@ -213,8 +213,65 @@ model ActividadEconomica {
   updatedAt   DateTime @updatedAt
 
   empresasPermitidas EmpresaActividad[]
+  cargos             Cargo[]
 
   @@map("actividades_economicas")
+}
+
+// Cargo ocupacional — ligado a una actividad económica
+model Cargo {
+  id                   String   @id @default(cuid())
+  codigo               String   @unique
+  nombre               String
+  actividadEconomicaId String?
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  actividad ActividadEconomica? @relation(fields: [actividadEconomicaId], references: [id], onDelete: SetNull)
+
+  @@index([actividadEconomicaId])
+  @@map("cargos")
+}
+
+// Asesor comercial — se ancla a cotizante para reportería/comisiones
+model AsesorComercial {
+  id        String   @id @default(cuid())
+  codigo    String   @unique
+  nombre    String
+  email     String?
+  telefono  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("asesores_comerciales")
+}
+
+// Medio de pago — usado en cuadre de caja
+model MedioPago {
+  id        String   @id @default(cuid())
+  codigo    String   @unique
+  nombre    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("medios_pago")
+}
+
+// Servicio adicional — cobros extra sobre el servicio base
+model ServicioAdicional {
+  id          String   @id @default(cuid())
+  codigo      String   @unique
+  nombre      String
+  descripcion String?
+  precio      Decimal  @default(0) @db.Decimal(12, 2)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("servicios_adicionales")
 }
 
 model TipoCotizante {

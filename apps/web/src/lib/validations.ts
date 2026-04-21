@@ -132,3 +132,41 @@ export const SubtipoSchema = z.object({
   codigo: z.string().trim().min(1, 'Requerido').max(10),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
 });
+
+// --- Catálogos Fase 1.6.2 ---
+
+const optional = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v === '' ? undefined : v));
+
+export const CargoSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(30),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+  actividadEconomicaId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null))
+    .nullable(),
+});
+
+export const AsesorSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(20),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+  email: optional.pipe(z.string().email('Correo no válido').optional()),
+  telefono: optional,
+});
+
+export const MedioPagoSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(20),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+});
+
+export const ServicioAdicionalSchema = z.object({
+  codigo: z.string().trim().min(1, 'Requerido').max(20),
+  nombre: z.string().trim().min(1, 'Requerido').max(200),
+  descripcion: optional,
+  precio: z.coerce.number().min(0, 'Precio no puede ser negativo').default(0),
+});

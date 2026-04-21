@@ -1,19 +1,47 @@
 import Link from 'next/link';
-import { Building2, Briefcase, UserCheck, Database } from 'lucide-react';
+import {
+  Briefcase,
+  UserCheck,
+  Database,
+  Award,
+  Users2,
+  CreditCard,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
 import { prisma } from '@pila/db';
 
 export const metadata = { title: 'Catálogos — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
+type Card = {
+  href: string;
+  label: string;
+  count: number;
+  icon: LucideIcon;
+  desc: string;
+  sub?: string;
+};
+
 export default async function CatalogosPage() {
-  const [entidadesPorTipo, actividades, tipos, subtipos] = await Promise.all([
-    prisma.entidadSgss.groupBy({
-      by: ['tipo'],
-      _count: true,
-    }),
+  const [
+    entidadesPorTipo,
+    actividades,
+    tipos,
+    subtipos,
+    cargos,
+    asesores,
+    medios,
+    servicios,
+  ] = await Promise.all([
+    prisma.entidadSgss.groupBy({ by: ['tipo'], _count: true }),
     prisma.actividadEconomica.count(),
     prisma.tipoCotizante.count(),
     prisma.subtipo.count(),
+    prisma.cargo.count(),
+    prisma.asesorComercial.count(),
+    prisma.medioPago.count(),
+    prisma.servicioAdicional.count(),
   ]);
 
   const counts = Object.fromEntries(
@@ -22,7 +50,7 @@ export default async function CatalogosPage() {
   const totalEntidades =
     (counts.EPS ?? 0) + (counts.AFP ?? 0) + (counts.ARL ?? 0) + (counts.CCF ?? 0);
 
-  const cards = [
+  const cards: Card[] = [
     {
       href: '/admin/catalogos/entidades?tipo=EPS',
       label: 'Entidades SGSS',
@@ -39,12 +67,40 @@ export default async function CatalogosPage() {
       desc: 'Códigos de actividad económica',
     },
     {
+      href: '/admin/catalogos/cargos',
+      label: 'Cargos',
+      count: cargos,
+      icon: Award,
+      desc: 'Cargos ocupacionales ligados a actividad',
+    },
+    {
       href: '/admin/catalogos/tipos-cotizante',
       label: 'Tipos de cotizante',
       count: tipos,
       icon: UserCheck,
       desc: 'Con sus subtipos anidados',
       sub: subtipos > 0 ? `${subtipos} subtipos` : undefined,
+    },
+    {
+      href: '/admin/catalogos/asesores',
+      label: 'Asesores comerciales',
+      count: asesores,
+      icon: Users2,
+      desc: 'Se anclan al cotizante al crearlo',
+    },
+    {
+      href: '/admin/catalogos/medios-pago',
+      label: 'Medios de pago',
+      count: medios,
+      icon: CreditCard,
+      desc: 'Formas de pago del cuadre de caja',
+    },
+    {
+      href: '/admin/catalogos/servicios',
+      label: 'Servicios adicionales',
+      count: servicios,
+      icon: Sparkles,
+      desc: 'Cobros extra sobre el servicio base',
     },
   ];
 
