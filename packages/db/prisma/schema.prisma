@@ -60,6 +60,34 @@ model Permiso {
   @@map("permisos")
 }
 
+// Roles personalizados creados por el admin — variaciones con
+// permisos específicos. basedOn define el "nivel" base (ALIADO_OWNER
+// / ALIADO_USER).
+model RolCustom {
+  id          String   @id @default(cuid())
+  nombre      String   @unique
+  descripcion String?
+  basedOn     Role // ALIADO_OWNER o ALIADO_USER (ADMIN no se personaliza)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permisos PermisoCustom[]
+
+  @@map("roles_custom")
+}
+
+model PermisoCustom {
+  rolCustomId String
+  modulo      String
+  accion      String
+
+  rolCustom RolCustom @relation(fields: [rolCustomId], references: [id], onDelete: Cascade)
+
+  @@id([rolCustomId, modulo, accion])
+  @@map("permisos_custom")
+}
+
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
   id               String   @id @default(cuid())
