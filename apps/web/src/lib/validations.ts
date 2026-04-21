@@ -205,6 +205,7 @@ export const CotizanteSchema = z.object({
     .min(4, 'Mínimo 4 dígitos')
     .max(20)
     .regex(/^[A-Z0-9]+$/i, 'Sin espacios ni símbolos'),
+  fechaExpedicionDoc: z.coerce.date().nullable().optional(),
   primerNombre: z.string().trim().min(1, 'Requerido').max(100),
   segundoNombre: optional,
   primerApellido: z.string().trim().min(1, 'Requerido').max(100),
@@ -215,8 +216,8 @@ export const CotizanteSchema = z.object({
   celular: optional,
   email: optional.pipe(z.string().email('Correo no válido').optional()),
   direccion: optional,
-  ciudad: optional,
-  departamento: optional,
+  departamentoId: z.string().nullable().optional(),
+  municipioId: z.string().nullable().optional(),
 });
 
 export const AfiliacionSchema = z.object({

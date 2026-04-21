@@ -10,9 +10,11 @@ export type ActionState = { error?: string; ok?: boolean };
 
 function parseCotizante(fd: FormData) {
   const g = (k: string) => String(fd.get(k) ?? '').trim();
+  const emptyNull = (v: string) => (v === '' ? null : v);
   return {
     tipoDocumento: g('tipoDocumento'),
     numeroDocumento: g('numeroDocumento'),
+    fechaExpedicionDoc: emptyNull(g('fechaExpedicionDoc')),
     primerNombre: g('primerNombre'),
     segundoNombre: g('segundoNombre'),
     primerApellido: g('primerApellido'),
@@ -23,8 +25,8 @@ function parseCotizante(fd: FormData) {
     celular: g('celular'),
     email: g('email'),
     direccion: g('direccion'),
-    ciudad: g('ciudad'),
-    departamento: g('departamento'),
+    departamentoId: emptyNull(g('departamentoId')),
+    municipioId: emptyNull(g('municipioId')),
   };
 }
 

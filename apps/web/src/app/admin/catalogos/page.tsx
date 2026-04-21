@@ -8,6 +8,7 @@ import {
   CreditCard,
   Sparkles,
   FileSignature,
+  DollarSign,
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
@@ -48,6 +49,13 @@ export default async function CatalogosPage() {
     prisma.comprobanteFormato.count({ where: { active: true } }),
     prisma.sucursal.count(),
   ]);
+
+  const smlvConfig = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
+  const copFmt = new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  });
 
   const counts = Object.fromEntries(
     entidadesPorTipo.map((r) => [r.tipo, r._count]),
@@ -114,6 +122,14 @@ export default async function CatalogosPage() {
       icon: FileSignature,
       desc: 'Logo y plantilla personalizados por aliado',
       sub: `${comprobantes}/${sucursalesCount} sucursales configuradas`,
+    },
+    {
+      href: '/admin/catalogos/smlv',
+      label: 'SMLV',
+      count: smlvConfig ? 1 : 0,
+      icon: DollarSign,
+      desc: 'Salario mínimo legal vigente (actualiza toda la BD)',
+      sub: smlvConfig ? copFmt.format(Number(smlvConfig.valor)) : 'Sin configurar',
     },
   ];
 
