@@ -9,6 +9,7 @@ import {
   FileSignature,
   DollarSign,
   Layers3,
+  Percent,
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
@@ -49,6 +50,8 @@ export default async function CatalogosPage() {
   ]);
 
   const planesCount = await prisma.planSgss.count();
+  const tarifasCount = await prisma.tarifaSgss.count({ where: { active: true } });
+  const fspCount = await prisma.fspRango.count({ where: { active: true } });
   const smlvConfig = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
   const copFmt = new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -121,6 +124,14 @@ export default async function CatalogosPage() {
       count: planesCount,
       icon: Layers3,
       desc: 'Combinaciones EPS/AFP/ARL/CCF que definen un plan',
+    },
+    {
+      href: '/admin/catalogos/tarifas',
+      label: 'Tarifas SGSS',
+      count: tarifasCount,
+      icon: Percent,
+      desc: 'Porcentajes EPS/AFP/ARL/CCF/SENA/ICBF + FSP',
+      sub: fspCount > 0 ? `${fspCount} rangos FSP activos` : undefined,
     },
     {
       href: '/admin/catalogos/smlv',

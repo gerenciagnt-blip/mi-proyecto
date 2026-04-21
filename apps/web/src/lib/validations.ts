@@ -237,6 +237,54 @@ const idOrNull = z
 export const RegimenEnum = z.enum(['ORDINARIO', 'RESOLUCION']);
 export const ModalidadEnum = z.enum(['DEPENDIENTE', 'INDEPENDIENTE']);
 
+// --- Tarifas SGSS (Fase 2.8) ---
+export const ConceptoTarifaEnum = z.enum([
+  'EPS',
+  'AFP',
+  'ARL',
+  'CCF',
+  'SENA',
+  'ICBF',
+]);
+
+const emptyToNullStr = (v: unknown) =>
+  typeof v === 'string' && v.trim() === '' ? null : v;
+
+const porcentaje = z.coerce
+  .number({ message: 'Porcentaje inválido' })
+  .min(0, 'No puede ser negativo')
+  .max(100, 'No puede superar 100%');
+
+export const TarifaSgssSchema = z.object({
+  concepto: ConceptoTarifaEnum,
+  modalidad: z.preprocess(emptyToNullStr, ModalidadEnum.nullable()),
+  nivelRiesgo: z.preprocess(emptyToNullStr, NivelRiesgoEnum.nullable()),
+  exonera: z.preprocess((v) => {
+    if (v === '' || v == null) return null;
+    if (v === 'true' || v === 'on' || v === true) return true;
+    if (v === 'false' || v === false) return false;
+    return v;
+  }, z.boolean().nullable()),
+  porcentaje,
+  etiqueta: optional,
+  observaciones: optional,
+});
+
+export const FspRangoSchema = z
+  .object({
+    smlvDesde: z.coerce.number().min(0, 'No puede ser negativo'),
+    smlvHasta: z
+      .preprocess(
+        (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+        z.coerce.number().min(0).nullable(),
+      ),
+    porcentaje,
+  })
+  .refine(
+    (v) => v.smlvHasta === null || v.smlvHasta > v.smlvDesde,
+    { message: '"Hasta" debe ser mayor que "Desde"', path: ['smlvHasta'] },
+  );
+
 export const PlanSgssSchema = z.object({
   // Código interno auto-generado (helper `nextPlanSgssCodigo`) — opcional en el schema.
   codigo: z.string().trim().max(30).optional(),

@@ -594,6 +594,49 @@ model SmlvConfig {
   @@map("smlv_config")
 }
 
+// --- Tarifas SGSS (Fase 2.8) ---
+// Catálogo de porcentajes por concepto (EPS/AFP/ARL/CCF/SENA/ICBF) con
+// discriminadores por modalidad, nivel ARL y exoneración (Ley 1607).
+// Una fila representa un porcentaje aplicable en una combinación. El
+// motor de liquidación consulta este catálogo para armar la planilla.
+//
+// `concepto` es string plano (no enum) para poder añadir conceptos
+// nuevos sin migración (ej. FIC, AFC, etc. en el futuro).
+model TarifaSgss {
+  id            String       @id @default(cuid())
+  concepto      String // EPS | AFP | ARL | CCF | SENA | ICBF
+  modalidad     Modalidad? // NULL = aplica a ambas (AFP, ARL)
+  nivelRiesgo   NivelRiesgo? // sólo ARL
+  exonera       Boolean? // NULL = no aplica (ARL/AFP); true/false para EPS/SENA/ICBF en DEPENDIENTE
+  porcentaje    Decimal      @db.Decimal(6, 4) // ej 12.5000 = 12.5%
+  etiqueta      String? // nombre corto mostrado en UI (p. ej. "CCF Independiente 2%")
+  observaciones String?
+  active        Boolean      @default(true)
+  vigenteDesde  DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([concepto])
+  @@index([active])
+  @@map("tarifas_sgss")
+}
+
+// FSP — Fondo de Solidaridad Pensional. Tabla por rangos de SMLV del
+// ingreso base de cotización. smlvHasta NULL = rango sin tope superior.
+model FspRango {
+  id           String   @id @default(cuid())
+  smlvDesde    Decimal  @db.Decimal(6, 2)
+  smlvHasta    Decimal? @db.Decimal(6, 2)
+  porcentaje   Decimal  @db.Decimal(6, 4)
+  active       Boolean  @default(true)
+  vigenteDesde DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([active])
+  @@map("fsp_rangos")
+}
+
 // --- Departamentos y municipios de Colombia (DIVIPOLA) ---
 model Departamento {
   id     String @id @default(cuid())
