@@ -1,45 +1,33 @@
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 /**
- * Logo textual de Sistema PILA según brandbook.
- * Usa Montserrat + gradiente blue → green en "PILA".
- *
- * Cuando exista `apps/web/public/logo.png` usar <PilaLogoImg /> en su lugar.
+ * Logo oficial Sistema PILA (PNG en /public/logo.png).
+ * El PNG ya incluye símbolo + "SISTEMA PILA" + slogan.
  */
 export function PilaLogo({
   size = 'md',
-  showSlogan = true,
   className,
+  priority = false,
 }: {
   size?: 'sm' | 'md' | 'lg';
-  showSlogan?: boolean;
   className?: string;
+  priority?: boolean;
 }) {
-  const sizes = {
-    sm: { title: 'text-xl', slogan: 'text-[10px]', gap: 'gap-0.5' },
-    md: { title: 'text-3xl', slogan: 'text-xs', gap: 'gap-1' },
-    lg: { title: 'text-5xl', slogan: 'text-sm', gap: 'gap-2' },
-  } as const;
-  const s = sizes[size];
+  const widths = { sm: 120, md: 180, lg: 260 } as const;
+  const w = widths[size];
 
   return (
-    <div className={cn('flex flex-col items-center', s.gap, className)}>
-      <h1
-        className={cn(
-          'font-heading font-extrabold tracking-tight leading-none',
-          s.title,
-        )}
-      >
-        <span className="text-brand-gray-dark">SISTEMA </span>
-        <span className="bg-brand-gradient-h bg-clip-text text-transparent">
-          PILA
-        </span>
-      </h1>
-      {showSlogan && (
-        <p className={cn('text-brand-gray-light italic', s.slogan)}>
-          Tu seguridad social a un click
-        </p>
-      )}
+    <div className={cn('flex items-center justify-center', className)}>
+      <Image
+        src="/logo.png"
+        alt="Sistema PILA — Tu seguridad social a un click"
+        width={w}
+        height={Math.round(w * 0.77)}
+        priority={priority}
+        className="h-auto w-auto"
+        style={{ maxWidth: `${w}px` }}
+      />
     </div>
   );
 }

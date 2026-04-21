@@ -17,7 +17,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="mb-8">
-          <PilaLogo size="lg" />
+          <PilaLogo size="lg" priority />
         </div>
 
         {/* Card de login */}
