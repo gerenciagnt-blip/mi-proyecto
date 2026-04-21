@@ -236,6 +236,7 @@ const idOrNull = z
 
 export const RegimenEnum = z.enum(['ORDINARIO', 'RESOLUCION']);
 export const ModalidadEnum = z.enum(['DEPENDIENTE', 'INDEPENDIENTE']);
+export const FormaPagoEnum = z.enum(['VIGENTE', 'VENCIDO']);
 
 // --- Tarifas SGSS (Fase 2.8) ---
 export const ConceptoTarifaEnum = z.enum([
@@ -311,6 +312,10 @@ export const AfiliacionSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
       RegimenEnum.nullable(),
     ),
+    formaPago: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      FormaPagoEnum.nullable(),
+    ),
     estado: EstadoAfiliacionEnum,
     salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
     valorAdministracion: z.coerce
@@ -330,4 +335,8 @@ export const AfiliacionSchema = z
   .refine(
     (v) => v.modalidad !== 'DEPENDIENTE' || !!v.regimen,
     { message: 'Régimen requerido para dependientes', path: ['regimen'] },
+  )
+  .refine(
+    (v) => v.modalidad !== 'INDEPENDIENTE' || !!v.formaPago,
+    { message: 'Forma de pago requerida para independientes', path: ['formaPago'] },
   );

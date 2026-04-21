@@ -22,8 +22,12 @@ type Concepto = {
 export type LiquidacionRow = {
   id: string;
   afiliacionId: string;
+  tipo: 'VINCULACION' | 'MENSUALIDAD';
   estado: 'BORRADOR' | 'REVISADA' | 'PAGADA' | 'ANULADA';
   ibc: number;
+  diasCotizados: number;
+  diaDesde: number | null;
+  diaHasta: number | null;
   totalEmpleador: number;
   totalTrabajador: number;
   totalGeneral: number;
@@ -88,7 +92,9 @@ export function LiquidacionesTable({
             <th className="px-3 py-2">Cotizante</th>
             <th className="px-3 py-2">Empresa</th>
             <th className="px-3 py-2">Modalidad</th>
+            <th className="px-3 py-2">Tipo</th>
             <th className="px-3 py-2 text-right">IBC</th>
+            <th className="px-3 py-2 text-right">Días</th>
             <th className="px-3 py-2 text-right">Empleador</th>
             <th className="px-3 py-2 text-right">Trabajador</th>
             <th className="px-3 py-2 text-right">Total</th>
@@ -185,7 +191,27 @@ function Row({
         </span>
         <span className="ml-2 font-mono text-[10px] text-slate-500">{r.nivelRiesgo}</span>
       </td>
+      <td className="px-3 py-2.5 text-xs">
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+            r.tipo === 'VINCULACION'
+              ? 'bg-violet-50 text-violet-700 ring-violet-200'
+              : 'bg-slate-50 text-slate-600 ring-slate-200',
+          )}
+        >
+          {r.tipo === 'VINCULACION' ? 'Vinculación' : 'Mensualidad'}
+        </span>
+      </td>
       <td className="px-3 py-2.5 text-right font-mono text-xs">{copFmt.format(r.ibc)}</td>
+      <td className="px-3 py-2.5 text-right font-mono text-xs">
+        {r.diasCotizados}
+        {r.diaDesde && r.diaHasta && (
+          <p className="text-[10px] text-slate-400">
+            {String(r.diaDesde).padStart(2, '0')}–{String(r.diaHasta).padStart(2, '0')}
+          </p>
+        )}
+      </td>
       <td className="px-3 py-2.5 text-right font-mono text-xs">
         {copFmt.format(r.totalEmpleador)}
       </td>
@@ -240,7 +266,7 @@ function Row({
 function DetalleRow({ r }: { r: LiquidacionRow }) {
   return (
     <tr className="bg-slate-50/30">
-      <td colSpan={10} className="px-3 py-3">
+      <td colSpan={12} className="px-3 py-3">
         <div className="ml-10">
           <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             Desglose por concepto

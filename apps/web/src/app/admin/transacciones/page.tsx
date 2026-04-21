@@ -54,14 +54,40 @@ export default async function TransaccionesPage({
 }) {
   const sp = await searchParams;
 
-  const periodos = await prisma.periodoContable.findMany({
+  let periodos = await prisma.periodoContable.findMany({
     orderBy: [{ anio: 'desc' }, { mes: 'desc' }],
     include: { _count: { select: { liquidaciones: true } } },
   });
 
-  // Período seleccionado: el del query param, o el más reciente abierto, o el primero
+  // Auto-apertura del período del mes en curso si no existe y hay SMLV
+  // configurado. Esto materializa la regla "período = AAAA-MM actual".
+  const now = new Date();
+  const mesActual = now.getMonth() + 1;
+  const anioActual = now.getFullYear();
+  const existeActual = periodos.some(
+    (p) => p.anio === anioActual && p.mes === mesActual,
+  );
+  if (!existeActual) {
+    const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
+    if (smlv) {
+      await prisma.periodoContable.create({
+        data: { anio: anioActual, mes: mesActual, smlvSnapshot: smlv.valor },
+      });
+      periodos = await prisma.periodoContable.findMany({
+        orderBy: [{ anio: 'desc' }, { mes: 'desc' }],
+        include: { _count: { select: { liquidaciones: true } } },
+      });
+    }
+  }
+
+  // Período seleccionado:
+  //   1. el del query param, o
+  //   2. el del mes en curso, o
+  //   3. el más reciente abierto, o
+  //   4. el primero disponible.
   const periodoActual =
     (sp.periodoId && periodos.find((p) => p.id === sp.periodoId)) ||
+    periodos.find((p) => p.anio === anioActual && p.mes === mesActual) ||
     periodos.find((p) => p.estado === 'ABIERTO') ||
     periodos[0] ||
     null;
@@ -69,7 +95,13 @@ export default async function TransaccionesPage({
   const liquidacionesRaw = periodoActual
     ? await prisma.liquidacion.findMany({
         where: { periodoId: periodoActual.id },
-        orderBy: { createdAt: 'asc' },
+        // VINCULACION primero (usar desc porque 'V' > 'M' alfabéticamente)
+        // para que el admin revise los ingresos nuevos antes de aprobar
+        // el lote; dentro de cada tipo, por apellido del cotizante.
+        orderBy: [
+          { tipo: 'desc' },
+          { afiliacion: { cotizante: { primerApellido: 'asc' } } },
+        ],
         include: {
           conceptos: { orderBy: { concepto: 'asc' } },
           afiliacion: {
@@ -103,8 +135,12 @@ export default async function TransaccionesPage({
   const rows: LiquidacionRow[] = liquidacionesRaw.map((l) => ({
     id: l.id,
     afiliacionId: l.afiliacionId,
+    tipo: l.tipo,
     estado: l.estado,
     ibc: Number(l.ibc),
+    diasCotizados: l.diasCotizados,
+    diaDesde: l.diaDesde,
+    diaHasta: l.diaHasta,
     totalEmpleador: Number(l.totalEmpleador),
     totalTrabajador: Number(l.totalTrabajador),
     totalGeneral: Number(l.totalGeneral),

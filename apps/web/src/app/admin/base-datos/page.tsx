@@ -255,6 +255,7 @@ export default async function BaseDatosPage({
       subtipoId: a.subtipoId,
       nivelRiesgo: a.nivelRiesgo,
       regimen: a.regimen,
+      formaPago: a.formaPago,
       estado: a.estado,
       salario: Number(a.salario),
       valorAdministracion: Number(a.valorAdministracion),

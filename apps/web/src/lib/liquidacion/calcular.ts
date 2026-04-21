@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from '@pila/db';
 
 // ===== Tipos del motor =====
 
+export type TipoLiq = 'VINCULACION' | 'MENSUALIDAD';
+
 export type CalcInput = {
   /** Afiliación con empresa + plan cargados. */
   afiliacion: {
@@ -9,6 +11,7 @@ export type CalcInput = {
     modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
     nivelRiesgo: 'I' | 'II' | 'III' | 'IV' | 'V';
     salario: Prisma.Decimal;
+    fechaIngreso: Date;
     empresa: { id: string; exoneraLey1607: boolean } | null;
     planSgss: {
       incluyeEps: boolean;
@@ -17,12 +20,12 @@ export type CalcInput = {
       incluyeCcf: boolean;
     } | null;
   };
+  /** Año/mes del período a liquidar. */
+  periodo: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
   ibc?: Prisma.Decimal | number;
   /** SMLV vigente al momento del cálculo (para ubicar FSP). */
   smlv: Prisma.Decimal | number;
-  /** Días cotizados — por ahora se usa 30 (cálculo proporcional queda para fase siguiente). */
-  diasCotizados?: number;
 };
 
 export type CalcConcepto = {
@@ -36,13 +39,47 @@ export type CalcConcepto = {
 };
 
 export type CalcResult = {
-  ibc: number;
+  tipo: TipoLiq;
+  ibc: number; // base declarada (mes completo)
+  baseCotizacion: number; // base efectiva prorrateada por días
+  diasCotizados: number;
+  diaDesde: number | null;
+  diaHasta: number | null;
   totalEmpleador: number;
   totalTrabajador: number;
   totalGeneral: number;
   conceptos: CalcConcepto[];
   advertencias: string[];
 };
+
+/**
+ * Decide si la afiliación corresponde al período indicado y, si aplica,
+ * con qué tipo/días. Devuelve `null` cuando la afiliación aún no arranca
+ * en el período (fecha de ingreso posterior al último día PILA).
+ *
+ * Regla PILA: mes estándar de 30 días. Si ingresa el DD del mismo
+ * año/mes → `VINCULACION`, días = 31 - DD, del DD al 30.
+ * Si ingresa antes → `MENSUALIDAD`, 30 días completos.
+ */
+function determinarTipoYDias(
+  fechaIngreso: Date,
+  periodo: { anio: number; mes: number },
+): { tipo: TipoLiq; dias: number; diaDesde: number | null; diaHasta: number | null } | null {
+  const yIngreso = fechaIngreso.getUTCFullYear();
+  const mIngreso = fechaIngreso.getUTCMonth() + 1;
+  const dIngreso = Math.min(fechaIngreso.getUTCDate(), 30); // PILA recorta al 30
+
+  if (yIngreso > periodo.anio || (yIngreso === periodo.anio && mIngreso > periodo.mes)) {
+    // Aún no comienza
+    return null;
+  }
+  if (yIngreso === periodo.anio && mIngreso === periodo.mes) {
+    const dias = 31 - dIngreso; // DD..30 inclusive
+    return { tipo: 'VINCULACION', dias, diaDesde: dIngreso, diaHasta: 30 };
+  }
+  // Ingresó en mes anterior → mensualidad completa
+  return { tipo: 'MENSUALIDAD', dias: 30, diaDesde: null, diaHasta: null };
+}
 
 // ===== Helpers =====
 
@@ -129,9 +166,19 @@ export function calcularLiquidacion(
   input: CalcInput,
   tarifas: TarifaRow[],
   fspRangos: FspRow[],
-): CalcResult {
-  const { afiliacion } = input;
+): CalcResult | null {
+  const { afiliacion, periodo } = input;
+
+  // Tipo y días según fecha de ingreso vs período
+  const td = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
+  if (!td) return null;
+  const tipo = td.tipo;
+  const diasCotizados = td.dias;
+
   const ibc = toNum(input.ibc ?? afiliacion.salario);
+  // Base prorrateada: IBC * días / 30 (mes PILA). Cuando días=30, base=ibc.
+  const baseCotizacion = round((ibc * diasCotizados) / 30);
+
   const smlv = toNum(input.smlv);
   const plan = afiliacion.planSgss;
   const empresa = afiliacion.empresa;
@@ -160,7 +207,7 @@ export function calcularLiquidacion(
       addConcepto({
         concepto: 'EPS',
         subconcepto: t.etiqueta ?? undefined,
-        base: ibc,
+        base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE' && !exonera, // dep no exonerado: 8.5%emp + 4%trab — simplificamos al total
       });
@@ -177,7 +224,7 @@ export function calcularLiquidacion(
       addConcepto({
         concepto: 'AFP',
         subconcepto: t.etiqueta ?? undefined,
-        base: ibc,
+        base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
       });
@@ -190,7 +237,7 @@ export function calcularLiquidacion(
       addConcepto({
         concepto: 'FSP',
         subconcepto: `FSP ${(ibc / smlv).toFixed(2)} SMLV`,
-        base: ibc,
+        base: baseCotizacion,
         porcentaje: fspPct,
         aCargoEmpleador: false,
         observaciones: 'Adiciona al aporte de pensión',
@@ -206,7 +253,7 @@ export function calcularLiquidacion(
       addConcepto({
         concepto: 'ARL',
         subconcepto: t.etiqueta ?? `Nivel ${nivel}`,
-        base: ibc,
+        base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
       });
@@ -223,7 +270,7 @@ export function calcularLiquidacion(
       addConcepto({
         concepto: 'CCF',
         subconcepto: t.etiqueta ?? undefined,
-        base: ibc,
+        base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
       });
@@ -244,7 +291,7 @@ export function calcularLiquidacion(
         addConcepto({
           concepto,
           subconcepto: t.etiqueta ?? undefined,
-          base: ibc,
+          base: baseCotizacion,
           porcentaje: toNum(t.porcentaje),
           aCargoEmpleador: true,
         });
@@ -262,7 +309,12 @@ export function calcularLiquidacion(
   const totalGeneral = totalEmpleador + totalTrabajador;
 
   return {
+    tipo,
     ibc,
+    baseCotizacion,
+    diasCotizados,
+    diaDesde: td.diaDesde,
+    diaHasta: td.diaHasta,
     totalEmpleador,
     totalTrabajador,
     totalGeneral,
@@ -275,7 +327,8 @@ export function calcularLiquidacion(
 
 /**
  * Recalcula y persiste una liquidación individual en una transacción.
- * Retorna el CalcResult y el id de la liquidación.
+ * Retorna `null` cuando la afiliación aún no debe liquidarse en el
+ * período (fecha de ingreso posterior al último día).
  */
 export async function persistirLiquidacion(
   prisma: PrismaClient,
@@ -283,9 +336,8 @@ export async function persistirLiquidacion(
     periodoId: string;
     afiliacionId: string;
     ibc?: number;
-    diasCotizados?: number;
   },
-): Promise<{ liquidacionId: string; calc: CalcResult }> {
+): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
     prisma.periodoContable.findUnique({ where: { id: opts.periodoId } }),
     prisma.afiliacion.findUnique({
@@ -316,30 +368,33 @@ export async function persistirLiquidacion(
         modalidad: afiliacion.modalidad,
         nivelRiesgo: afiliacion.nivelRiesgo,
         salario: afiliacion.salario,
+        fechaIngreso: afiliacion.fechaIngreso,
         empresa: afiliacion.empresa,
         planSgss: afiliacion.planSgss,
       },
+      periodo: { anio: periodo.anio, mes: periodo.mes },
       ibc: opts.ibc,
       smlv: periodo.smlvSnapshot,
-      diasCotizados: opts.diasCotizados,
     },
     tarifas,
     fspRangos,
   );
 
+  if (!calc) return null; // afiliación no aplica para este período
+
   const liquidacionId = await prisma.$transaction(async (tx) => {
     const existing = await tx.liquidacion.findUnique({
       where: {
-        periodoId_afiliacionId: {
+        periodoId_afiliacionId_tipo: {
           periodoId: opts.periodoId,
           afiliacionId: opts.afiliacionId,
+          tipo: calc.tipo,
         },
       },
       select: { id: true, estado: true },
     });
 
     if (existing && existing.estado === 'PAGADA') {
-      // No pisar una ya pagada.
       return existing.id;
     }
 
@@ -348,7 +403,9 @@ export async function persistirLiquidacion(
           where: { id: existing.id },
           data: {
             ibc: calc.ibc,
-            diasCotizados: opts.diasCotizados ?? 30,
+            diasCotizados: calc.diasCotizados,
+            diaDesde: calc.diaDesde,
+            diaHasta: calc.diaHasta,
             totalEmpleador: calc.totalEmpleador,
             totalTrabajador: calc.totalTrabajador,
             totalGeneral: calc.totalGeneral,
@@ -360,8 +417,11 @@ export async function persistirLiquidacion(
           data: {
             periodoId: opts.periodoId,
             afiliacionId: opts.afiliacionId,
+            tipo: calc.tipo,
             ibc: calc.ibc,
-            diasCotizados: opts.diasCotizados ?? 30,
+            diasCotizados: calc.diasCotizados,
+            diaDesde: calc.diaDesde,
+            diaHasta: calc.diaHasta,
             totalEmpleador: calc.totalEmpleador,
             totalTrabajador: calc.totalTrabajador,
             totalGeneral: calc.totalGeneral,

@@ -72,6 +72,14 @@ enum Modalidad {
   INDEPENDIENTE
 }
 
+// Forma de pago — aplica sólo a INDEPENDIENTE.
+// VIGENTE  = paga por adelantado (cubre el mismo mes en que cotiza)
+// VENCIDO  = paga el mes siguiente (cubre el mes anterior)
+enum FormaPago {
+  VIGENTE
+  VENCIDO
+}
+
 // Bitácora transversal — registra cambios sobre entidades del sistema.
 // Patrón simple: guardamos antes/después como JSON para auditoría.
 model AuditLog {
@@ -529,6 +537,7 @@ model Afiliacion {
   modalidad            Modalidad        @default(DEPENDIENTE)
   nivelRiesgo          NivelRiesgo
   regimen              Regimen?
+  formaPago            FormaPago? // sólo INDEPENDIENTE
   salario              Decimal          @db.Decimal(12, 2)
   valorAdministracion  Decimal          @db.Decimal(12, 2)
   fechaIngreso         DateTime
@@ -636,6 +645,15 @@ enum EstadoLiquidacion {
   ANULADA
 }
 
+// Tipo de liquidación dentro de un período:
+// VINCULACION = primer comprobante del afiliado, días proporcionales
+//               desde fecha de ingreso al día 30 PILA
+// MENSUALIDAD = mes completo (30 días PILA)
+enum TipoLiquidacion {
+  VINCULACION
+  MENSUALIDAD
+}
+
 // Período contable mensual — uno por (año, mes). El admin abre el período,
 // corre la liquidación, revisa y eventualmente cierra. SMLV y tarifas
 // vigentes al momento de abrir quedan denormalizadas en cada liquidación.
@@ -662,29 +680,33 @@ model PeriodoContable {
 // desglose en `LiquidacionConcepto`. El `ibc` es la base de cotización
 // del período (puede ser distinta al salario por novedades futuras).
 model Liquidacion {
-  id           String             @id @default(cuid())
-  periodoId    String
-  afiliacionId String
-  ibc          Decimal            @db.Decimal(12, 2)
-  diasCotizados Int               @default(30)
-  totalEmpleador Decimal           @db.Decimal(14, 2) @default(0)
-  totalTrabajador Decimal          @db.Decimal(14, 2) @default(0)
-  totalGeneral   Decimal          @db.Decimal(14, 2) @default(0)
-  totalPagado    Decimal          @db.Decimal(14, 2) @default(0)
-  estado         EstadoLiquidacion @default(BORRADOR)
-  observaciones  String?
-  calculadoEn    DateTime          @default(now())
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id              String            @id @default(cuid())
+  periodoId       String
+  afiliacionId    String
+  tipo            TipoLiquidacion   @default(MENSUALIDAD)
+  ibc             Decimal           @db.Decimal(12, 2)
+  diasCotizados   Int               @default(30) // sobre mes PILA de 30 días
+  diaDesde        Int? // día (1..30) de inicio del periodo cotizado; NULL = mes completo
+  diaHasta        Int? // día (1..30) de fin del periodo cotizado; NULL = mes completo
+  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0)
+  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0)
+  totalGeneral    Decimal           @db.Decimal(14, 2) @default(0)
+  totalPagado     Decimal           @db.Decimal(14, 2) @default(0)
+  estado          EstadoLiquidacion @default(BORRADOR)
+  observaciones   String?
+  calculadoEn     DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   periodo    PeriodoContable       @relation(fields: [periodoId], references: [id], onDelete: Cascade)
   afiliacion Afiliacion            @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
   conceptos  LiquidacionConcepto[]
 
-  @@unique([periodoId, afiliacionId])
+  @@unique([periodoId, afiliacionId, tipo])
   @@index([periodoId])
   @@index([afiliacionId])
   @@index([estado])
+  @@index([tipo])
   @@map("liquidaciones")
 }
 

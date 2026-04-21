@@ -88,6 +88,7 @@ export type InitialAfiliacion = {
   subtipoId: string | null;
   nivelRiesgo: string;
   regimen: string | null;
+  formaPago: string | null;
   estado: string;
   salario: number;
   valorAdministracion: number;
@@ -483,27 +484,47 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             )}
           </div>
 
-          {/* 2) Régimen — sólo DEPENDIENTE */}
+          {/* 2) Régimen (DEPENDIENTE) o Forma de pago (INDEPENDIENTE) */}
           {!isIndep ? (
-            <div>
-              <Label htmlFor="regimen">
-                Régimen <Req />
-              </Label>
-              <select
-                id="regimen"
-                name="regimen"
-                required
-                defaultValue={initial?.regimen ?? 'ORDINARIO'}
-                disabled={readOnly}
-                className={selectClass}
-              >
-                <option value="ORDINARIO">Ordinario</option>
-                <option value="RESOLUCION">Resolución</option>
-              </select>
-            </div>
+            <>
+              <div>
+                <Label htmlFor="regimen">
+                  Régimen <Req />
+                </Label>
+                <select
+                  id="regimen"
+                  name="regimen"
+                  required
+                  defaultValue={initial?.regimen ?? 'ORDINARIO'}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
+                  <option value="ORDINARIO">Ordinario</option>
+                  <option value="RESOLUCION">Resolución</option>
+                </select>
+              </div>
+              <input type="hidden" name="formaPago" value="" />
+            </>
           ) : (
-            // valor vacío para que el server detecte "null" en INDEPENDIENTE
-            <input type="hidden" name="regimen" value="" />
+            <>
+              <input type="hidden" name="regimen" value="" />
+              <div>
+                <Label htmlFor="formaPago">
+                  Forma de pago <Req />
+                </Label>
+                <select
+                  id="formaPago"
+                  name="formaPago"
+                  required
+                  defaultValue={initial?.formaPago ?? 'VIGENTE'}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
+                  <option value="VIGENTE">Vigente (paga mes en curso)</option>
+                  <option value="VENCIDO">Vencido (paga mes anterior)</option>
+                </select>
+              </div>
+            </>
           )}
 
           <div>
