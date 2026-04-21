@@ -52,3 +52,21 @@ export async function nextPlanSgssCodigo(): Promise<string> {
     return row;
   });
 }
+
+/**
+ * Siguiente consecutivo global para un comprobante. Formato CMP-000001.
+ * Seis dígitos para que alcance mucho tiempo sin reordenar.
+ */
+export async function nextComprobanteConsecutivo(): Promise<string> {
+  const last = await prisma.comprobante.findFirst({
+    where: { consecutivo: { startsWith: 'CMP-' } },
+    orderBy: { consecutivo: 'desc' },
+    select: { consecutivo: true },
+  });
+  let n = 1;
+  if (last) {
+    const m = last.consecutivo.match(/^CMP-(\d+)$/);
+    if (m && m[1]) n = parseInt(m[1], 10) + 1;
+  }
+  return `CMP-${String(n).padStart(6, '0')}`;
+}

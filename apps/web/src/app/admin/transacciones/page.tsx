@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRightLeft, Lock, Unlock } from 'lucide-react';
+import { ArrowRightLeft, FileStack, Lock, Unlock } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { AbrirPeriodoDialog } from './abrir-periodo-dialog';
@@ -229,6 +229,13 @@ export default async function TransaccionesPage({
                       periodoId={periodoActual.id}
                       disabled={periodoActual.estado === 'CERRADO'}
                     />
+                    <Link
+                      href={`/admin/transacciones/comprobantes?periodoId=${periodoActual.id}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <FileStack className="h-3 w-3" />
+                      Comprobantes
+                    </Link>
                     {periodoActual.estado === 'ABIERTO' ? (
                       <form action={cerrarPeriodoAction.bind(null, periodoActual.id)}>
                         <button

@@ -387,8 +387,9 @@ model CuentaCobro {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  sucursal     Sucursal     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  sucursal     Sucursal      @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones Afiliacion[]
+  comprobantes Comprobante[]
 
   @@unique([sucursalId, codigo])
   @@index([sucursalId])
@@ -423,6 +424,7 @@ model AsesorComercial {
   updatedAt DateTime @updatedAt
 
   afiliaciones Afiliacion[]
+  comprobantes Comprobante[]
 
   @@map("asesores_comerciales")
 }
@@ -512,6 +514,7 @@ model Cotizante {
   updatedAt          DateTime      @updatedAt
 
   afiliaciones Afiliacion[]
+  comprobantes Comprobante[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -654,6 +657,25 @@ enum TipoLiquidacion {
   MENSUALIDAD
 }
 
+// Comprobantes — agrupadores de liquidaciones con consecutivo propio.
+enum TipoComprobante {
+  AFILIACION // primer comprobante del cotizante (engloba las VINCULACION)
+  MENSUALIDAD // comprobante regular del mes
+}
+
+enum AgrupacionComprobante {
+  INDIVIDUAL // 1 cotizante
+  EMPRESA_CC // todos los cotizantes de una cuenta de cobro
+  ASESOR_COMERCIAL // todos los cotizantes de un asesor (reporte / comisión)
+}
+
+enum EstadoComprobante {
+  BORRADOR // recién generado
+  EMITIDO // firmado/impreso
+  PAGADO
+  ANULADO
+}
+
 // Período contable mensual — uno por (año, mes). El admin abre el período,
 // corre la liquidación, revisa y eventualmente cierra. SMLV y tarifas
 // vigentes al momento de abrir quedan denormalizadas en cada liquidación.
@@ -670,6 +692,7 @@ model PeriodoContable {
   updatedAt    DateTime      @updatedAt
 
   liquidaciones Liquidacion[]
+  comprobantes  Comprobante[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -698,9 +721,10 @@ model Liquidacion {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  periodo    PeriodoContable       @relation(fields: [periodoId], references: [id], onDelete: Cascade)
-  afiliacion Afiliacion            @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
-  conceptos  LiquidacionConcepto[]
+  periodo      PeriodoContable          @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+  afiliacion   Afiliacion               @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
+  conceptos    LiquidacionConcepto[]
+  comprobantes ComprobanteLiquidacion[]
 
   @@unique([periodoId, afiliacionId, tipo])
   @@index([periodoId])
@@ -775,4 +799,59 @@ model Municipio {
   @@unique([nombre, departamentoId])
   @@index([departamentoId])
   @@map("municipios")
+}
+
+// --- Comprobantes (Fase 3.2) ---
+// Un comprobante agrupa 1..N liquidaciones y se emite al destinatario
+// (cotizante, cuenta de cobro o asesor) con un consecutivo propio.
+model Comprobante {
+  id                String                @id @default(cuid())
+  periodoId         String
+  tipo              TipoComprobante
+  agrupacion        AgrupacionComprobante
+  consecutivo       String                @unique // CMP-000001
+  // Destinatario: según `agrupacion`, uno de estos está poblado
+  cotizanteId       String?
+  cuentaCobroId     String?
+  asesorComercialId String?
+  // Totales denormalizados (suma de las liquidaciones asociadas)
+  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0)
+  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0)
+  totalGeneral    Decimal           @db.Decimal(14, 2) @default(0)
+  totalPagado     Decimal           @db.Decimal(14, 2) @default(0)
+  estado          EstadoComprobante @default(BORRADOR)
+  observaciones   String?
+  emitidoEn       DateTime?
+  pagadoEn        DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  periodo         PeriodoContable          @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+  cotizante       Cotizante?               @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
+  cuentaCobro     CuentaCobro?             @relation(fields: [cuentaCobroId], references: [id], onDelete: Restrict)
+  asesorComercial AsesorComercial?         @relation(fields: [asesorComercialId], references: [id], onDelete: Restrict)
+  liquidaciones   ComprobanteLiquidacion[]
+
+  @@index([periodoId])
+  @@index([estado])
+  @@index([tipo, agrupacion])
+  @@index([cotizanteId])
+  @@index([cuentaCobroId])
+  @@index([asesorComercialId])
+  @@map("comprobantes")
+}
+
+// Pivote m2m. Una liquidación puede estar en varios comprobantes (p.ej.
+// el de cobro por CC + el informativo del asesor), por eso NO hay
+// unique sobre liquidacionId.
+model ComprobanteLiquidacion {
+  comprobanteId String
+  liquidacionId String
+
+  comprobante Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  liquidacion Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  @@id([comprobanteId, liquidacionId])
+  @@index([liquidacionId])
+  @@map("comprobante_liquidaciones")
 }
