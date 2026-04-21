@@ -15,8 +15,8 @@ export default async function EmpresasPage() {
         arl: { select: { codigo: true } },
       },
     }),
-    prisma.arl.findMany({
-      where: { active: true },
+    prisma.entidadSgss.findMany({
+      where: { tipo: 'ARL', active: true },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),

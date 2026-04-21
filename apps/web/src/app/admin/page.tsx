@@ -6,11 +6,11 @@ export const metadata = { title: 'Administración — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminHomePage() {
-  const [sucursales, empresas, usuarios, arls, actividades, tiposCot] = await Promise.all([
+  const [sucursales, empresas, usuarios, entidades, actividades, tiposCot] = await Promise.all([
     prisma.sucursal.count(),
     prisma.empresa.count(),
     prisma.user.count(),
-    prisma.arl.count(),
+    prisma.entidadSgss.count(),
     prisma.actividadEconomica.count(),
     prisma.tipoCotizante.count(),
   ]);
@@ -40,10 +40,10 @@ export default async function AdminHomePage() {
     {
       href: '/admin/catalogos',
       label: 'Catálogos',
-      count: arls + actividades + tiposCot,
+      count: entidades + actividades + tiposCot,
       icon: Database,
       accent: 'from-brand-turquoise to-brand-blue',
-      sub: `${arls} ARL · ${actividades} CIIU · ${tiposCot} tipos cotizante`,
+      sub: `${entidades} entidades SGSS · ${actividades} CIIU · ${tiposCot} tipos cotizante`,
     },
   ];
 

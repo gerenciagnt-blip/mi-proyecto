@@ -41,6 +41,13 @@ enum NivelRiesgo {
   V
 }
 
+enum TipoEntidadSgss {
+  EPS
+  AFP
+  ARL
+  CCF
+}
+
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
   id        String   @id @default(cuid())
@@ -100,7 +107,7 @@ model Empresa {
   // PILA
   ciiuPrincipal String?
   arlId         String?
-  arl           Arl?    @relation(fields: [arlId], references: [id], onDelete: SetNull)
+  arl           EntidadSgss? @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos   EmpresaNivelRiesgo[]
@@ -174,19 +181,27 @@ model UsuarioEmpresa {
   @@map("usuarios_empresas")
 }
 
-// --- Catálogos (Fase 1.5.2) ---
+// --- Catálogos ---
 
-model Arl {
-  id        String   @id @default(cuid())
-  codigo    String   @unique
-  nombre    String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Entidades SGSS unificadas (EPS, AFP, ARL, CCF)
+// Fase 1.6.1 — reemplaza el modelo Arl individual por una tabla tipada.
+model EntidadSgss {
+  id             String          @id @default(cuid())
+  tipo           TipoEntidadSgss
+  codigo         String
+  nombre         String
+  codigoMinSalud String?
+  nit            String?
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  empresas Empresa[]
+  // Relaciones — empresas cuyo ARL actual es esta entidad
+  empresasComoArl Empresa[] @relation("EmpresaArl")
 
-  @@map("arls")
+  @@unique([tipo, codigo])
+  @@index([tipo])
+  @@map("entidades_sgss")
 }
 
 model ActividadEconomica {

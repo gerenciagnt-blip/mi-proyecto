@@ -10,8 +10,8 @@ export default async function EditEmpresaPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const [empresa, arls] = await Promise.all([
     prisma.empresa.findUnique({ where: { id } }),
-    prisma.arl.findMany({
-      where: { active: true },
+    prisma.entidadSgss.findMany({
+      where: { tipo: 'ARL', active: true },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),

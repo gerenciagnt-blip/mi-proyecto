@@ -99,9 +99,23 @@ export const UserPasswordSchema = z.object({
 
 export const NivelRiesgoEnum = z.enum(['I', 'II', 'III', 'IV', 'V']);
 
-export const ArlSchema = z.object({
-  codigo: z.string().trim().min(1, 'Requerido').max(20),
+export const TipoEntidadSgssEnum = z.enum(['EPS', 'AFP', 'ARL', 'CCF']);
+export type TipoEntidadSgssValue = z.infer<typeof TipoEntidadSgssEnum>;
+
+export const EntidadSgssSchema = z.object({
+  tipo: TipoEntidadSgssEnum,
+  codigo: z.string().trim().min(1, 'Requerido').max(30),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
+  codigoMinSalud: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
+  nit: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
 });
 
 export const ActividadSchema = z.object({
