@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { PlanSgssSchema } from '@/lib/validations';
+import { nextPlanSgssCodigo } from '@/lib/consecutivo';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -14,7 +15,6 @@ export async function createPlanAction(
   await requireAdmin();
 
   const parsed = PlanSgssSchema.safeParse({
-    codigo: String(formData.get('codigo') ?? '').toUpperCase().trim(),
     nombre: String(formData.get('nombre') ?? '').trim(),
     descripcion: String(formData.get('descripcion') ?? '').trim(),
     incluyeEps: formData.get('incluyeEps'),
@@ -24,17 +24,21 @@ export async function createPlanAction(
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
-  // Al menos una entidad incluida
   const { incluyeEps, incluyeAfp, incluyeArl, incluyeCcf } = parsed.data;
   if (!incluyeEps && !incluyeAfp && !incluyeArl && !incluyeCcf) {
     return { error: 'El plan debe incluir al menos una entidad SGSS' };
   }
 
+  const codigo = await nextPlanSgssCodigo();
+
   try {
-    await prisma.planSgss.create({ data: parsed.data });
+    await prisma.planSgss.create({ data: { ...parsed.data, codigo } });
   } catch (e) {
     return {
-      error: e instanceof Error && e.message.includes('Unique') ? 'Código duplicado' : 'Error',
+      error:
+        e instanceof Error && e.message.includes('Unique')
+          ? `Código duplicado (${codigo}) — reintenta`
+          : 'Error',
     };
   }
 

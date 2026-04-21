@@ -19,13 +19,8 @@ export function CreateEntidadForm({ tipo }: { tipo: string }) {
     <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
       <input type="hidden" name="tipo" value={tipo} />
 
-      <div>
-        <Label htmlFor="codigo">Código</Label>
-        <Input id="codigo" name="codigo" required placeholder="EPS001" className="mt-1 uppercase" />
-      </div>
-
       <div className="sm:col-span-2">
-        <Label htmlFor="nombre">Nombre</Label>
+        <Label htmlFor="nombre">Nombre *</Label>
         <Input id="nombre" name="nombre" required placeholder="Nueva EPS S.A.S." className="mt-1" />
       </div>
 
@@ -44,7 +39,10 @@ export function CreateEntidadForm({ tipo }: { tipo: string }) {
         <Input id="nit" name="nit" placeholder="opcional" className="mt-1" />
       </div>
 
-      <div className="sm:col-span-3 sm:flex sm:items-end sm:justify-end">
+      <div className="sm:col-span-4 sm:flex sm:items-end sm:justify-between sm:gap-3">
+        <p className="text-[11px] text-slate-500">
+          El código interno se genera automáticamente ({tipo}-0001, {tipo}-0002…).
+        </p>
         <Button type="submit" size="md" disabled={pending} className="w-full sm:w-auto">
           {pending ? 'Creando…' : `Crear ${tipo}`}
         </Button>

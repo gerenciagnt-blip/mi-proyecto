@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import type { TipoEntidadSgss } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { EntidadSgssSchema, TipoEntidadSgssEnum } from '@/lib/validations';
+import { nextEntidadSgssCodigo } from '@/lib/consecutivo';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
 import type { ImportState } from '../_components/import-form';
 
@@ -26,20 +27,21 @@ export async function createEntidadAction(
 
   const parsed = EntidadSgssSchema.safeParse({
     tipo,
-    codigo: String(formData.get('codigo') ?? '').toUpperCase().trim(),
     nombre: String(formData.get('nombre') ?? '').trim(),
     codigoMinSalud: String(formData.get('codigoMinSalud') ?? '').trim(),
     nit: String(formData.get('nit') ?? '').trim(),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
+  const codigo = await nextEntidadSgssCodigo(tipo);
+
   try {
-    await prisma.entidadSgss.create({ data: parsed.data });
+    await prisma.entidadSgss.create({ data: { ...parsed.data, codigo } });
   } catch (e) {
     return {
       error:
         e instanceof Error && e.message.includes('Unique')
-          ? `Ya existe una entidad ${tipo} con ese código`
+          ? `Código duplicado (${codigo}) — reintenta`
           : 'Error al crear',
     };
   }
@@ -82,9 +84,10 @@ export async function importEntidadesAction(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
+    const rawCodigo = String(row.codigo ?? '').toUpperCase().trim();
     const parsed = EntidadSgssSchema.safeParse({
       tipo,
-      codigo: String(row.codigo ?? '').toUpperCase().trim(),
+      codigo: rawCodigo,
       nombre: String(row.nombre ?? '').trim(),
       codigoMinSalud: String(row.codigoMinSalud ?? row.minSalud ?? '').trim(),
       nit: String(row.nit ?? '').trim(),
@@ -95,17 +98,25 @@ export async function importEntidadesAction(
       continue;
     }
 
-    const existing = await prisma.entidadSgss.findUnique({
-      where: { tipo_codigo: { tipo, codigo: parsed.data.codigo } },
-    });
-    if (existing) {
-      await prisma.entidadSgss.update({
-        where: { id: existing.id },
-        data: parsed.data,
+    // Si la fila trae código, hacemos upsert por (tipo, codigo). Sin código, lo
+    // auto-generamos y siempre creamos una fila nueva.
+    if (parsed.data.codigo) {
+      const existing = await prisma.entidadSgss.findUnique({
+        where: { tipo_codigo: { tipo, codigo: parsed.data.codigo } },
       });
-      result.updated++;
+      if (existing) {
+        await prisma.entidadSgss.update({
+          where: { id: existing.id },
+          data: parsed.data,
+        });
+        result.updated++;
+      } else {
+        await prisma.entidadSgss.create({ data: { ...parsed.data, codigo: parsed.data.codigo } });
+        result.added++;
+      }
     } else {
-      await prisma.entidadSgss.create({ data: parsed.data });
+      const codigo = await nextEntidadSgssCodigo(tipo);
+      await prisma.entidadSgss.create({ data: { ...parsed.data, codigo } });
       result.added++;
     }
   }

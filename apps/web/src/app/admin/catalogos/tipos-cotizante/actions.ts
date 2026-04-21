@@ -18,6 +18,7 @@ export async function createTipoAction(
   const parsed = TipoCotizanteSchema.safeParse({
     codigo: String(formData.get('codigo') ?? '').trim(),
     nombre: String(formData.get('nombre') ?? '').trim(),
+    modalidad: String(formData.get('modalidad') ?? 'DEPENDIENTE'),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
@@ -31,6 +32,15 @@ export async function createTipoAction(
 
   revalidatePath('/admin/catalogos/tipos-cotizante');
   return { ok: true };
+}
+
+export async function updateTipoModalidadAction(
+  id: string,
+  modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE',
+) {
+  await requireAdmin();
+  await prisma.tipoCotizante.update({ where: { id }, data: { modalidad } });
+  revalidatePath('/admin/catalogos/tipos-cotizante');
 }
 
 export async function toggleTipoAction(id: string) {
@@ -66,6 +76,7 @@ export async function importTiposAction(
     const parsed = TipoCotizanteSchema.safeParse({
       codigo: String(row.codigo ?? '').trim(),
       nombre: String(row.nombre ?? '').trim(),
+      modalidad: String(row.modalidad ?? 'DEPENDIENTE').toUpperCase(),
     });
     if (!parsed.success) {
       result.errors.push(`Fila ${i + 2}: ${parsed.error.issues[0]?.message ?? 'inválida'}`);

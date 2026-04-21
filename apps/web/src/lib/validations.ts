@@ -108,7 +108,9 @@ export type TipoEntidadSgssValue = z.infer<typeof TipoEntidadSgssEnum>;
 
 export const EntidadSgssSchema = z.object({
   tipo: TipoEntidadSgssEnum,
-  codigo: z.string().trim().min(1, 'Requerido').max(30),
+  // Código interno — el UI ya no lo pide; se auto-genera (helper `nextEntidadSgssCodigo`).
+  // Lo dejamos opcional aquí para no romper la importación Excel que sí lo trae.
+  codigo: z.string().trim().max(30).optional(),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
   codigoMinSalud: z
     .string()
@@ -130,6 +132,7 @@ export const ActividadSchema = z.object({
 export const TipoCotizanteSchema = z.object({
   codigo: z.string().trim().min(1, 'Requerido').max(10),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
+  modalidad: z.enum(['DEPENDIENTE', 'INDEPENDIENTE']).default('DEPENDIENTE'),
 });
 
 export const SubtipoSchema = z.object({
@@ -235,7 +238,8 @@ export const RegimenEnum = z.enum(['ORDINARIO', 'RESOLUCION']);
 export const ModalidadEnum = z.enum(['DEPENDIENTE', 'INDEPENDIENTE']);
 
 export const PlanSgssSchema = z.object({
-  codigo: z.string().trim().min(1, 'Requerido').max(30),
+  // Código interno auto-generado (helper `nextPlanSgssCodigo`) — opcional en el schema.
+  codigo: z.string().trim().max(30).optional(),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
   descripcion: optional,
   incluyeEps: z.preprocess((v) => v === 'on' || v === true, z.boolean()),

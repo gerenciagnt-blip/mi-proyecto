@@ -18,12 +18,8 @@ export function CreatePlanForm() {
   return (
     <form ref={ref} action={action} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <div>
-          <Label htmlFor="codigo">Código</Label>
-          <Input id="codigo" name="codigo" required placeholder="INT-DEP" className="mt-1 uppercase" />
-        </div>
-        <div className="sm:col-span-3">
-          <Label htmlFor="nombre">Nombre</Label>
+        <div className="sm:col-span-4">
+          <Label htmlFor="nombre">Nombre *</Label>
           <Input
             id="nombre"
             name="nombre"
@@ -51,6 +47,9 @@ export function CreatePlanForm() {
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          El código interno se genera automáticamente (PLAN-0001, PLAN-0002…).
+        </p>
       </div>
 
       {state.error && <Alert variant="danger">{state.error}</Alert>}

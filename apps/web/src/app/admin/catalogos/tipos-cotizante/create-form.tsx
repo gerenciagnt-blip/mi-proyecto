@@ -14,7 +14,7 @@ export function CreateTipoForm() {
   return (
     <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
       <div className="min-w-[100px]">
-        <label className="block text-xs font-medium text-slate-600">Código</label>
+        <label className="block text-xs font-medium text-slate-600">Código *</label>
         <input
           name="codigo"
           required
@@ -23,13 +23,25 @@ export function CreateTipoForm() {
         />
       </div>
       <div className="flex-1 min-w-[240px]">
-        <label className="block text-xs font-medium text-slate-600">Nombre</label>
+        <label className="block text-xs font-medium text-slate-600">Nombre *</label>
         <input
           name="nombre"
           required
           placeholder="Dependiente"
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
+      </div>
+      <div className="min-w-[160px]">
+        <label className="block text-xs font-medium text-slate-600">Modalidad *</label>
+        <select
+          name="modalidad"
+          required
+          defaultValue="DEPENDIENTE"
+          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="DEPENDIENTE">Dependiente</option>
+          <option value="INDEPENDIENTE">Independiente</option>
+        </select>
       </div>
       <button
         type="submit"

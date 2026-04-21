@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
 import { CreateTipoForm } from './create-form';
+import { ModalidadToggle } from './modalidad-toggle';
 import { toggleTipoAction, importTiposAction } from './actions';
 import { ImportForm } from '../_components/import-form';
 
@@ -31,9 +32,15 @@ export default async function TiposCotizantePage() {
         <h2 className="mb-3 text-sm font-semibold">Importar desde Excel</h2>
         <ImportForm
           action={importTiposAction}
-          headers={['codigo', 'nombre']}
-          example="01 | Dependiente"
+          headers={['codigo', 'nombre', 'modalidad']}
+          example="01 | Dependiente | DEPENDIENTE"
         />
+        <p className="mt-2 text-[11px] text-slate-500">
+          La columna <span className="font-mono">modalidad</span> acepta{' '}
+          <span className="font-mono">DEPENDIENTE</span> o{' '}
+          <span className="font-mono">INDEPENDIENTE</span>. Si se omite, queda
+          como DEPENDIENTE por defecto.
+        </p>
       </section>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -42,6 +49,7 @@ export default async function TiposCotizantePage() {
             <tr>
               <th className="px-4 py-2">Código</th>
               <th className="px-4 py-2">Nombre</th>
+              <th className="px-4 py-2">Modalidad</th>
               <th className="px-4 py-2">Subtipos</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
@@ -50,7 +58,7 @@ export default async function TiposCotizantePage() {
           <tbody className="divide-y divide-slate-100">
             {tipos.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay tipos de cotizante
                 </td>
               </tr>
@@ -59,6 +67,9 @@ export default async function TiposCotizantePage() {
               <tr key={t.id}>
                 <td className="px-4 py-3 font-mono text-xs">{t.codigo}</td>
                 <td className="px-4 py-3">{t.nombre}</td>
+                <td className="px-4 py-3">
+                  <ModalidadToggle tipoId={t.id} current={t.modalidad} />
+                </td>
                 <td className="px-4 py-3 text-slate-500">{t._count.subtipos}</td>
                 <td className="px-4 py-3">
                   <span
