@@ -1,11 +1,14 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 
-export type ActionState = { error?: string; ok?: boolean; cotizanteId?: string };
+export type ActionState = { error?: string; ok?: boolean };
+
+// ============ Parsers ============
 
 function parseCotizante(fd: FormData) {
   const g = (k: string) => String(fd.get(k) ?? '').trim();
@@ -52,6 +55,109 @@ function parseAfiliacion(fd: FormData) {
   };
 }
 
+// ============ Validación cruzada ============
+
+async function validateAfiliacion(data: {
+  empresaId: string;
+  nivelRiesgo: string;
+  tipoCotizanteId: string;
+  subtipoId: string | null;
+  actividadEconomicaId: string | null;
+  planSgssId: string | null;
+  epsId: string | null;
+  afpId: string | null;
+  ccfId: string | null;
+  salario: number;
+}): Promise<string | null> {
+  const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
+  if (smlv && data.salario < Number(smlv.valor)) {
+    return `Salario (${data.salario}) debe ser mayor o igual al SMLV (${Number(smlv.valor)})`;
+  }
+
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: data.empresaId },
+    include: {
+      nivelesPermitidos: { select: { nivel: true } },
+      tiposPermitidos: { select: { tipoCotizanteId: true } },
+      subtiposPermitidos: { select: { subtipoId: true } },
+      actividadesPermitidas: { select: { actividadEconomicaId: true } },
+    },
+  });
+  if (!empresa) return 'Empresa no existe';
+
+  const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
+  const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
+  const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
+  const actividadesOK = new Set(
+    empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
+  );
+
+  if (nivelesOK.size > 0 && !nivelesOK.has(data.nivelRiesgo as never)) {
+    return `El nivel ${data.nivelRiesgo} no está permitido en esta empresa`;
+  }
+  if (tiposOK.size > 0 && !tiposOK.has(data.tipoCotizanteId)) {
+    return 'El tipo de cotizante no está permitido en esta empresa';
+  }
+  if (data.subtipoId && subtiposOK.size > 0 && !subtiposOK.has(data.subtipoId)) {
+    return 'El subtipo no está permitido en esta empresa';
+  }
+  if (data.actividadEconomicaId) {
+    const actId = data.actividadEconomicaId;
+    const actPrincipalMatch = empresa.ciiuPrincipal
+      ? await prisma.actividadEconomica.findFirst({
+          where: { id: actId, codigoCiiu: empresa.ciiuPrincipal },
+          select: { id: true },
+        })
+      : null;
+    if (!actPrincipalMatch && actividadesOK.size > 0 && !actividadesOK.has(actId)) {
+      return 'La actividad económica no está permitida en esta empresa';
+    }
+  }
+  if (data.planSgssId) {
+    const plan = await prisma.planSgss.findUnique({ where: { id: data.planSgssId } });
+    if (plan) {
+      if (plan.incluyeEps && !data.epsId) return `El plan "${plan.nombre}" requiere EPS`;
+      if (plan.incluyeAfp && !data.afpId) return `El plan "${plan.nombre}" requiere AFP`;
+      if (plan.incluyeCcf && !data.ccfId)
+        return `El plan "${plan.nombre}" requiere Caja de Compensación`;
+    }
+  }
+  return null;
+}
+
+// ============ Audit log helper ============
+
+async function currentUser() {
+  const { auth } = await import('@/auth');
+  const session = await auth();
+  return session?.user
+    ? { id: session.user.id, name: session.user.name }
+    : { id: null, name: null };
+}
+
+async function logAudit(params: {
+  entidad: string;
+  entidadId: string;
+  accion: string;
+  descripcion?: string;
+  cambios?: unknown;
+}) {
+  const u = await currentUser();
+  await prisma.auditLog.create({
+    data: {
+      entidad: params.entidad,
+      entidadId: params.entidadId,
+      accion: params.accion,
+      userId: u.id,
+      userName: u.name,
+      descripcion: params.descripcion,
+      cambios: params.cambios as Prisma.InputJsonValue | undefined,
+    },
+  });
+}
+
+// ============ CREATE ============
+
 export async function createAfiliacionAction(
   _prev: ActionState,
   formData: FormData,
@@ -68,88 +174,13 @@ export async function createAfiliacionAction(
     return { error: `Afiliación: ${afParsed.error.issues[0]?.message ?? 'inválida'}` };
   }
 
-  // Salario >= SMLV
-  const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
-  if (smlv && afParsed.data.salario < Number(smlv.valor)) {
-    return {
-      error: `Salario (${afParsed.data.salario}) debe ser mayor o igual al SMLV (${Number(smlv.valor)})`,
-    };
-  }
+  const validationError = await validateAfiliacion(afParsed.data);
+  if (validationError) return { error: validationError };
 
-  // Validación cruzada con los permitidos de la empresa
-  const empresa = await prisma.empresa.findUnique({
-    where: { id: afParsed.data.empresaId },
-    include: {
-      nivelesPermitidos: { select: { nivel: true } },
-      tiposPermitidos: { select: { tipoCotizanteId: true } },
-      subtiposPermitidos: { select: { subtipoId: true } },
-      actividadesPermitidas: { select: { actividadEconomicaId: true } },
-    },
-  });
-  if (!empresa) return { error: 'Empresa no existe' };
-
-  const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
-  const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
-  const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
-  const actividadesOK = new Set(
-    empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
-  );
-
-  if (nivelesOK.size > 0 && !nivelesOK.has(afParsed.data.nivelRiesgo)) {
-    return { error: `El nivel ${afParsed.data.nivelRiesgo} no está permitido en esta empresa` };
-  }
-  if (tiposOK.size > 0 && !tiposOK.has(afParsed.data.tipoCotizanteId)) {
-    return { error: 'El tipo de cotizante no está permitido en esta empresa' };
-  }
-  if (
-    afParsed.data.subtipoId &&
-    subtiposOK.size > 0 &&
-    !subtiposOK.has(afParsed.data.subtipoId)
-  ) {
-    return { error: 'El subtipo no está permitido en esta empresa' };
-  }
-
-  // Validación: actividad económica debe estar en las permitidas de la empresa
-  // (o ser la actividad principal de la empresa, via codigoCiiu)
-  if (afParsed.data.actividadEconomicaId) {
-    const actId = afParsed.data.actividadEconomicaId;
-    const actPrincipalMatch = empresa.ciiuPrincipal
-      ? await prisma.actividadEconomica.findFirst({
-          where: { id: actId, codigoCiiu: empresa.ciiuPrincipal },
-          select: { id: true },
-        })
-      : null;
-    if (!actPrincipalMatch && actividadesOK.size > 0 && !actividadesOK.has(actId)) {
-      return {
-        error: 'La actividad económica no está permitida en esta empresa',
-      };
-    }
-  }
-
-  // Validación: plan SGSS requiere las entidades indicadas
-  if (afParsed.data.planSgssId) {
-    const plan = await prisma.planSgss.findUnique({
-      where: { id: afParsed.data.planSgssId },
-    });
-    if (plan) {
-      if (plan.incluyeEps && !afParsed.data.epsId) {
-        return { error: `El plan "${plan.nombre}" requiere EPS` };
-      }
-      if (plan.incluyeAfp && !afParsed.data.afpId) {
-        return { error: `El plan "${plan.nombre}" requiere AFP` };
-      }
-      if (plan.incluyeCcf && !afParsed.data.ccfId) {
-        return { error: `El plan "${plan.nombre}" requiere Caja de Compensación` };
-      }
-      // ARL viene de la empresa (empresa.arlId); se valida en la empresa, no en afiliación
-    }
-  }
-
-  // Servicios adicionales (array de IDs del form)
   const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const afiliacionId = await prisma.$transaction(async (tx) => {
       const cotizante = await tx.cotizante.upsert({
         where: {
           tipoDocumento_numeroDocumento: {
@@ -190,6 +221,15 @@ export async function createAfiliacionAction(
           skipDuplicates: true,
         });
       }
+      return af.id;
+    });
+
+    await logAudit({
+      entidad: 'Afiliacion',
+      entidadId: afiliacionId,
+      accion: 'CREAR',
+      descripcion: `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
+      cambios: { despues: afParsed.data },
     });
   } catch (e) {
     return {
@@ -202,4 +242,112 @@ export async function createAfiliacionAction(
 
   revalidatePath('/admin/base-datos');
   return { ok: true };
+}
+
+// ============ UPDATE ============
+
+export async function updateAfiliacionAction(
+  afiliacionId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const afParsed = AfiliacionSchema.safeParse(parseAfiliacion(formData));
+  if (!afParsed.success) {
+    return { error: afParsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  }
+
+  const existing = await prisma.afiliacion.findUnique({
+    where: { id: afiliacionId },
+    include: { serviciosAdicionales: { select: { servicioAdicionalId: true } } },
+  });
+  if (!existing) return { error: 'Afiliación no encontrada' };
+
+  const validationError = await validateAfiliacion(afParsed.data);
+  if (validationError) return { error: validationError };
+
+  const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
+  const serviciosPrev = existing.serviciosAdicionales.map((s) => s.servicioAdicionalId).sort();
+  const serviciosNew = [...serviciosIds].sort();
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.afiliacion.update({
+        where: { id: afiliacionId },
+        data: {
+          empresaId: afParsed.data.empresaId,
+          cuentaCobroId: afParsed.data.cuentaCobroId,
+          asesorComercialId: afParsed.data.asesorComercialId,
+          planSgssId: afParsed.data.planSgssId,
+          actividadEconomicaId: afParsed.data.actividadEconomicaId,
+          tipoCotizanteId: afParsed.data.tipoCotizanteId,
+          subtipoId: afParsed.data.subtipoId,
+          nivelRiesgo: afParsed.data.nivelRiesgo,
+          regimen: afParsed.data.regimen,
+          estado: afParsed.data.estado,
+          salario: afParsed.data.salario,
+          valorAdministracion: afParsed.data.valorAdministracion,
+          fechaIngreso: afParsed.data.fechaIngreso,
+          comentarios: afParsed.data.comentarios,
+          epsId: afParsed.data.epsId,
+          afpId: afParsed.data.afpId,
+          ccfId: afParsed.data.ccfId,
+        },
+      });
+
+      // Servicios: sync completo (wipe + insert)
+      if (JSON.stringify(serviciosPrev) !== JSON.stringify(serviciosNew)) {
+        await tx.afiliacionServicio.deleteMany({ where: { afiliacionId } });
+        if (serviciosNew.length > 0) {
+          await tx.afiliacionServicio.createMany({
+            data: serviciosNew.map((sId) => ({ afiliacionId, servicioAdicionalId: sId })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    });
+
+    await logAudit({
+      entidad: 'Afiliacion',
+      entidadId: afiliacionId,
+      accion: 'EDITAR',
+      descripcion: 'Afiliación actualizada',
+      cambios: { antes: existing, despues: afParsed.data },
+    });
+  } catch {
+    return { error: 'Error al actualizar' };
+  }
+
+  revalidatePath('/admin/base-datos');
+  revalidatePath(`/admin/base-datos/${afiliacionId}`);
+  return { ok: true };
+}
+
+// ============ Toggle estado (action simple sin form) ============
+
+export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
+  await requireAdmin();
+  const a = await prisma.afiliacion.findUnique({ where: { id: afiliacionId } });
+  if (!a) return;
+
+  const nuevoEstado = a.estado === 'ACTIVA' ? 'INACTIVA' : 'ACTIVA';
+  await prisma.afiliacion.update({
+    where: { id: afiliacionId },
+    data: {
+      estado: nuevoEstado,
+      fechaRetiro: nuevoEstado === 'INACTIVA' ? new Date() : null,
+    },
+  });
+
+  await logAudit({
+    entidad: 'Afiliacion',
+    entidadId: afiliacionId,
+    accion: 'TOGGLE',
+    descripcion: `Estado cambiado de ${a.estado} a ${nuevoEstado}`,
+    cambios: { antes: { estado: a.estado }, despues: { estado: nuevoEstado } },
+  });
+
+  revalidatePath('/admin/base-datos');
+  revalidatePath(`/admin/base-datos/${afiliacionId}`);
 }

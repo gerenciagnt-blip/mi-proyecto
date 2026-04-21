@@ -1,5 +1,10 @@
+import Link from 'next/link';
+import { Search } from 'lucide-react';
+import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { cn } from '@/lib/utils';
 import { NuevaAfiliacionDialog } from './nueva-afiliacion-dialog';
+import { toggleEstadoAfiliacionAction } from './actions';
 
 export const metadata = { title: 'Base de datos — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -31,7 +36,45 @@ function fullName(c: {
     .join(' ');
 }
 
-export default async function BaseDatosPage() {
+type SP = {
+  estado?: string;
+  q?: string;
+};
+
+function buildHref(current: SP, patch: Partial<SP>) {
+  const params = new URLSearchParams();
+  const merged = { ...current, ...patch };
+  if (merged.estado) params.set('estado', merged.estado);
+  if (merged.q) params.set('q', merged.q);
+  const s = params.toString();
+  return `/admin/base-datos${s ? '?' + s : ''}`;
+}
+
+export default async function BaseDatosPage({
+  searchParams,
+}: {
+  searchParams: Promise<SP>;
+}) {
+  const sp = await searchParams;
+  const estadoFilter =
+    sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
+  const q = sp.q?.trim() ?? '';
+
+  // Where clause para afiliaciones
+  const whereAfiliaciones: Prisma.AfiliacionWhereInput = {};
+  if (estadoFilter) whereAfiliaciones.estado = estadoFilter;
+  if (q) {
+    whereAfiliaciones.cotizante = {
+      OR: [
+        { numeroDocumento: { contains: q, mode: 'insensitive' } },
+        { primerNombre: { contains: q, mode: 'insensitive' } },
+        { segundoNombre: { contains: q, mode: 'insensitive' } },
+        { primerApellido: { contains: q, mode: 'insensitive' } },
+        { segundoApellido: { contains: q, mode: 'insensitive' } },
+      ],
+    };
+  }
+
   const [
     afiliaciones,
     activasCount,
@@ -49,6 +92,7 @@ export default async function BaseDatosPage() {
     planes,
   ] = await Promise.all([
     prisma.afiliacion.findMany({
+      where: whereAfiliaciones,
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
@@ -148,6 +192,24 @@ export default async function BaseDatosPage() {
   const ccf = entidades.filter((e) => e.tipo === 'CCF');
 
   const smlv = smlvConfig ? Number(smlvConfig.valor) : 0;
+  const totalCount = activasCount + inactivasCount;
+
+  const tabs = [
+    { label: 'Todas', count: totalCount, href: buildHref(sp, { estado: undefined }) },
+    {
+      label: 'Activas',
+      count: activasCount,
+      href: buildHref(sp, { estado: 'ACTIVA' }),
+      active: estadoFilter === 'ACTIVA',
+    },
+    {
+      label: 'Inactivas',
+      count: inactivasCount,
+      href: buildHref(sp, { estado: 'INACTIVA' }),
+      active: estadoFilter === 'INACTIVA',
+    },
+  ];
+  const todasActive = !estadoFilter;
 
   return (
     <div className="space-y-6">
@@ -216,17 +278,54 @@ export default async function BaseDatosPage() {
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla con tabs + search */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
-          <p className="text-sm font-semibold text-slate-700">
-            Últimas afiliaciones{' '}
-            <span className="text-xs font-normal text-slate-500">({afiliaciones.length})</span>
-          </p>
-          <p className="text-[11px] text-slate-400">
-            Mostrando las 200 más recientes. Filtros y búsqueda en Fase 2.2.
-          </p>
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Tabs */}
+            <div className="flex gap-1">
+              {tabs.map((t, i) => (
+                <Link
+                  key={t.label}
+                  href={t.href}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                    (i === 0 ? todasActive : t.active)
+                      ? 'bg-brand-blue/10 text-brand-blue-dark'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                  )}
+                >
+                  {t.label}{' '}
+                  <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+                </Link>
+              ))}
+            </div>
+
+            {/* Search form (GET) */}
+            <form method="GET" action="/admin/base-datos" className="flex items-center gap-2">
+              {estadoFilter && <input type="hidden" name="estado" value={estadoFilter} />}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  name="q"
+                  defaultValue={q}
+                  placeholder="Buscar por cédula o nombre..."
+                  className="h-9 w-full min-w-[220px] rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+                />
+              </div>
+              {q && (
+                <Link
+                  href={buildHref(sp, { q: undefined })}
+                  className="text-xs text-slate-500 hover:text-slate-900"
+                >
+                  Limpiar
+                </Link>
+              )}
+            </form>
+          </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
@@ -239,13 +338,16 @@ export default async function BaseDatosPage() {
                 <th className="px-4 py-2 text-right">Salario</th>
                 <th className="px-4 py-2">Ingreso</th>
                 <th className="px-4 py-2">Estado</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {afiliaciones.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                    Aún no hay afiliaciones — crea la primera con el botón de arriba.
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                    {q || estadoFilter
+                      ? 'Sin resultados con los filtros actuales'
+                      : 'Aún no hay afiliaciones — crea la primera con el botón de arriba.'}
                   </td>
                 </tr>
               )}
@@ -281,6 +383,25 @@ export default async function BaseDatosPage() {
                     >
                       {a.estado}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-3">
+                      <Link
+                        href={`/admin/base-datos/${a.id}`}
+                        className="text-xs font-medium text-brand-blue hover:text-brand-blue-dark"
+                      >
+                        Editar
+                      </Link>
+                      <form action={toggleEstadoAfiliacionAction.bind(null, a.id)}>
+                        <button
+                          type="submit"
+                          className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                          title={a.estado === 'ACTIVA' ? 'Inactivar' : 'Activar'}
+                        >
+                          {a.estado === 'ACTIVA' ? 'Inactivar' : 'Activar'}
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))}

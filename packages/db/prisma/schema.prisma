@@ -64,6 +64,25 @@ enum Regimen {
   RESOLUCION
 }
 
+// Bitácora transversal — registra cambios sobre entidades del sistema.
+// Patrón simple: guardamos antes/después como JSON para auditoría.
+model AuditLog {
+  id         String   @id @default(cuid())
+  entidad    String // ej. "Afiliacion"
+  entidadId  String
+  accion     String // "CREAR" | "EDITAR" | "ELIMINAR" | "TOGGLE"
+  userId     String?
+  userName   String?
+  descripcion String?
+  cambios    Json? // { antes: {...}, despues: {...}, campos: [...] }
+  createdAt  DateTime @default(now())
+
+  @@index([entidad, entidadId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
 // Permisos granulares: qué puede hacer cada rol en cada módulo.
 // Presencia en la tabla = permitido. Ausencia = denegado.
 // ADMIN implícitamente tiene todos los permisos (se saltea esta tabla).
