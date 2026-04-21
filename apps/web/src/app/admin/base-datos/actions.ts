@@ -1,12 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 
-export type ActionState = { error?: string; ok?: boolean };
+export type ActionState = { error?: string; ok?: boolean; cotizanteId?: string };
 
 function parseCotizante(fd: FormData) {
   const g = (k: string) => String(fd.get(k) ?? '').trim();
@@ -40,7 +39,12 @@ function parseAfiliacion(fd: FormData) {
     subtipoId: g('subtipoId'),
     nivelRiesgo: g('nivelRiesgo'),
     salario: g('salario'),
+    valorAdministracion: g('valorAdministracion'),
     fechaIngreso: g('fechaIngreso'),
+    comentarios: g('comentarios'),
+    epsId: g('epsId'),
+    afpId: g('afpId'),
+    ccfId: g('ccfId'),
   };
 }
 
@@ -60,7 +64,15 @@ export async function createAfiliacionAction(
     return { error: `Afiliación: ${afParsed.error.issues[0]?.message ?? 'inválida'}` };
   }
 
-  // Validación cruzada contra los "permitidos" de la empresa
+  // Salario >= SMLV
+  const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
+  if (smlv && afParsed.data.salario < Number(smlv.valor)) {
+    return {
+      error: `Salario (${afParsed.data.salario}) debe ser mayor o igual al SMLV (${Number(smlv.valor)})`,
+    };
+  }
+
+  // Validación cruzada con los permitidos de la empresa
   const empresa = await prisma.empresa.findUnique({
     where: { id: afParsed.data.empresaId },
     include: {
@@ -75,7 +87,6 @@ export async function createAfiliacionAction(
   const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
   const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
 
-  // Solo aplica si la empresa declaró permitidos; si está vacía, no restringimos.
   if (nivelesOK.size > 0 && !nivelesOK.has(afParsed.data.nivelRiesgo)) {
     return { error: `El nivel ${afParsed.data.nivelRiesgo} no está permitido en esta empresa` };
   }
@@ -90,9 +101,11 @@ export async function createAfiliacionAction(
     return { error: 'El subtipo no está permitido en esta empresa' };
   }
 
+  // Servicios adicionales (array de IDs del form)
+  const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
+
   try {
     await prisma.$transaction(async (tx) => {
-      // Upsert cotizante por (tipoDoc, numeroDoc) — si ya existe, actualizar datos
       const cotizante = await tx.cotizante.upsert({
         where: {
           tipoDocumento_numeroDocumento: {
@@ -104,7 +117,7 @@ export async function createAfiliacionAction(
         update: cotParsed.data,
       });
 
-      await tx.afiliacion.create({
+      const af = await tx.afiliacion.create({
         data: {
           cotizanteId: cotizante.id,
           empresaId: afParsed.data.empresaId,
@@ -114,9 +127,21 @@ export async function createAfiliacionAction(
           subtipoId: afParsed.data.subtipoId,
           nivelRiesgo: afParsed.data.nivelRiesgo,
           salario: afParsed.data.salario,
+          valorAdministracion: afParsed.data.valorAdministracion,
           fechaIngreso: afParsed.data.fechaIngreso,
+          comentarios: afParsed.data.comentarios,
+          epsId: afParsed.data.epsId,
+          afpId: afParsed.data.afpId,
+          ccfId: afParsed.data.ccfId,
         },
       });
+
+      if (serviciosIds.length > 0) {
+        await tx.afiliacionServicio.createMany({
+          data: serviciosIds.map((sId) => ({ afiliacionId: af.id, servicioAdicionalId: sId })),
+          skipDuplicates: true,
+        });
+      }
     });
   } catch (e) {
     return {
@@ -128,5 +153,5 @@ export async function createAfiliacionAction(
   }
 
   revalidatePath('/admin/base-datos');
-  redirect('/admin/base-datos');
+  return { ok: true };
 }

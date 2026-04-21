@@ -220,28 +220,29 @@ export const CotizanteSchema = z.object({
   municipioId: z.string().nullable().optional(),
 });
 
+const idOrNull = z
+  .string()
+  .trim()
+  .optional()
+  .transform((v) => (v && v !== '' ? v : null))
+  .nullable();
+
 export const AfiliacionSchema = z.object({
   empresaId: z.string().trim().min(1, 'Empresa requerida'),
-  cuentaCobroId: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => (v && v !== '' ? v : null))
-    .nullable(),
-  asesorComercialId: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => (v && v !== '' ? v : null))
-    .nullable(),
+  cuentaCobroId: idOrNull,
+  asesorComercialId: idOrNull,
   tipoCotizanteId: z.string().trim().min(1, 'Tipo de cotizante requerido'),
-  subtipoId: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => (v && v !== '' ? v : null))
-    .nullable(),
+  subtipoId: idOrNull,
   nivelRiesgo: NivelRiesgoEnum,
   salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
+  valorAdministracion: z
+    .string()
+    .optional()
+    .transform((v) => (v && v !== '' ? Number(v) : null))
+    .nullable(),
   fechaIngreso: z.coerce.date({ message: 'Fecha inválida' }),
+  comentarios: optional,
+  epsId: idOrNull,
+  afpId: idOrNull,
+  ccfId: idOrNull,
 });
