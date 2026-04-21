@@ -191,3 +191,56 @@ export const CuentaCobroSchema = z.object({
   telefono: optional,
   email: optional.pipe(z.string().email('Correo no válido').optional()),
 });
+
+// --- Cotizante + Afiliación (Fase 2.1) ---
+
+export const GeneroEnum = z.enum(['M', 'F', 'O']);
+export const EstadoAfiliacionEnum = z.enum(['ACTIVA', 'INACTIVA']);
+
+export const CotizanteSchema = z.object({
+  tipoDocumento: TipoDocumentoEnum,
+  numeroDocumento: z
+    .string()
+    .trim()
+    .min(4, 'Mínimo 4 dígitos')
+    .max(20)
+    .regex(/^[A-Z0-9]+$/i, 'Sin espacios ni símbolos'),
+  primerNombre: z.string().trim().min(1, 'Requerido').max(100),
+  segundoNombre: optional,
+  primerApellido: z.string().trim().min(1, 'Requerido').max(100),
+  segundoApellido: optional,
+  fechaNacimiento: z.coerce.date({ message: 'Fecha inválida' }),
+  genero: GeneroEnum,
+  telefono: optional,
+  celular: optional,
+  email: optional.pipe(z.string().email('Correo no válido').optional()),
+  direccion: optional,
+  ciudad: optional,
+  departamento: optional,
+});
+
+export const AfiliacionSchema = z.object({
+  empresaId: z.string().trim().min(1, 'Empresa requerida'),
+  cuentaCobroId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null))
+    .nullable(),
+  asesorComercialId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null))
+    .nullable(),
+  tipoCotizanteId: z.string().trim().min(1, 'Tipo de cotizante requerido'),
+  subtipoId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v && v !== '' ? v : null))
+    .nullable(),
+  nivelRiesgo: NivelRiesgoEnum,
+  salario: z.coerce.number().min(0, 'Salario no puede ser negativo'),
+  fechaIngreso: z.coerce.date({ message: 'Fecha inválida' }),
+});

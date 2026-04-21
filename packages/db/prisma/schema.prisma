@@ -48,6 +48,17 @@ enum TipoEntidadSgss {
   CCF
 }
 
+enum Genero {
+  M
+  F
+  O // Otro
+}
+
+enum EstadoAfiliacion {
+  ACTIVA
+  INACTIVA
+}
+
 // Permisos granulares: qué puede hacer cada rol en cada módulo.
 // Presencia en la tabla = permitido. Ausencia = denegado.
 // ADMIN implícitamente tiene todos los permisos (se saltea esta tabla).
@@ -162,7 +173,8 @@ model Empresa {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accesos UsuarioEmpresa[]
+  accesos      UsuarioEmpresa[]
+  afiliaciones Afiliacion[]
 
   @@index([arlId])
   @@map("empresas")
@@ -302,7 +314,8 @@ model CuentaCobro {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  sucursal     Sucursal     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  afiliaciones Afiliacion[]
 
   @@unique([sucursalId, codigo])
   @@index([sucursalId])
@@ -335,6 +348,8 @@ model AsesorComercial {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  afiliaciones Afiliacion[]
 
   @@map("asesores_comerciales")
 }
@@ -375,6 +390,7 @@ model TipoCotizante {
 
   subtipos           Subtipo[]
   empresasPermitidas EmpresaTipoCotizante[]
+  afiliaciones       Afiliacion[]
 
   @@map("tipos_cotizante")
 }
@@ -390,8 +406,67 @@ model Subtipo {
 
   tipoCotizante      TipoCotizante             @relation(fields: [tipoCotizanteId], references: [id], onDelete: Cascade)
   empresasPermitidas EmpresaSubtipoCotizante[]
+  afiliaciones       Afiliacion[]
 
   @@unique([codigo, tipoCotizanteId])
   @@index([tipoCotizanteId])
   @@map("subtipos_cotizante")
+}
+
+// --- Cotizante (cliente afiliado) y Afiliación (Fase 2.1) ---
+
+model Cotizante {
+  id              String        @id @default(cuid())
+  tipoDocumento   TipoDocumento
+  numeroDocumento String
+  primerNombre    String
+  segundoNombre   String?
+  primerApellido  String
+  segundoApellido String?
+  fechaNacimiento DateTime
+  genero          Genero
+  telefono        String?
+  celular         String?
+  email           String?
+  direccion       String?
+  ciudad          String?
+  departamento    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  afiliaciones Afiliacion[]
+
+  @@unique([tipoDocumento, numeroDocumento])
+  @@index([primerApellido, primerNombre])
+  @@map("cotizantes")
+}
+
+// Afiliación — liga un cotizante a una empresa con su plan (tipo/subtipo/nivel/salario).
+model Afiliacion {
+  id                String           @id @default(cuid())
+  cotizanteId       String
+  empresaId         String
+  cuentaCobroId     String?
+  asesorComercialId String?
+  tipoCotizanteId   String
+  subtipoId         String?
+  nivelRiesgo       NivelRiesgo
+  salario           Decimal          @db.Decimal(12, 2)
+  fechaIngreso      DateTime
+  fechaRetiro       DateTime?
+  estado            EstadoAfiliacion @default(ACTIVA)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  cotizante       Cotizante        @relation(fields: [cotizanteId], references: [id], onDelete: Cascade)
+  empresa         Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  cuentaCobro     CuentaCobro?     @relation(fields: [cuentaCobroId], references: [id], onDelete: SetNull)
+  asesorComercial AsesorComercial? @relation(fields: [asesorComercialId], references: [id], onDelete: SetNull)
+  tipoCotizante   TipoCotizante    @relation(fields: [tipoCotizanteId], references: [id], onDelete: Restrict)
+  subtipo         Subtipo?         @relation(fields: [subtipoId], references: [id], onDelete: SetNull)
+
+  @@index([cotizanteId])
+  @@index([empresaId])
+  @@index([estado])
+  @@map("afiliaciones")
 }
