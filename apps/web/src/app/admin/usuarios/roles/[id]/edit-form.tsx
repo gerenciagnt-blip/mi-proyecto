@@ -35,6 +35,7 @@ export function EditRolCustomForm({ rolId, initial }: Props) {
   const keyFor = (m: string, a: string) => `${m}::${a}`;
 
   return (
+    <div className="space-y-6">
     <form action={action} className="space-y-6">
       {/* Datos básicos */}
       <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -124,10 +125,11 @@ export function EditRolCustomForm({ rolId, initial }: Props) {
           {pending ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>
-
-      {/* Eliminar rol — fuera del form principal */}
-      <DeleteButton rolId={rolId} />
     </form>
+
+    {/* Eliminar rol — como form hermano, no anidado */}
+    <DeleteButton rolId={rolId} />
+    </div>
   );
 }
 
