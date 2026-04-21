@@ -1,6 +1,11 @@
 'use client';
 
 import { useActionState } from 'react';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert } from '@/components/ui/alert';
 import { loginAction, type LoginState } from './actions';
 
 const initialState: LoginState = { error: null };
@@ -9,46 +14,48 @@ export function LoginForm() {
   const [state, formAction, isPending] = useActionState(loginAction, initialState);
 
   return (
-    <form action={formAction} className="space-y-4">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-          Correo electrónico
-        </label>
-        <input
+    <form action={formAction} className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="email">Correo electrónico</Label>
+        <Input
           id="email"
           name="email"
           type="email"
           required
           autoComplete="email"
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          placeholder="tu@correo.com"
         />
       </div>
 
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-          Contraseña
-        </label>
-        <input
+      <div className="space-y-2">
+        <Label htmlFor="password">Contraseña</Label>
+        <Input
           id="password"
           name="password"
           type="password"
           required
           autoComplete="current-password"
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          placeholder="••••••••"
         />
       </div>
 
       {state.error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <Alert variant="danger">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{state.error}</span>
+        </Alert>
       )}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {isPending ? 'Ingresando…' : 'Ingresar'}
-      </button>
+      <Button type="submit" size="lg" className="w-full" disabled={isPending}>
+        {isPending ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Ingresando…</span>
+          </>
+        ) : (
+          <span>Ingresar</span>
+        )}
+      </Button>
     </form>
   );
 }
