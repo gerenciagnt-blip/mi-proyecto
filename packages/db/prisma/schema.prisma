@@ -184,16 +184,21 @@ model Empresa {
   repLegalNombre    String?
 
   // Ubicación y contacto
-  direccion    String?
-  ciudad       String?
-  departamento String?
-  telefono     String?
-  email        String?
+  direccion      String?
+  ciudad         String? // legado - texto libre (queda sincronizado con municipio.nombre si aplica)
+  departamento   String? // legado - texto libre
+  departamentoId String? // nuevo - FK a DIVIPOLA
+  municipioId    String? // nuevo - FK a DIVIPOLA
+  telefono       String?
+  email          String?
 
   // PILA
-  ciiuPrincipal String?
-  arlId         String?
-  arl           EntidadSgss? @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
+  ciiuPrincipal    String?
+  arlId            String?
+  exoneraLey1607   Boolean @default(false) // exoneración de aportes Ley 1607 de 2012
+  arl              EntidadSgss?  @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
+  departamentoRef  Departamento? @relation("EmpresaDepto", fields: [departamentoId], references: [id], onDelete: SetNull)
+  municipioRef     Municipio?    @relation("EmpresaMuni", fields: [municipioId], references: [id], onDelete: SetNull)
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos   EmpresaNivelRiesgo[]
@@ -209,6 +214,8 @@ model Empresa {
   afiliaciones Afiliacion[]
 
   @@index([arlId])
+  @@index([departamentoId])
+  @@index([municipioId])
   @@map("empresas")
 }
 
@@ -558,6 +565,7 @@ model Afiliacion {
   @@index([estado])
   @@index([modalidad])
   @@index([actividadEconomicaId])
+  @@index([arlId])
   @@map("afiliaciones")
 }
 
@@ -594,6 +602,7 @@ model Departamento {
 
   municipios Municipio[]
   cotizantes Cotizante[]
+  empresas   Empresa[]   @relation("EmpresaDepto")
 
   @@map("departamentos")
 }
@@ -606,6 +615,7 @@ model Municipio {
 
   departamento Departamento @relation(fields: [departamentoId], references: [id], onDelete: Cascade)
   cotizantes   Cotizante[]
+  empresas     Empresa[]    @relation("EmpresaMuni")
 
   @@unique([nombre, departamentoId])
   @@index([departamentoId])

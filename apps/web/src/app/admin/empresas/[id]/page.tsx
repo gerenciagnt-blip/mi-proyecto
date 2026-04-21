@@ -8,15 +8,30 @@ export const dynamic = 'force-dynamic';
 
 export default async function EditEmpresaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [empresa, arls] = await Promise.all([
+  const [empresa, arls, departamentos] = await Promise.all([
     prisma.empresa.findUnique({ where: { id } }),
     prisma.entidadSgss.findMany({
       where: { tipo: 'ARL', active: true },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),
+    prisma.departamento.findMany({
+      orderBy: { nombre: 'asc' },
+      include: {
+        municipios: {
+          orderBy: { nombre: 'asc' },
+          select: { id: true, nombre: true },
+        },
+      },
+    }),
   ]);
   if (!empresa) notFound();
+
+  const departamentosOpts = departamentos.map((d) => ({
+    id: d.id,
+    nombre: d.nombre,
+    municipios: d.municipios,
+  }));
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -38,7 +53,7 @@ export default async function EditEmpresaPage({ params }: { params: Promise<{ id
         </Link>
       </header>
       <section className="rounded-lg border border-slate-200 bg-white p-6">
-        <EditEmpresaForm empresa={empresa} arls={arls} />
+        <EditEmpresaForm empresa={empresa} arls={arls} departamentos={departamentosOpts} />
       </section>
     </div>
   );

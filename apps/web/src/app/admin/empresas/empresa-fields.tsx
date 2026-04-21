@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { calcularDV } from '@/lib/nit';
 
 type InitialValues = Partial<{
@@ -15,16 +15,25 @@ type InitialValues = Partial<{
   direccion: string;
   ciudad: string;
   departamento: string;
+  departamentoId: string;
+  municipioId: string;
   telefono: string;
   email: string;
   ciiuPrincipal: string;
   arlId: string;
+  exoneraLey1607: boolean;
 }>;
 
 type Arl = { id: string; codigo: string; nombre: string };
 
+export type DeptoOpt = {
+  id: string;
+  nombre: string;
+  municipios: { id: string; nombre: string }[];
+};
+
 const input =
-  'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
+  'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:cursor-not-allowed disabled:bg-slate-50';
 const label = 'block text-xs font-medium text-slate-600';
 const section = 'rounded-lg border border-slate-200 bg-white p-4';
 const sectionTitle = 'mb-3 text-sm font-semibold';
@@ -32,9 +41,11 @@ const sectionTitle = 'mb-3 text-sm font-semibold';
 export function EmpresaFields({
   initial,
   arls = [],
+  departamentos = [],
 }: {
   initial?: InitialValues;
   arls?: Arl[];
+  departamentos?: DeptoOpt[];
 }) {
   const [nit, setNit] = useState(initial?.nit ?? '');
   const [dv, setDv] = useState(initial?.dv ?? '');
@@ -47,6 +58,25 @@ export function EmpresaFields({
     }
   }, [nit, dvAuto]);
 
+  // DIVIPOLA cascada depto → municipio
+  const [deptoId, setDeptoId] = useState(initial?.departamentoId ?? '');
+  const [muniId, setMuniId] = useState(initial?.municipioId ?? '');
+  const depto = useMemo(
+    () => departamentos.find((d) => d.id === deptoId),
+    [departamentos, deptoId],
+  );
+  const muni = useMemo(
+    () => depto?.municipios.find((m) => m.id === muniId),
+    [depto, muniId],
+  );
+
+  // Si al cambiar depto el municipio ya no está, resetear
+  useEffect(() => {
+    if (muniId && !depto?.municipios.some((m) => m.id === muniId)) {
+      setMuniId('');
+    }
+  }, [depto, muniId]);
+
   return (
     <div className="space-y-4">
       {/* Identificación */}
@@ -54,7 +84,7 @@ export function EmpresaFields({
         <h3 className={sectionTitle}>Identificación</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
-            <label className={label}>NIT (sin DV)</label>
+            <label className={label}>NIT (sin DV) *</label>
             <input
               name="nit"
               required
@@ -82,7 +112,7 @@ export function EmpresaFields({
             </p>
           </div>
           <div>
-            <label className={label}>Tipo persona</label>
+            <label className={label}>Tipo persona *</label>
             <select
               name="tipoPersona"
               required
@@ -94,12 +124,16 @@ export function EmpresaFields({
             </select>
           </div>
           <div className="sm:col-span-2">
-            <label className={label}>Razón social</label>
+            <label className={label}>Razón social *</label>
             <input name="nombre" required defaultValue={initial?.nombre} className={input} />
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Nombre comercial (opcional)</label>
-            <input name="nombreComercial" defaultValue={initial?.nombreComercial} className={input} />
+            <input
+              name="nombreComercial"
+              defaultValue={initial?.nombreComercial}
+              className={input}
+            />
           </div>
         </div>
       </section>
@@ -109,7 +143,7 @@ export function EmpresaFields({
         <h3 className={sectionTitle}>Representante legal</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
-            <label className={label}>Tipo doc.</label>
+            <label className={label}>Tipo doc. *</label>
             <select
               name="repLegalTipoDoc"
               required
@@ -126,7 +160,7 @@ export function EmpresaFields({
             </select>
           </div>
           <div>
-            <label className={label}>Número doc.</label>
+            <label className={label}>Número doc. *</label>
             <input
               name="repLegalNumeroDoc"
               required
@@ -135,7 +169,7 @@ export function EmpresaFields({
             />
           </div>
           <div className="sm:col-span-2">
-            <label className={label}>Nombre completo</label>
+            <label className={label}>Nombre completo *</label>
             <input
               name="repLegalNombre"
               required
@@ -146,28 +180,68 @@ export function EmpresaFields({
         </div>
       </section>
 
-      {/* Contacto */}
+      {/* Contacto + DIVIPOLA */}
       <section className={section}>
         <h3 className={sectionTitle}>Ubicación y contacto</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
-            <label className={label}>Dirección</label>
+            <label className={label}>Dirección *</label>
             <input name="direccion" required defaultValue={initial?.direccion} className={input} />
           </div>
           <div>
-            <label className={label}>Ciudad</label>
-            <input name="ciudad" required defaultValue={initial?.ciudad} className={input} />
+            <label className={label}>Departamento *</label>
+            <select
+              value={deptoId}
+              onChange={(e) => {
+                setDeptoId(e.target.value);
+                setMuniId('');
+              }}
+              required
+              className={input}
+            >
+              <option value="">— Seleccionar —</option>
+              {departamentos.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.nombre}
+                </option>
+              ))}
+            </select>
+            <input type="hidden" name="departamentoId" value={deptoId} />
+            {/* Mantenemos el texto legado sincronizado para no romper reportería previa */}
+            <input type="hidden" name="departamento" value={depto?.nombre ?? ''} />
           </div>
           <div>
-            <label className={label}>Departamento</label>
-            <input name="departamento" required defaultValue={initial?.departamento} className={input} />
+            <label className={label}>Municipio *</label>
+            <select
+              value={muniId}
+              onChange={(e) => setMuniId(e.target.value)}
+              disabled={!depto}
+              required
+              className={input}
+            >
+              <option value="">
+                {depto ? '— Seleccionar —' : 'Primero elige departamento'}
+              </option>
+              {depto?.municipios.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nombre}
+                </option>
+              ))}
+            </select>
+            <input type="hidden" name="municipioId" value={muniId} />
+            <input type="hidden" name="ciudad" value={muni?.nombre ?? ''} />
           </div>
           <div>
-            <label className={label}>Teléfono</label>
-            <input name="telefono" required defaultValue={initial?.telefono} className={input} />
+            <label className={label}>Teléfono *</label>
+            <input
+              name="telefono"
+              required
+              defaultValue={initial?.telefono}
+              className={input}
+            />
           </div>
           <div className="sm:col-span-3">
-            <label className={label}>Correo electrónico</label>
+            <label className={label}>Correo electrónico *</label>
             <input
               name="email"
               type="email"
@@ -184,7 +258,7 @@ export function EmpresaFields({
         <h3 className={sectionTitle}>PILA</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
-            <label className={label}>CIIU principal</label>
+            <label className={label}>CIIU principal *</label>
             <input
               name="ciiuPrincipal"
               required
@@ -212,11 +286,24 @@ export function EmpresaFields({
               </p>
             )}
           </div>
+          <div className="sm:col-span-1 flex items-end">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm hover:bg-slate-100">
+              <input
+                type="checkbox"
+                name="exoneraLey1607"
+                defaultChecked={initial?.exoneraLey1607 ?? false}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span>
+                Exonera <span className="font-mono">Ley 1607</span>
+              </span>
+            </label>
+          </div>
           <div className="sm:col-span-4">
             <p className="mt-2 text-xs text-slate-500">
-              Niveles de riesgo permitidos, actividades adicionales y tipos/subtipos de cotizante se
-              configuran en la pestaña <strong>Configuración PILA</strong> de la empresa (solo en
-              edición).
+              Niveles de riesgo permitidos, actividades adicionales y tipos/subtipos de
+              cotizante se configuran en la pestaña <strong>Configuración PILA</strong>{' '}
+              (disponible tras crear la empresa).
             </p>
           </div>
         </div>

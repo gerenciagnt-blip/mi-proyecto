@@ -7,7 +7,7 @@ export const metadata = { title: 'Empresas — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function EmpresasPage() {
-  const [empresas, arls] = await Promise.all([
+  const [empresas, arls, departamentos] = await Promise.all([
     prisma.empresa.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -20,7 +20,22 @@ export default async function EmpresasPage() {
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),
+    prisma.departamento.findMany({
+      orderBy: { nombre: 'asc' },
+      include: {
+        municipios: {
+          orderBy: { nombre: 'asc' },
+          select: { id: true, nombre: true },
+        },
+      },
+    }),
   ]);
+
+  const departamentosOpts = departamentos.map((d) => ({
+    id: d.id,
+    nombre: d.nombre,
+    municipios: d.municipios,
+  }));
 
   return (
     <div className="space-y-6">
@@ -31,7 +46,7 @@ export default async function EmpresasPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold">Crear nueva</h2>
-        <CreateEmpresaForm arls={arls} />
+        <CreateEmpresaForm arls={arls} departamentos={departamentosOpts} />
       </section>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">

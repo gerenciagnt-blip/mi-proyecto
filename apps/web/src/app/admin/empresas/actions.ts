@@ -25,10 +25,13 @@ function parseForm(formData: FormData) {
     direccion: get('direccion'),
     ciudad: get('ciudad'),
     departamento: get('departamento'),
+    departamentoId: get('departamentoId'),
+    municipioId: get('municipioId'),
     telefono: get('telefono'),
     email: get('email'),
     ciiuPrincipal: get('ciiuPrincipal'),
     arlId: get('arlId'),
+    exoneraLey1607: formData.get('exoneraLey1607') === 'on',
   };
 }
 

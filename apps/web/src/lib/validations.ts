@@ -40,10 +40,13 @@ export const EmpresaCreateSchema = z.object({
   repLegalNumeroDoc: z.string().trim().min(4, 'Mínimo 4 dígitos').max(20),
   repLegalNombre: z.string().trim().min(1, 'Requerido').max(200),
 
-  // Contacto
+  // Contacto — departamento/ciudad proceden de DIVIPOLA (FK);
+  // el texto libre se conserva como nombre denormalizado.
   direccion: z.string().trim().min(1, 'Requerido').max(200),
-  ciudad: z.string().trim().min(1, 'Requerido').max(100),
-  departamento: z.string().trim().min(1, 'Requerido').max(100),
+  departamentoId: z.string().trim().min(1, 'Departamento requerido'),
+  municipioId: z.string().trim().min(1, 'Municipio requerido'),
+  ciudad: z.string().trim().max(100).optional(),
+  departamento: z.string().trim().max(100).optional(),
   telefono: z.string().trim().min(5, 'Mínimo 5 dígitos').max(30),
   email: z.string().trim().email('Correo no válido'),
 
@@ -58,6 +61,7 @@ export const EmpresaCreateSchema = z.object({
     .optional()
     .transform((v) => (v === '' ? null : v))
     .nullable(),
+  exoneraLey1607: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
 });
 
 export const EmpresaUpdateSchema = EmpresaCreateSchema.extend({

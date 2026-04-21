@@ -2,11 +2,17 @@
 
 import { useActionState, useRef, useEffect } from 'react';
 import { createEmpresaAction, type ActionState } from './actions';
-import { EmpresaFields } from './empresa-fields';
+import { EmpresaFields, type DeptoOpt } from './empresa-fields';
 
 type Arl = { id: string; codigo: string; nombre: string };
 
-export function CreateEmpresaForm({ arls }: { arls: Arl[] }) {
+export function CreateEmpresaForm({
+  arls,
+  departamentos,
+}: {
+  arls: Arl[];
+  departamentos: DeptoOpt[];
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createEmpresaAction, {});
   const ref = useRef<HTMLFormElement>(null);
 
@@ -19,7 +25,7 @@ export function CreateEmpresaForm({ arls }: { arls: Arl[] }) {
 
   return (
     <form ref={ref} action={action} className="space-y-4">
-      <EmpresaFields arls={arls} />
+      <EmpresaFields arls={arls} departamentos={departamentos} />
 
       {state.error && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
