@@ -66,6 +66,12 @@ export async function reabrirPeriodoAction(periodoId: string) {
 /**
  * Corre el motor sobre todas las afiliaciones ACTIVAS del sistema para
  * el período dado. Crea/actualiza la liquidación de cada una.
+ *
+ * Antes de recalcular, borra las liquidaciones en estado BORRADOR del
+ * período para evitar huérfanas de un tipo anterior (p.ej. una
+ * MENSUALIDAD que quedó cuando la fecha de ingreso se movió al mes
+ * actual y ahora corresponde VINCULACION). Las REVISADAS y PAGADAS se
+ * conservan intactas.
  */
 export async function liquidarPeriodoAction(periodoId: string): Promise<ActionState> {
   await requireAdmin();
@@ -74,35 +80,55 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
   if (!periodo) return { error: 'Período no existe' };
   if (periodo.estado === 'CERRADO') return { error: 'Período cerrado — reabrir primero' };
 
+  // Wipe liquidaciones BORRADOR (y sus comprobantes BORRADOR que las
+  // referencien) para regenerar limpio. Cascade de liquidacion borra sus
+  // conceptos; comprobantes BORRADOR se borran aparte.
+  await prisma.comprobante.deleteMany({
+    where: { periodoId, estado: 'BORRADOR' },
+  });
+  await prisma.liquidacion.deleteMany({
+    where: { periodoId, estado: 'BORRADOR' },
+  });
+
   const afiliacionesActivas = await prisma.afiliacion.findMany({
     where: { estado: 'ACTIVA' },
     select: { id: true },
   });
 
   let procesadas = 0;
+  let skipped = 0;
   let errores = 0;
   for (const a of afiliacionesActivas) {
     try {
-      await persistirLiquidacion(prisma, {
+      const r = await persistirLiquidacion(prisma, {
         periodoId,
         afiliacionId: a.id,
       });
-      procesadas++;
+      if (r) procesadas++;
+      else skipped++; // afiliación aún no arranca en este período
     } catch {
       errores++;
     }
   }
 
   revalidatePath('/admin/transacciones');
+  revalidatePath('/admin/transacciones/cartera');
+  revalidatePath('/admin/transacciones/comprobantes');
+  const skippedMsg = skipped > 0 ? ` · ${skipped} sin iniciar` : '';
+  const errMsg = errores > 0 ? ` · ${errores} con error` : '';
   return {
     ok: true,
-    mensaje: `Liquidadas ${procesadas} afiliaciones${errores ? ` (${errores} con error)` : ''}`,
+    mensaje: `Liquidadas ${procesadas} afiliaciones${skippedMsg}${errMsg}`,
   };
 }
 
 /**
  * Recalcula una liquidación individual. Útil cuando cambió una tarifa
  * o el IBC de una afiliación.
+ *
+ * Borra la fila actual antes de recalcular para permitir que el motor
+ * emita un tipo distinto (VINCULACION ↔ MENSUALIDAD) cuando la fecha
+ * de ingreso o el período cambió. Las PAGADAS no se tocan.
  */
 export async function recalcularLiquidacionAction(liquidacionId: string) {
   await requireAdmin();
@@ -111,13 +137,18 @@ export async function recalcularLiquidacionAction(liquidacionId: string) {
     select: { periodoId: true, afiliacionId: true, estado: true },
   });
   if (!liq) return;
-  if (liq.estado === 'PAGADA') return; // no pisar pagadas
+  if (liq.estado === 'PAGADA') return;
+
+  // Elimina la fila actual (cascade borra sus conceptos) para que el
+  // motor cree limpia con el tipo correcto.
+  await prisma.liquidacion.delete({ where: { id: liquidacionId } });
 
   await persistirLiquidacion(prisma, {
     periodoId: liq.periodoId,
     afiliacionId: liq.afiliacionId,
   });
   revalidatePath('/admin/transacciones');
+  revalidatePath('/admin/transacciones/cartera');
 }
 
 /**
