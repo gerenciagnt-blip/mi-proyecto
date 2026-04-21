@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Montserrat, Roboto } from 'next/font/google';
 import './globals.css';
 
@@ -19,6 +19,13 @@ const roboto = Roboto({
 export const metadata: Metadata = {
   title: 'Sistema PILA',
   description: 'Tu seguridad social a un click',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#2F80ED',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

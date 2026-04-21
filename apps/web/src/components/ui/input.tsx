@@ -23,7 +23,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           type={type}
           ref={ref}
           className={cn(
-            'flex h-12 w-full rounded-xl border border-brand-border bg-brand-surface px-4 text-sm text-brand-text-primary shadow-sm transition-all duration-200 placeholder:text-brand-text-muted focus-visible:border-brand-blue focus-visible:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-blue/15 disabled:cursor-not-allowed disabled:opacity-60',
+            // text-base (16px) en mobile evita auto-zoom de iOS Safari en focus;
+            // sm:text-sm (14px) recupera densidad en desktop.
+            'flex h-12 w-full rounded-xl border border-brand-border bg-brand-surface px-4 text-base text-brand-text-primary shadow-sm transition-all duration-200 placeholder:text-brand-text-muted focus-visible:border-brand-blue focus-visible:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-blue/15 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm',
             hasIcon && 'pl-10',
             hasTrailing && 'pr-10',
             className,

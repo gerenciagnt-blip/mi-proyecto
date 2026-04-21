@@ -9,37 +9,35 @@ export const metadata = {
 export default function LoginPage() {
   return (
     <main
-      className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12"
+      className="relative flex min-h-[100dvh] min-h-screen items-center justify-center overflow-hidden px-4 py-8 sm:px-6 sm:py-12"
       style={{
         background:
           'radial-gradient(circle at 20% 30%, rgba(47,128,237,0.15), transparent 40%), radial-gradient(circle at 80% 70%, rgba(39,174,96,0.15), transparent 40%), linear-gradient(180deg, #F4F7FB 0%, #EAF1F9 100%)',
       }}
     >
-      {/* Blobs decorativos sutiles */}
+      {/* Blobs decorativos sutiles (se ocultan en <sm para no saturar) */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-brand-blue/10 blur-3xl"
+        className="pointer-events-none absolute -left-24 top-1/4 hidden h-72 w-72 rounded-full bg-brand-blue/10 blur-3xl sm:block"
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute -right-24 bottom-1/4 h-80 w-80 rounded-full bg-brand-green/10 blur-3xl"
+        className="pointer-events-none absolute -right-24 bottom-1/4 hidden h-80 w-80 rounded-full bg-brand-green/10 blur-3xl sm:block"
       />
 
       <div className="relative w-full max-w-[440px] animate-fade-in">
-        {/* Logo */}
+        {/* Logo — responsive: 160px móvil, 200px tablet, 260px desktop */}
         <div
-          className="mb-10 flex justify-center"
+          className="mx-auto mb-6 flex w-full max-w-[160px] justify-center sm:mb-8 sm:max-w-[200px] lg:mb-10 lg:max-w-[260px]"
           style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.08))' }}
         >
           <PilaLogo size="lg" />
         </div>
 
-        {/* Card glass */}
-        <div
-          className="rounded-3xl border border-white/50 bg-white/85 p-10 shadow-card-float backdrop-blur-md"
-        >
-          <header className="mb-7">
-            <h2 className="font-heading text-[26px] font-semibold tracking-tight text-brand-text-primary">
+        {/* Card glass — padding y corners escalados */}
+        <div className="rounded-2xl border border-white/50 bg-white/85 p-6 shadow-card-float backdrop-blur-md sm:rounded-3xl sm:p-8 lg:p-10">
+          <header className="mb-6 sm:mb-7">
+            <h2 className="font-heading text-2xl font-semibold tracking-tight text-brand-text-primary sm:text-[26px]">
               Ingresar
             </h2>
             <p className="mt-1.5 text-sm text-brand-text-secondary">
@@ -51,11 +49,11 @@ export default function LoginPage() {
         </div>
 
         {/* Badge de confianza + footer */}
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-brand-text-muted">
+        <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-brand-text-muted sm:mt-6">
           <ShieldCheck className="h-3.5 w-3.5" />
           <span>Acceso seguro y cifrado</span>
         </div>
-        <p className="mt-2 text-center text-[11px] text-brand-text-muted">
+        <p className="mt-2 px-4 text-center text-xs text-brand-text-muted">
           © {new Date().getFullYear()} Sistema PILA · Todos los derechos reservados
         </p>
       </div>
