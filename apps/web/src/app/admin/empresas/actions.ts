@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { EmpresaCreateSchema, EmpresaUpdateSchema } from '@/lib/validations';
+import { titleCase } from '@/lib/text';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -16,19 +17,19 @@ function parseForm(formData: FormData) {
   return {
     nit: get('nit'),
     dv: get('dv'),
-    nombre: get('nombre'),
-    nombreComercial: get('nombreComercial'),
+    nombre: titleCase(get('nombre')),
+    nombreComercial: titleCase(get('nombreComercial')),
     tipoPersona: get('tipoPersona'),
     repLegalTipoDoc: get('repLegalTipoDoc'),
-    repLegalNumeroDoc: get('repLegalNumeroDoc'),
-    repLegalNombre: get('repLegalNombre'),
-    direccion: get('direccion'),
-    ciudad: get('ciudad'),
-    departamento: get('departamento'),
+    repLegalNumeroDoc: get('repLegalNumeroDoc').toUpperCase(),
+    repLegalNombre: titleCase(get('repLegalNombre')),
+    direccion: titleCase(get('direccion')),
+    ciudad: titleCase(get('ciudad')),
+    departamento: titleCase(get('departamento')),
     departamentoId: get('departamentoId'),
     municipioId: get('municipioId'),
     telefono: get('telefono'),
-    email: get('email'),
+    email: get('email').toLowerCase(),
     ciiuPrincipal: get('ciiuPrincipal'),
     arlId: get('arlId'),
     exoneraLey1607: formData.get('exoneraLey1607') === 'on',

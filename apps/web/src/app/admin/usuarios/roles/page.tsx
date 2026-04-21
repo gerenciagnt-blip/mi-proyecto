@@ -3,7 +3,7 @@ import { ArrowLeft, Shield, UserCog, UserCheck, Layers } from 'lucide-react';
 import { prisma } from '@pila/db';
 import type { Role } from '@pila/db';
 import { PermisosForm } from './permisos-form';
-import { CreateRolCustomForm } from './create-rol-form';
+import { CreateRolCustomDialog } from './create-rol-dialog';
 import { toggleRolCustomAction } from './actions';
 
 export const metadata = { title: 'Roles y permisos — Sistema PILA' };
@@ -113,22 +113,20 @@ export default async function RolesPage() {
 
       {/* Roles personalizados */}
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <header className="mb-4">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-slate-900">
-            <Layers className="h-5 w-5 text-brand-blue" />
-            Roles personalizados
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Crea variaciones con permisos específicos (p. ej. &ldquo;Asesor Sr&rdquo;,
-            &ldquo;Supervisor&rdquo;). Se basan en <strong>Dueño Aliado</strong> o{' '}
-            <strong>Usuario Aliado</strong>.
-          </p>
+        <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-slate-900">
+              <Layers className="h-5 w-5 text-brand-blue" />
+              Roles personalizados
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Crea variaciones con permisos específicos (p. ej. &ldquo;Asesor Sr&rdquo;,
+              &ldquo;Supervisor&rdquo;). Se basan en <strong>Dueño Aliado</strong> o{' '}
+              <strong>Usuario Aliado</strong>.
+            </p>
+          </div>
+          <CreateRolCustomDialog />
         </header>
-
-        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h3 className="mb-3 text-sm font-semibold">Nuevo rol</h3>
-          <CreateRolCustomForm />
-        </div>
 
         <div className="overflow-hidden rounded-lg border border-slate-200">
           <table className="w-full text-sm">

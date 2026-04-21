@@ -10,6 +10,7 @@ import {
   UserUpdateSchema,
   UserPasswordSchema,
 } from '@/lib/validations';
+import { titleCase } from '@/lib/text';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -23,7 +24,7 @@ export async function createUserAction(
   const sucursalRaw = String(formData.get('sucursalId') ?? '');
   const parsed = UserCreateSchema.safeParse({
     email: String(formData.get('email') ?? '').toLowerCase().trim(),
-    name: String(formData.get('name') ?? '').trim(),
+    name: titleCase(String(formData.get('name') ?? '').trim()),
     password: String(formData.get('password') ?? ''),
     role,
     sucursalId: role === 'ADMIN' ? null : sucursalRaw || null,
@@ -65,7 +66,7 @@ export async function updateUserAction(
   const role = String(formData.get('role') ?? '');
   const sucursalRaw = String(formData.get('sucursalId') ?? '');
   const parsed = UserUpdateSchema.safeParse({
-    name: String(formData.get('name') ?? '').trim(),
+    name: titleCase(String(formData.get('name') ?? '').trim()),
     role,
     sucursalId: role === 'ADMIN' ? null : sucursalRaw || null,
     active: formData.get('active') === 'on',

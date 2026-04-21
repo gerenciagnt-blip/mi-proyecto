@@ -5,6 +5,7 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
+import { titleCase, sentenceCase } from '@/lib/text';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -13,20 +14,21 @@ export type ActionState = { error?: string; ok?: boolean };
 function parseCotizante(fd: FormData) {
   const g = (k: string) => String(fd.get(k) ?? '').trim();
   const emptyNull = (v: string) => (v === '' ? null : v);
+  // El documento va en MAYÚSCULAS (cédula letras para PAS); el email en minúsculas.
   return {
     tipoDocumento: g('tipoDocumento'),
-    numeroDocumento: g('numeroDocumento'),
+    numeroDocumento: g('numeroDocumento').toUpperCase(),
     fechaExpedicionDoc: emptyNull(g('fechaExpedicionDoc')),
-    primerNombre: g('primerNombre'),
-    segundoNombre: g('segundoNombre'),
-    primerApellido: g('primerApellido'),
-    segundoApellido: g('segundoApellido'),
+    primerNombre: titleCase(g('primerNombre')),
+    segundoNombre: titleCase(g('segundoNombre')),
+    primerApellido: titleCase(g('primerApellido')),
+    segundoApellido: titleCase(g('segundoApellido')),
     fechaNacimiento: g('fechaNacimiento'),
     genero: g('genero'),
     telefono: g('telefono'),
     celular: g('celular'),
-    email: g('email'),
-    direccion: g('direccion'),
+    email: g('email').toLowerCase(),
+    direccion: titleCase(g('direccion')),
     departamentoId: emptyNull(g('departamentoId')),
     municipioId: emptyNull(g('municipioId')),
   };
@@ -49,7 +51,7 @@ function parseAfiliacion(fd: FormData) {
     salario: g('salario'),
     valorAdministracion: g('valorAdministracion'),
     fechaIngreso: g('fechaIngreso'),
-    comentarios: g('comentarios'),
+    comentarios: sentenceCase(g('comentarios')),
     epsId: g('epsId'),
     afpId: g('afpId'),
     arlId: g('arlId'),

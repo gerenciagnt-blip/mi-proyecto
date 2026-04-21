@@ -5,7 +5,13 @@ import { createUserAction, type ActionState } from './actions';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
-export function CreateUserForm({ sucursales }: { sucursales: Sucursal[] }) {
+export function CreateUserForm({
+  sucursales,
+  onSuccess,
+}: {
+  sucursales: Sucursal[];
+  onSuccess?: () => void;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createUserAction, {});
   const ref = useRef<HTMLFormElement>(null);
   const [role, setRole] = useState('ALIADO_USER');
@@ -14,13 +20,14 @@ export function CreateUserForm({ sucursales }: { sucursales: Sucursal[] }) {
     if (state.ok) {
       ref.current?.reset();
       setRole('ALIADO_USER');
+      onSuccess?.();
     }
-  }, [state.ok]);
+  }, [state.ok, onSuccess]);
 
   return (
     <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
-        <label className="block text-xs font-medium text-slate-600">Correo</label>
+        <label className="block text-xs font-medium text-slate-600">Correo *</label>
         <input
           name="email"
           type="email"
@@ -29,7 +36,7 @@ export function CreateUserForm({ sucursales }: { sucursales: Sucursal[] }) {
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600">Nombre</label>
+        <label className="block text-xs font-medium text-slate-600">Nombre *</label>
         <input
           name="name"
           required
@@ -37,7 +44,7 @@ export function CreateUserForm({ sucursales }: { sucursales: Sucursal[] }) {
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600">Contraseña inicial</label>
+        <label className="block text-xs font-medium text-slate-600">Contraseña inicial *</label>
         <input
           name="password"
           type="password"
@@ -47,7 +54,7 @@ export function CreateUserForm({ sucursales }: { sucursales: Sucursal[] }) {
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600">Rol</label>
+        <label className="block text-xs font-medium text-slate-600">Rol *</label>
         <select
           name="role"
           value={role}

@@ -9,9 +9,11 @@ type Arl = { id: string; codigo: string; nombre: string };
 export function CreateEmpresaForm({
   arls,
   departamentos,
+  onSuccess,
 }: {
   arls: Arl[];
   departamentos: DeptoOpt[];
+  onSuccess?: () => void;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createEmpresaAction, {});
   const ref = useRef<HTMLFormElement>(null);
@@ -19,9 +21,9 @@ export function CreateEmpresaForm({
   useEffect(() => {
     if (state.ok) {
       ref.current?.reset();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      onSuccess?.();
     }
-  }, [state.ok]);
+  }, [state.ok, onSuccess]);
 
   return (
     <form ref={ref} action={action} className="space-y-4">

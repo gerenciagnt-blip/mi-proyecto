@@ -70,13 +70,27 @@ export async function createRolCustomAction(
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
+  // Permisos seleccionados en la misma ventana de creación
+  const selected = formData.getAll('perm').map(String);
+  const permisos: { modulo: string; accion: string }[] = [];
+  for (const s of selected) {
+    const [modulo, accion] = s.split('::');
+    if (!modulo || !accion) continue;
+    if (!VALID_MODULE_KEYS.has(modulo) || !VALID_ACCIONES.has(accion)) continue;
+    permisos.push({ modulo, accion });
+  }
+
   try {
-    const rol = await prisma.rolCustom.create({ data: parsed.data });
-    revalidatePath('/admin/usuarios/roles');
-    redirect(`/admin/usuarios/roles/${rol.id}`);
+    await prisma.$transaction(async (tx) => {
+      const rol = await tx.rolCustom.create({ data: parsed.data });
+      if (permisos.length > 0) {
+        await tx.permisoCustom.createMany({
+          data: permisos.map((p) => ({ rolCustomId: rol.id, ...p })),
+          skipDuplicates: true,
+        });
+      }
+    });
   } catch (e) {
-    // redirect() throws NEXT_REDIRECT → dejar pasar
-    if (e instanceof Error && e.message === 'NEXT_REDIRECT') throw e;
     return {
       error:
         e instanceof Error && e.message.includes('Unique')
@@ -84,6 +98,9 @@ export async function createRolCustomAction(
           : 'Error al crear rol',
     };
   }
+
+  revalidatePath('/admin/usuarios/roles');
+  return { ok: true };
 }
 
 export async function updateRolCustomAction(

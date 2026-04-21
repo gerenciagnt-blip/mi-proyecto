@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { CuentaCobroSchema } from '@/lib/validations';
+import { titleCase } from '@/lib/text';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -12,18 +13,18 @@ function parseForm(formData: FormData) {
   return {
     sucursalId: g('sucursalId'),
     codigo: g('codigo').toUpperCase(),
-    razonSocial: g('razonSocial'),
+    razonSocial: titleCase(g('razonSocial')),
     nit: g('nit'),
     dv: g('dv'),
     tipoPersona: g('tipoPersona'),
     repLegalTipoDoc: g('repLegalTipoDoc'),
-    repLegalNumeroDoc: g('repLegalNumeroDoc'),
-    repLegalNombre: g('repLegalNombre'),
-    direccion: g('direccion'),
-    ciudad: g('ciudad'),
-    departamento: g('departamento'),
+    repLegalNumeroDoc: g('repLegalNumeroDoc').toUpperCase(),
+    repLegalNombre: titleCase(g('repLegalNombre')),
+    direccion: titleCase(g('direccion')),
+    ciudad: titleCase(g('ciudad')),
+    departamento: titleCase(g('departamento')),
     telefono: g('telefono'),
-    email: g('email'),
+    email: g('email').toLowerCase(),
   };
 }
 

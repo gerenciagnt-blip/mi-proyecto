@@ -13,7 +13,13 @@ type Sucursal = { id: string; codigo: string; nombre: string };
 const selectClass =
   'mt-1 h-12 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-base text-brand-text-primary sm:text-sm';
 
-export function CreateCuentaCobroForm({ sucursales }: { sucursales: Sucursal[] }) {
+export function CreateCuentaCobroForm({
+  sucursales,
+  onSuccess,
+}: {
+  sucursales: Sucursal[];
+  onSuccess?: () => void;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     createCuentaCobroAction,
     {},
@@ -30,8 +36,9 @@ export function CreateCuentaCobroForm({ sucursales }: { sucursales: Sucursal[] }
       setNit('');
       setDv('');
       setDvAuto(true);
+      onSuccess?.();
     }
-  }, [state.ok]);
+  }, [state.ok, onSuccess]);
 
   useEffect(() => {
     if (dvAuto) setDv(calcularDV(nit) ?? '');
@@ -44,7 +51,7 @@ export function CreateCuentaCobroForm({ sucursales }: { sucursales: Sucursal[] }
         <h3 className="mb-3 text-sm font-semibold">Identificación</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
-            <Label htmlFor="sucursalId">Sucursal</Label>
+            <Label htmlFor="sucursalId">Sucursal *</Label>
             <select id="sucursalId" name="sucursalId" required className={selectClass}>
               <option value="">—</option>
               {sucursales.map((s) => (
@@ -55,11 +62,11 @@ export function CreateCuentaCobroForm({ sucursales }: { sucursales: Sucursal[] }
             </select>
           </div>
           <div>
-            <Label htmlFor="codigo">Código interno</Label>
+            <Label htmlFor="codigo">Código interno *</Label>
             <Input id="codigo" name="codigo" required placeholder="CCB-001" className="mt-1 uppercase" />
           </div>
           <div className="sm:col-span-2">
-            <Label htmlFor="razonSocial">Razón social</Label>
+            <Label htmlFor="razonSocial">Razón social *</Label>
             <Input id="razonSocial" name="razonSocial" required className="mt-1" />
           </div>
           <div>
