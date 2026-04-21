@@ -741,10 +741,12 @@ model Liquidacion {
 model LiquidacionConcepto {
   id               String   @id @default(cuid())
   liquidacionId    String
-  concepto         String // EPS | AFP | ARL | CCF | SENA | ICBF | FSP
+  concepto         String // EPS | AFP | ARL | CCF | SENA | ICBF | FSP | ADMIN
   subconcepto      String? // ej. "EPS-empleador 8.5%" vs "EPS-trabajador 4%"
   base             Decimal  @db.Decimal(12, 2)
-  porcentaje       Decimal  @db.Decimal(6, 4)
+  // Decimal(8,4) para soportar hasta 9999.9999. El concepto ADMIN usa
+  // 100.0000 ya que no es realmente un porcentaje sino un valor fijo.
+  porcentaje       Decimal  @db.Decimal(8, 4)
   valor            Decimal  @db.Decimal(14, 2)
   aCargoEmpleador  Boolean  @default(true)
   observaciones    String?
