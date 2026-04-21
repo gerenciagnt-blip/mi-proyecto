@@ -2,10 +2,10 @@ import { prisma } from '@pila/db';
 import { CreateCuentaCobroForm } from './create-form';
 import { toggleCuentaCobroAction } from './actions';
 
-export const metadata = { title: 'Cuentas de cobro — Sistema PILA' };
+export const metadata = { title: 'Empresas CC — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-export default async function CuentasCobroPage() {
+export default async function EmpresasCCPage() {
   const [cuentas, sucursales] = await Promise.all([
     prisma.cuentaCobro.findMany({
       orderBy: [{ sucursal: { codigo: 'asc' } }, { codigo: 'asc' }],
@@ -22,15 +22,16 @@ export default async function CuentasCobroPage() {
     <div className="space-y-6">
       <header>
         <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
-          Cuentas de cobro
+          Empresas CC
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Empresas empleadoras — agrupadores para facturación masiva dentro de una sucursal.
+          Empresas de Cuenta de Cobro — agrupadores de cotizantes para facturación masiva dentro
+          de una sucursal. Solo datos básicos (sin ARL ni actividades económicas).
         </p>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold">Crear nueva cuenta de cobro</h2>
+        <h2 className="mb-3 text-sm font-semibold">Crear nueva Empresa CC</h2>
         <CreateCuentaCobroForm sucursales={sucursales} />
       </section>
 
@@ -51,7 +52,7 @@ export default async function CuentasCobroPage() {
             {cuentas.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-slate-400">
-                  Aún no hay cuentas de cobro
+                  Aún no hay Empresas CC
                 </td>
               </tr>
             )}

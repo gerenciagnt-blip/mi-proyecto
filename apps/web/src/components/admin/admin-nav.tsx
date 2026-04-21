@@ -51,7 +51,7 @@ const NAV: NavItem[] = [
         icon: Briefcase,
         children: [
           { label: 'Empresas planilla', href: '/admin/empresas', icon: Building },
-          { label: 'Cuentas de cobro', href: '/admin/cuentas-cobro', icon: Receipt },
+          { label: 'Empresas CC', href: '/admin/cuentas-cobro', icon: Receipt },
         ],
       },
       { label: 'Catálogos', href: '/admin/catalogos', icon: Database },

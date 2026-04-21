@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { ArrowLeft, Shield, UserCog, UserCheck } from 'lucide-react';
 import { prisma } from '@pila/db';
+import type { Role } from '@pila/db';
+import { PermisosForm } from './permisos-form';
 
 export const metadata = { title: 'Roles — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -12,6 +14,7 @@ const ROLES = [
     desc: 'Staff de la plataforma. Acceso global a todos los módulos.',
     icon: Shield,
     accent: 'from-brand-blue to-brand-blue-dark',
+    editable: false,
   },
   {
     key: 'ALIADO_OWNER' as const,
@@ -19,6 +22,7 @@ const ROLES = [
     desc: 'Dueño de un aliado. Ve todas las empresas de su sucursal.',
     icon: UserCog,
     accent: 'from-brand-green to-brand-green-dark',
+    editable: true,
   },
   {
     key: 'ALIADO_USER' as const,
@@ -26,18 +30,26 @@ const ROLES = [
     desc: 'Empleado del aliado. Solo empresas con acceso explícito.',
     icon: UserCheck,
     accent: 'from-brand-turquoise to-brand-blue',
+    editable: true,
   },
 ];
 
 export default async function RolesPage() {
-  const counts = await prisma.user.groupBy({
-    by: ['role'],
-    _count: true,
-  });
+  const [counts, permisos] = await Promise.all([
+    prisma.user.groupBy({ by: ['role'], _count: true }),
+    prisma.permiso.findMany(),
+  ]);
   const countByRole = Object.fromEntries(counts.map((c) => [c.role, c._count])) as Record<
     string,
     number
   >;
+
+  const grantedByRole = new Map<Role, string[]>();
+  for (const p of permisos) {
+    const arr = grantedByRole.get(p.role) ?? [];
+    arr.push(`${p.modulo}::${p.accion}`);
+    grantedByRole.set(p.role, arr);
+  }
 
   return (
     <div className="space-y-6">
@@ -50,14 +62,15 @@ export default async function RolesPage() {
           <span>Usuarios</span>
         </Link>
         <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
-          Roles del sistema
+          Roles y permisos
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Roles predefinidos con sus capacidades. Próximamente podrás crear roles personalizados
-          con permisos granulares por módulo.
+          Cada rol tiene una matriz de permisos por módulo × acción (ver, crear, editar, eliminar).
+          Marca lo permitido; lo no marcado queda denegado.
         </p>
       </header>
 
+      {/* Stat cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ROLES.map((r) => {
           const Icon = r.icon;
@@ -87,13 +100,32 @@ export default async function RolesPage() {
         })}
       </div>
 
-      <section className="rounded-xl border border-dashed border-slate-300 bg-white p-6">
-        <h2 className="font-heading text-sm font-semibold uppercase tracking-wider text-slate-500">
-          Siguiente iteración
-        </h2>
-        <p className="mt-2 text-sm text-slate-700">
-          Agregar roles personalizables con matriz de permisos (módulo × acción) configurable desde
-          esta página. Por ahora los 3 roles del sistema son suficientes.
+      {/* Permisos matrix por rol editable */}
+      {ROLES.filter(
+        (r): r is typeof r & { key: Exclude<Role, 'ADMIN'> } =>
+          r.editable && r.key !== 'ADMIN',
+      ).map((r) => (
+        <section key={r.key} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <header className="mb-4">
+            <h2 className="font-heading text-lg font-semibold text-slate-900">
+              Permisos de {r.label}
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">{r.desc}</p>
+          </header>
+          <PermisosForm
+            role={r.key}
+            roleLabel={r.label}
+            granted={grantedByRole.get(r.key) ?? []}
+          />
+        </section>
+      ))}
+
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <p className="text-xs text-amber-800">
+          <strong>Nota:</strong> ADMIN tiene todos los permisos implícitamente (no aparece en esta
+          tabla). La enforcement real de los permisos — ocultar items del menú según rol y
+          proteger cada página — se aplica cuando construyamos las pantallas de los aliados en
+          las próximas fases.
         </p>
       </section>
     </div>

@@ -48,6 +48,18 @@ enum TipoEntidadSgss {
   CCF
 }
 
+// Permisos granulares: qué puede hacer cada rol en cada módulo.
+// Presencia en la tabla = permitido. Ausencia = denegado.
+// ADMIN implícitamente tiene todos los permisos (se saltea esta tabla).
+model Permiso {
+  role   Role
+  modulo String // clave del módulo ej. "config.sucursales"
+  accion String // "VER" | "CREAR" | "EDITAR" | "ELIMINAR"
+
+  @@id([role, modulo, accion])
+  @@map("permisos")
+}
+
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
   id               String   @id @default(cuid())

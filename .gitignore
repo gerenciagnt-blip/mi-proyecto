@@ -19,6 +19,9 @@ next-env.d.ts
 dist/
 build/
 
+# Uploads de usuarios — no incluir en git (se regeneran en cada entorno)
+apps/web/public/uploads/
+
 # Variables de entorno (todas, solo se commitea .env.example)
 .env
 .env.local
