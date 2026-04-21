@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRightLeft, FileStack, Lock, Unlock } from 'lucide-react';
+import { ArrowRightLeft, FileStack, Lock } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { AbrirPeriodoDialog } from './abrir-periodo-dialog';
@@ -8,7 +8,6 @@ import {
   LiquidacionesTable,
   type LiquidacionRow,
 } from './liquidaciones-table';
-import { cerrarPeriodoAction, reabrirPeriodoAction } from './actions';
 
 export const metadata = { title: 'Transacciones — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -236,26 +235,11 @@ export default async function TransaccionesPage({
                       <FileStack className="h-3 w-3" />
                       Comprobantes
                     </Link>
-                    {periodoActual.estado === 'ABIERTO' ? (
-                      <form action={cerrarPeriodoAction.bind(null, periodoActual.id)}>
-                        <button
-                          type="submit"
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <Lock className="h-3 w-3" />
-                          Cerrar período
-                        </button>
-                      </form>
-                    ) : (
-                      <form action={reabrirPeriodoAction.bind(null, periodoActual.id)}>
-                        <button
-                          type="submit"
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <Unlock className="h-3 w-3" />
-                          Reabrir período
-                        </button>
-                      </form>
+                    {periodoActual.estado === 'CERRADO' && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-500">
+                        <Lock className="h-3 w-3" />
+                        Cerrado
+                      </span>
                     )}
                   </div>
                 )}

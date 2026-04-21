@@ -11,6 +11,7 @@ export type CalcInput = {
     modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
     nivelRiesgo: 'I' | 'II' | 'III' | 'IV' | 'V';
     salario: Prisma.Decimal;
+    valorAdministracion: Prisma.Decimal;
     fechaIngreso: Date;
     empresa: { id: string; exoneraLey1607: boolean } | null;
     planSgss: {
@@ -29,7 +30,7 @@ export type CalcInput = {
 };
 
 export type CalcConcepto = {
-  concepto: 'EPS' | 'AFP' | 'ARL' | 'CCF' | 'SENA' | 'ICBF' | 'FSP';
+  concepto: 'EPS' | 'AFP' | 'ARL' | 'CCF' | 'SENA' | 'ICBF' | 'FSP' | 'ADMIN';
   subconcepto?: string;
   base: number;
   porcentaje: number;
@@ -83,7 +84,11 @@ function determinarTipoYDias(
 
 // ===== Helpers =====
 
-const round = (n: number) => Math.round(n);
+/**
+ * Redondeo PILA-style: ceil hacia el múltiplo de 100 más cercano.
+ * Ejemplo: 228.003 → 228.100. Se aplica a cada concepto y totales.
+ */
+const round100Up = (n: number) => Math.ceil(n / 100) * 100;
 
 const toNum = (v: Prisma.Decimal | number | null | undefined): number => {
   if (v == null) return 0;
@@ -177,7 +182,9 @@ export function calcularLiquidacion(
 
   const ibc = toNum(input.ibc ?? afiliacion.salario);
   // Base prorrateada: IBC * días / 30 (mes PILA). Cuando días=30, base=ibc.
-  const baseCotizacion = round((ibc * diasCotizados) / 30);
+  // La base NO se redondea (es el IBC real prorrateado). El redondeo se
+  // aplica al valor de cada concepto más abajo.
+  const baseCotizacion = Math.round((ibc * diasCotizados) / 30);
 
   const smlv = toNum(input.smlv);
   const plan = afiliacion.planSgss;
@@ -190,9 +197,42 @@ export function calcularLiquidacion(
   const conceptos: CalcConcepto[] = [];
 
   const addConcepto = (c: Omit<CalcConcepto, 'valor'>) => {
-    const valor = round((c.base * c.porcentaje) / 100);
+    const valor = round100Up((c.base * c.porcentaje) / 100);
     conceptos.push({ ...c, valor });
   };
+
+  // ---- VINCULACION: cobro administrativo, NO se liquida SGSS ----
+  // La primera transacción del cotizante sólo causa el "Valor
+  // administración" definido en su afiliación (cobro operativo del
+  // aliado). Los conceptos SGSS empiezan a correr en la MENSUALIDAD.
+  if (tipo === 'VINCULACION') {
+    const valorAdmin = toNum(afiliacion.valorAdministracion);
+    const valorRedondeado = round100Up(valorAdmin);
+    const unico: CalcConcepto = {
+      concepto: 'ADMIN',
+      subconcepto: 'Valor administración (vinculación)',
+      base: valorAdmin,
+      porcentaje: 100,
+      valor: valorRedondeado,
+      aCargoEmpleador: modalidad === 'DEPENDIENTE',
+      observaciones: 'Cobro administrativo por afiliación — no incluye SGSS',
+    };
+    return {
+      tipo,
+      ibc,
+      baseCotizacion,
+      diasCotizados,
+      diaDesde: td.diaDesde,
+      diaHasta: td.diaHasta,
+      totalEmpleador: unico.aCargoEmpleador ? valorRedondeado : 0,
+      totalTrabajador: unico.aCargoEmpleador ? 0 : valorRedondeado,
+      totalGeneral: valorRedondeado,
+      conceptos: [unico],
+      advertencias: [],
+    };
+  }
+
+  // ---- MENSUALIDAD: liquidación SGSS normal ----
 
   // ---- EPS ----
   // Sin plan ⇒ por defecto se aplica EPS completa (protección por omisión).
@@ -300,6 +340,8 @@ export function calcularLiquidacion(
   }
 
   // ---- Totales ----
+  // Cada concepto ya viene redondeado al múltiplo de 100 hacia arriba,
+  // así que los totales son suma directa (y también múltiplos de 100).
   const totalEmpleador = conceptos
     .filter((c) => c.aCargoEmpleador)
     .reduce((s, c) => s + c.valor, 0);
@@ -368,6 +410,7 @@ export async function persistirLiquidacion(
         modalidad: afiliacion.modalidad,
         nivelRiesgo: afiliacion.nivelRiesgo,
         salario: afiliacion.salario,
+        valorAdministracion: afiliacion.valorAdministracion,
         fechaIngreso: afiliacion.fechaIngreso,
         empresa: afiliacion.empresa,
         planSgss: afiliacion.planSgss,
