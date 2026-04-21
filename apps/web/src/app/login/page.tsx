@@ -26,9 +26,9 @@ export default function LoginPage() {
       />
 
       <div className="relative w-full max-w-[440px] animate-fade-in">
-        {/* Logo — responsive: 160px móvil, 200px tablet, 260px desktop */}
+        {/* Logo — usa max-w-full para shrink automático si falta espacio */}
         <div
-          className="mx-auto mb-6 flex w-full max-w-[160px] justify-center sm:mb-8 sm:max-w-[200px] lg:mb-10 lg:max-w-[260px]"
+          className="mb-6 flex justify-center sm:mb-8 lg:mb-10"
           style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.08))' }}
         >
           <PilaLogo size="lg" />
