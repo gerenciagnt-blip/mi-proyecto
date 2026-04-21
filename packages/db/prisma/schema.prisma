@@ -58,8 +58,9 @@ model Sucursal {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users        User[]
-  cuentasCobro CuentaCobro[]
+  users              User[]
+  cuentasCobro       CuentaCobro[]
+  comprobanteFormato ComprobanteFormato?
 
   @@map("sucursales")
 }
@@ -218,6 +219,25 @@ model ActividadEconomica {
   cargos             Cargo[]
 
   @@map("actividades_economicas")
+}
+
+// Formato del comprobante de pago — uno por sucursal (aliado).
+// Personaliza logo, encabezado, pie de página y (futuro) campos JSON.
+model ComprobanteFormato {
+  id           String   @id @default(cuid())
+  sucursalId   String   @unique
+  nombre       String   @default("Predeterminado")
+  logoUrl      String?
+  encabezado   String?
+  pieDePagina  String?
+  camposConfig Json?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+
+  @@map("comprobante_formatos")
 }
 
 // Cuenta de Cobro (Empresa Empleadora) — agrupador de cotizantes para

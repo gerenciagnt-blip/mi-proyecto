@@ -7,6 +7,7 @@ import {
   Users2,
   CreditCard,
   Sparkles,
+  FileSignature,
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
@@ -33,6 +34,8 @@ export default async function CatalogosPage() {
     asesores,
     medios,
     servicios,
+    comprobantes,
+    sucursalesCount,
   ] = await Promise.all([
     prisma.entidadSgss.groupBy({ by: ['tipo'], _count: true }),
     prisma.actividadEconomica.count(),
@@ -42,6 +45,8 @@ export default async function CatalogosPage() {
     prisma.asesorComercial.count(),
     prisma.medioPago.count(),
     prisma.servicioAdicional.count(),
+    prisma.comprobanteFormato.count({ where: { active: true } }),
+    prisma.sucursal.count(),
   ]);
 
   const counts = Object.fromEntries(
@@ -101,6 +106,14 @@ export default async function CatalogosPage() {
       count: servicios,
       icon: Sparkles,
       desc: 'Cobros extra sobre el servicio base',
+    },
+    {
+      href: '/admin/catalogos/comprobantes',
+      label: 'Formato comprobantes',
+      count: comprobantes,
+      icon: FileSignature,
+      desc: 'Logo y plantilla personalizados por aliado',
+      sub: `${comprobantes}/${sucursalesCount} sucursales configuradas`,
     },
   ];
 
