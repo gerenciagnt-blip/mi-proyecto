@@ -50,14 +50,16 @@ enum TipoEntidadSgss {
 
 // --- Sucursal = tenant (cada aliado tiene la suya) ---
 model Sucursal {
-  id        String   @id @default(cuid())
-  codigo    String   @unique // ej. "ALI-001"
-  nombre    String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  codigo           String   @unique // ej. "ALI-001"
+  nombre           String
+  active           Boolean  @default(true)
+  bloqueadaPorMora Boolean  @default(false) // si true, el aliado solo puede ver/pagar su CxC
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  users User[]
+  users        User[]
+  cuentasCobro CuentaCobro[]
 
   @@map("sucursales")
 }
@@ -216,6 +218,35 @@ model ActividadEconomica {
   cargos             Cargo[]
 
   @@map("actividades_economicas")
+}
+
+// Cuenta de Cobro (Empresa Empleadora) — agrupador de cotizantes para
+// facturación masiva. Scoped por sucursal (cada aliado mantiene las suyas).
+model CuentaCobro {
+  id                String         @id @default(cuid())
+  sucursalId        String
+  codigo            String
+  razonSocial       String
+  nit               String?
+  dv                String?
+  tipoPersona       TipoPersona?
+  repLegalTipoDoc   TipoDocumento?
+  repLegalNumeroDoc String?
+  repLegalNombre    String?
+  direccion         String?
+  ciudad            String?
+  departamento      String?
+  telefono          String?
+  email             String?
+  active            Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+
+  @@unique([sucursalId, codigo])
+  @@index([sucursalId])
+  @@map("cuentas_cobro")
 }
 
 // Cargo ocupacional — ligado a una actividad económica

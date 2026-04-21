@@ -71,3 +71,14 @@ export async function toggleSucursalAction(id: string) {
   await prisma.sucursal.update({ where: { id }, data: { active: !s.active } });
   revalidatePath('/admin/sucursales');
 }
+
+export async function toggleBloqueoMoraAction(id: string) {
+  await requireAdmin();
+  const s = await prisma.sucursal.findUnique({ where: { id } });
+  if (!s) return;
+  await prisma.sucursal.update({
+    where: { id },
+    data: { bloqueadaPorMora: !s.bloqueadaPorMora },
+  });
+  revalidatePath('/admin/sucursales');
+}

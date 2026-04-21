@@ -170,3 +170,24 @@ export const ServicioAdicionalSchema = z.object({
   descripcion: optional,
   precio: z.coerce.number().min(0, 'Precio no puede ser negativo').default(0),
 });
+
+// --- Cuenta de Cobro (Fase 1.6.3) ---
+
+const emptyToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
+
+export const CuentaCobroSchema = z.object({
+  sucursalId: z.string().trim().min(1, 'Sucursal requerida'),
+  codigo: z.string().trim().min(1, 'Requerido').max(30),
+  razonSocial: z.string().trim().min(1, 'Requerido').max(200),
+  nit: optional,
+  dv: optional,
+  tipoPersona: z.preprocess(emptyToNull, TipoPersonaEnum.nullable()),
+  repLegalTipoDoc: z.preprocess(emptyToNull, TipoDocumentoEnum.nullable()),
+  repLegalNumeroDoc: optional,
+  repLegalNombre: optional,
+  direccion: optional,
+  ciudad: optional,
+  departamento: optional,
+  telefono: optional,
+  email: optional.pipe(z.string().email('Correo no válido').optional()),
+});

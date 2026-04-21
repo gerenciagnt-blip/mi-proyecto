@@ -8,6 +8,7 @@ import {
   Briefcase,
   Users,
   Database,
+  Receipt,
   ArrowLeft,
   type LucideIcon,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ const MAIN_NAV: NavItem[] = [
   { href: '/admin', label: 'Inicio', icon: LayoutDashboard },
   { href: '/admin/sucursales', label: 'Sucursales', icon: Building2 },
   { href: '/admin/empresas', label: 'Empresas', icon: Briefcase },
+  { href: '/admin/cuentas-cobro', label: 'Cuentas de cobro', icon: Receipt },
   { href: '/admin/usuarios', label: 'Usuarios', icon: Users },
   { href: '/admin/catalogos', label: 'Catálogos', icon: Database },
 ];
