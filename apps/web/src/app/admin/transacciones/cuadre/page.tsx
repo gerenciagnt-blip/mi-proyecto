@@ -8,6 +8,7 @@ import {
   Sparkles,
   FileStack,
   Ban,
+  Download,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
@@ -54,7 +55,25 @@ function esConceptoInterno(c: { subconcepto: string | null }): boolean {
   return c.subconcepto?.toLowerCase().includes('interno') ?? false;
 }
 
-type SP = { fecha?: string };
+type SP = { fecha?: string; desde?: string; hasta?: string };
+
+/** Parsea YYYY-MM-DD como mediodía UTC para evitar corrimiento por timezone. */
+function parseIsoToUtcNoon(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+}
+
+function diaSiguienteIso(iso: string): string {
+  const dt = parseIsoToUtcNoon(iso);
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+function diaAnteriorIso(iso: string): string {
+  const dt = parseIsoToUtcNoon(iso);
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
 
 export default async function CuadreCajaPage({
   searchParams,
@@ -62,13 +81,34 @@ export default async function CuadreCajaPage({
   searchParams: Promise<SP>;
 }) {
   const sp = await searchParams;
-  const fechaISO = sp.fecha?.match(/^\d{4}-\d{2}-\d{2}$/) ? sp.fecha : hoyISO();
+  const valid = (s?: string) => (s?.match(/^\d{4}-\d{2}-\d{2}$/) ? s : null);
 
-  // Rango del día (local) — [00:00, 24:00)
-  const [y, m, d] = fechaISO.split('-').map(Number);
-  const desde = new Date(y!, m! - 1, d!, 0, 0, 0);
-  const hasta = new Date(y!, m! - 1, d!, 0, 0, 0);
-  hasta.setDate(hasta.getDate() + 1);
+  // Modo rango: si viene `desde` y `hasta` usa rango, sino usa `fecha` (o hoy).
+  const hoy = hoyISO();
+  const rangoDesde = valid(sp.desde);
+  const rangoHasta = valid(sp.hasta);
+  const fechaUnica = valid(sp.fecha);
+
+  let desdeIso: string;
+  let hastaIso: string;
+  const esRango = !!(rangoDesde && rangoHasta);
+  if (esRango) {
+    desdeIso = rangoDesde;
+    hastaIso = rangoHasta;
+    // Swap si el usuario invierte
+    if (desdeIso > hastaIso) [desdeIso, hastaIso] = [hastaIso, desdeIso];
+  } else {
+    desdeIso = fechaUnica ?? hoy;
+    hastaIso = desdeIso;
+  }
+
+  // Rango [desdeIso 00:00 UTC, hastaIso+1 00:00 UTC)
+  const [yDe, mDe, dDe] = desdeIso.split('-').map(Number);
+  const [yHa, mHa, dHa] = hastaIso.split('-').map(Number);
+  const desde = new Date(Date.UTC(yDe!, mDe! - 1, dDe!, 0, 0, 0));
+  const hasta = new Date(Date.UTC(yHa!, mHa! - 1, dHa!, 0, 0, 0));
+  hasta.setUTCDate(hasta.getUTCDate() + 1);
+  const diaUnico = desdeIso === hastaIso;
 
   // Nota: fechaPago es la fecha en la que el dinero entró a caja.
   // Usamos fechaPago para cuadrar. procesadoEn sirve como orden secundario.
@@ -90,6 +130,7 @@ export default async function CuadreCajaPage({
       },
       cuentaCobro: { select: { codigo: true, razonSocial: true } },
       asesorComercial: { select: { codigo: true, nombre: true } },
+      createdBy: { select: { name: true, email: true } },
       liquidaciones: {
         include: {
           liquidacion: {
@@ -170,11 +211,15 @@ export default async function CuadreCajaPage({
     (a, b) => b.total - a.total,
   );
 
-  // Navegación día anterior / siguiente
-  const prev = new Date(y!, m! - 1, d! - 1);
-  const next = new Date(y!, m! - 1, d! + 1);
-  const prevIso = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
-  const nextIso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+  // Navegación rápida día anterior / siguiente (solo en modo día único)
+  const prevIso = diaAnteriorIso(desdeIso);
+  const nextIso = diaSiguienteIso(desdeIso);
+
+  // Link de descarga Excel con los filtros actuales
+  const qsExcel = new URLSearchParams();
+  qsExcel.set('desde', desdeIso);
+  qsExcel.set('hasta', hastaIso);
+  const excelHref = `/api/transacciones/cuadre/excel?${qsExcel.toString()}`;
 
   return (
     <div className="space-y-6">
@@ -185,32 +230,49 @@ export default async function CuadreCajaPage({
             Cuadre de caja
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Pagos recibidos del día agrupados por medio de pago y concepto.
+            Pagos recibidos agrupados por medio de pago y concepto.
           </p>
         </div>
+        <a
+          href={excelHref}
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Descargar Excel
+        </a>
       </header>
 
-      {/* Selector de fecha */}
+      {/* Selector de fecha / rango */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3">
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/admin/transacciones/cuadre?fecha=${prevIso}`}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-              title="Día anterior"
-            >
-              ‹
-            </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {diaUnico && (
+              <Link
+                href={`/admin/transacciones/cuadre?fecha=${prevIso}`}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                title="Día anterior"
+              >
+                ‹
+              </Link>
+            )}
             <form
               method="GET"
               action="/admin/transacciones/cuadre"
-              className="flex items-center gap-2"
+              className="flex flex-wrap items-center gap-2"
             >
               <Calendar className="h-4 w-4 text-slate-400" />
+              <label className="text-[11px] text-slate-500">Desde</label>
               <input
                 type="date"
-                name="fecha"
-                defaultValue={fechaISO}
+                name="desde"
+                defaultValue={desdeIso}
+                className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+              />
+              <label className="text-[11px] text-slate-500">Hasta</label>
+              <input
+                type="date"
+                name="hasta"
+                defaultValue={hastaIso}
                 className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
               />
               <button
@@ -219,7 +281,7 @@ export default async function CuadreCajaPage({
               >
                 Ver
               </button>
-              {fechaISO !== hoyISO() && (
+              {(desdeIso !== hoy || hastaIso !== hoy) && (
                 <Link
                   href="/admin/transacciones/cuadre"
                   className="text-xs text-slate-500 hover:text-slate-900"
@@ -228,16 +290,20 @@ export default async function CuadreCajaPage({
                 </Link>
               )}
             </form>
-            <Link
-              href={`/admin/transacciones/cuadre?fecha=${nextIso}`}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-              title="Día siguiente"
-            >
-              ›
-            </Link>
+            {diaUnico && (
+              <Link
+                href={`/admin/transacciones/cuadre?fecha=${nextIso}`}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                title="Día siguiente"
+              >
+                ›
+              </Link>
+            )}
           </div>
           <p className="text-xs text-slate-500 first-letter:uppercase">
-            {fechaLegible(fechaISO)}
+            {diaUnico
+              ? fechaLegible(desdeIso)
+              : `${fechaLegible(desdeIso)} — ${fechaLegible(hastaIso)}`}
           </p>
         </div>
 
@@ -349,26 +415,28 @@ export default async function CuadreCajaPage({
         </section>
       )}
 
-      {/* Tabla detalle del día */}
+      {/* Tabla detalle */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 bg-slate-50 px-5 py-3">
           <h2 className="text-sm font-semibold text-slate-700">
-            Detalle del día
+            {diaUnico ? 'Detalle del día' : 'Detalle del rango'}
           </h2>
         </header>
         {comprobantes.length === 0 ? (
           <p className="p-10 text-center text-sm text-slate-400">
-            Sin transacciones en esta fecha.
+            Sin transacciones en {diaUnico ? 'esta fecha' : 'el rango seleccionado'}.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
                 <tr>
+                  {!diaUnico && <th className="px-4 py-2">Fecha</th>}
                   <th className="px-4 py-2">Hora</th>
                   <th className="px-4 py-2">Consecutivo</th>
                   <th className="px-4 py-2">Destinatario</th>
                   <th className="px-4 py-2">Medio</th>
+                  <th className="px-4 py-2">Usuario</th>
                   <th className="px-4 py-2 text-right">SGSS</th>
                   <th className="px-4 py-2 text-right">Admón</th>
                   <th className="px-4 py-2 text-right">Serv.</th>
@@ -403,6 +471,9 @@ export default async function CuadreCajaPage({
                         minute: '2-digit',
                       })
                     : '—';
+                  const fechaPagoIso = c.fechaPago
+                    ? new Date(c.fechaPago).toISOString().slice(0, 10)
+                    : '—';
 
                   return (
                     <tr
@@ -411,6 +482,11 @@ export default async function CuadreCajaPage({
                         anulado && 'bg-red-50/50 text-slate-400 line-through',
                       )}
                     >
+                      {!diaUnico && (
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                          {fechaPagoIso}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 font-mono text-xs">{hora}</td>
                       <td className="px-4 py-2.5 font-mono text-xs font-medium">
                         {c.consecutivo}
@@ -434,6 +510,11 @@ export default async function CuadreCajaPage({
                             </p>
                           </>
                         ) : (
+                          <span className="italic text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs">
+                        {c.createdBy?.name ?? (
                           <span className="italic text-slate-400">—</span>
                         )}
                       </td>

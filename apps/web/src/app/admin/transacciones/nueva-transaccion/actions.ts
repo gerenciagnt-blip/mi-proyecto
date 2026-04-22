@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { auth } from '@/auth';
 import {
   calcularLiquidacion,
   persistirLiquidacion,
@@ -528,6 +529,8 @@ export async function procesarTransaccionAction(
   input: ProcesarInput,
 ): Promise<ProcesarResult> {
   await requireAdmin();
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
 
   const periodo = await prisma.periodoContable.findUnique({
     where: { id: input.periodoId },
@@ -668,6 +671,16 @@ export async function procesarTransaccionAction(
 
   if (liqIds.length === 0) return { error: 'No se pudo liquidar ninguna afiliación' };
 
+  // Parseo seguro de fechaPago sin corrimiento por timezone.
+  // `new Date('2026-04-22')` lo interpreta como UTC 00:00, que en
+  // UTC-5 (Colombia) se convierte al día anterior. Construimos a mediodía
+  // UTC para que cualquier zona horaria muestre el día correcto.
+  const parseFechaLocal = (iso: string): Date => {
+    const [yy, mm, dd] = iso.split('-').map(Number);
+    if (!yy || !mm || !dd) return new Date();
+    return new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
+  };
+
   const tipoComp = tipoDetectado === 'VINCULACION' ? 'AFILIACION' : 'MENSUALIDAD';
 
   // Si el período está CERRADO, sólo se permite emitir VINCULACIÓN
@@ -709,7 +722,7 @@ export async function procesarTransaccionAction(
 
   const consecutivo = await nextComprobanteConsecutivo();
   const ahora = new Date();
-  const fechaPago = input.fechaPago ? new Date(input.fechaPago) : ahora;
+  const fechaPago = input.fechaPago ? parseFechaLocal(input.fechaPago) : ahora;
 
   // La novedad de retiro sólo aplica a INDIVIDUAL (un cotizante).
   const aplicaNovedadRetiro =
@@ -744,6 +757,7 @@ export async function procesarTransaccionAction(
         valorAdminOverride:
           input.valorAdminOverride != null ? input.valorAdminOverride : null,
         aplicaNovedadRetiro,
+        createdById: userId,
         liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
       },
     });

@@ -168,8 +168,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sucursal Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  empresas UsuarioEmpresa[]
+  sucursal            Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  empresas            UsuarioEmpresa[]
+  comprobantesCreados Comprobante[]    @relation("ComprobantesCreados")
 
   @@index([sucursalId])
   @@map("users")
@@ -874,6 +875,10 @@ model Comprobante {
   // Planos. Mientras NULL, la transacción se muestra "En proceso".
   numeroPlanilla      String?
 
+  // Usuario que creó (procesó) el comprobante. SetNull si el usuario
+  // se elimina para no perder el registro.
+  createdById         String?
+
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -882,6 +887,7 @@ model Comprobante {
   cuentaCobro     CuentaCobro?             @relation(fields: [cuentaCobroId], references: [id], onDelete: Restrict)
   asesorComercial AsesorComercial?         @relation(fields: [asesorComercialId], references: [id], onDelete: Restrict)
   medioPago       MedioPago?               @relation(fields: [medioPagoId], references: [id], onDelete: SetNull)
+  createdBy       User?                    @relation("ComprobantesCreados", fields: [createdById], references: [id], onDelete: SetNull)
   liquidaciones   ComprobanteLiquidacion[]
 
   @@index([periodoId])
@@ -893,6 +899,7 @@ model Comprobante {
   @@index([medioPagoId])
   @@index([procesadoEn])
   @@index([numeroPlanilla])
+  @@index([createdById])
   @@map("comprobantes")
 }
 

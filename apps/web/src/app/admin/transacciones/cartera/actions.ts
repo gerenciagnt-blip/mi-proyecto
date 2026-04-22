@@ -87,6 +87,8 @@ export async function cerrarPeriodoMasivoAction(
   periodoId: string,
 ): Promise<ActionState> {
   await requireAdmin();
+  const u = await currentUser();
+  const userId = u.id;
 
   const periodo = await prisma.periodoContable.findUnique({
     where: { id: periodoId },
@@ -234,6 +236,7 @@ export async function cerrarPeriodoMasivoAction(
             valorAdminOverride: 0,
             aplicaNovedadRetiro: true,
             esCierreMasivo: true,
+            createdById: userId,
             observaciones: 'Cierre masivo de período — 1 día, admón $0, retiro automático',
             liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
           },
