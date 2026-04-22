@@ -21,6 +21,13 @@ export type CalcInput = {
       incluyeCcf: boolean;
     } | null;
   };
+  /**
+   * Si se pasa, fuerza el tipo de liquidación ignorando la lógica
+   * automática por fecha de ingreso. Útil cuando el admin emite una
+   * VINCULACION manual (p.ej. cotizante afiliado hace meses al que no
+   * se le había cobrado vinculación).
+   */
+  forzarTipo?: TipoLiq;
   /** Año/mes del período a liquidar. */
   periodo: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
@@ -172,13 +179,40 @@ export function calcularLiquidacion(
   tarifas: TarifaRow[],
   fspRangos: FspRow[],
 ): CalcResult | null {
-  const { afiliacion, periodo } = input;
+  const { afiliacion, periodo, forzarTipo } = input;
 
-  // Tipo y días según fecha de ingreso vs período
-  const td = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
-  if (!td) return null;
-  const tipo = td.tipo;
-  const diasCotizados = td.dias;
+  // Tipo y días según fecha de ingreso vs período.
+  // Si el llamador fuerza un tipo (emisión manual), ajustamos los días:
+  //   - VINCULACION forzada → 30 días (afecta sólo concepto ADMIN que es fijo)
+  //   - MENSUALIDAD forzada → 30 días completos
+  // Si no se fuerza, seguimos la lógica automática.
+  let tipo: TipoLiq;
+  let diasCotizados: number;
+  let diaDesde: number | null;
+  let diaHasta: number | null;
+
+  if (forzarTipo) {
+    const auto = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
+    tipo = forzarTipo;
+    // Si el tipo forzado coincide con el automático, usamos sus días;
+    // de lo contrario usamos mes completo.
+    if (auto && auto.tipo === forzarTipo) {
+      diasCotizados = auto.dias;
+      diaDesde = auto.diaDesde;
+      diaHasta = auto.diaHasta;
+    } else {
+      diasCotizados = 30;
+      diaDesde = null;
+      diaHasta = null;
+    }
+  } else {
+    const td = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
+    if (!td) return null;
+    tipo = td.tipo;
+    diasCotizados = td.dias;
+    diaDesde = td.diaDesde;
+    diaHasta = td.diaHasta;
+  }
 
   const ibc = toNum(input.ibc ?? afiliacion.salario);
   // Base prorrateada: IBC * días / 30 (mes PILA). Cuando días=30, base=ibc.
@@ -222,8 +256,8 @@ export function calcularLiquidacion(
       ibc,
       baseCotizacion,
       diasCotizados,
-      diaDesde: td.diaDesde,
-      diaHasta: td.diaHasta,
+      diaDesde,
+      diaHasta,
       totalEmpleador: unico.aCargoEmpleador ? valorRedondeado : 0,
       totalTrabajador: unico.aCargoEmpleador ? 0 : valorRedondeado,
       totalGeneral: valorRedondeado,
@@ -355,8 +389,8 @@ export function calcularLiquidacion(
     ibc,
     baseCotizacion,
     diasCotizados,
-    diaDesde: td.diaDesde,
-    diaHasta: td.diaHasta,
+    diaDesde,
+    diaHasta,
     totalEmpleador,
     totalTrabajador,
     totalGeneral,
@@ -378,6 +412,7 @@ export async function persistirLiquidacion(
     periodoId: string;
     afiliacionId: string;
     ibc?: number;
+    forzarTipo?: TipoLiq;
   },
 ): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
@@ -418,6 +453,7 @@ export async function persistirLiquidacion(
       periodo: { anio: periodo.anio, mes: periodo.mes },
       ibc: opts.ibc,
       smlv: periodo.smlvSnapshot,
+      forzarTipo: opts.forzarTipo,
     },
     tarifas,
     fspRangos,

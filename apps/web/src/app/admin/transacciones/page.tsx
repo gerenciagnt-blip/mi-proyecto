@@ -4,10 +4,12 @@ import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { AbrirPeriodoDialog } from './abrir-periodo-dialog';
 import { LiquidarButton } from './liquidar-button';
+import { NuevaTransaccionDialog } from './nueva-transaccion/nueva-transaccion-dialog';
 import {
   LiquidacionesTable,
   type LiquidacionRow,
 } from './liquidaciones-table';
+
 
 export const metadata = { title: 'Transacciones — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -223,7 +225,12 @@ export default async function TransaccionesPage({
                 </div>
 
                 {periodoActual && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <NuevaTransaccionDialog
+                      periodoId={periodoActual.id}
+                      periodoLabel={`${periodoActual.anio}-${String(periodoActual.mes).padStart(2, '0')}`}
+                      disabled={periodoActual.estado === 'CERRADO'}
+                    />
                     <LiquidarButton
                       periodoId={periodoActual.id}
                       disabled={periodoActual.estado === 'CERRADO'}
