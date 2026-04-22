@@ -30,12 +30,22 @@ export type CotizanteEncontrado = {
     estado: 'ACTIVA' | 'INACTIVA';
     fechaIngreso: string;
   }>;
+  /** Si el cotizante ya tiene una factura procesada en el período
+   * indicado (cuando se pasa `periodoId` al buscar), devuelve los
+   * datos de esa factura para bloquear una duplicada. */
+  facturaExistente?: {
+    id: string;
+    consecutivo: string;
+    fechaPago: string | null;
+    totalGeneral: number;
+  };
 };
 
 // ============ Búsquedas ============
 
 export async function buscarCotizanteAction(
   numeroDocumento: string,
+  periodoId?: string,
 ): Promise<{ found: CotizanteEncontrado | null; error?: string }> {
   await requireAdmin();
 
@@ -62,6 +72,33 @@ export async function buscarCotizanteAction(
     .filter(Boolean)
     .join(' ');
 
+  // Si se pasó el período, verifica si ya hay factura procesada
+  let facturaExistente: CotizanteEncontrado['facturaExistente'];
+  if (periodoId) {
+    const comp = await prisma.comprobante.findFirst({
+      where: {
+        periodoId,
+        cotizanteId: cotizante.id,
+        estado: { not: 'ANULADO' },
+        procesadoEn: { not: null },
+      },
+      select: {
+        id: true,
+        consecutivo: true,
+        fechaPago: true,
+        totalGeneral: true,
+      },
+    });
+    if (comp) {
+      facturaExistente = {
+        id: comp.id,
+        consecutivo: comp.consecutivo,
+        fechaPago: comp.fechaPago?.toISOString().slice(0, 10) ?? null,
+        totalGeneral: Number(comp.totalGeneral),
+      };
+    }
+  }
+
   return {
     found: {
       cotizante: {
@@ -79,6 +116,7 @@ export async function buscarCotizanteAction(
         estado: a.estado,
         fechaIngreso: a.fechaIngreso.toISOString().slice(0, 10),
       })),
+      facturaExistente,
     },
   };
 }

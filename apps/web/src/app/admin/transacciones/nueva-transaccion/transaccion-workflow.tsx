@@ -49,15 +49,10 @@ const TIPOS: Array<{
 
 type Props = {
   periodoId: string;
-  periodoLabel: string;
   periodoCerrado: boolean;
 };
 
-export function TransaccionWorkflow({
-  periodoId,
-  periodoLabel,
-  periodoCerrado,
-}: Props) {
+export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
   const [tipo, setTipo] = useState<TipoTransaccion>('INDIVIDUAL');
 
   // Destinatario (según tipo). Para INDIVIDUAL usamos cotizanteId y el
@@ -156,45 +151,33 @@ export function TransaccionWorkflow({
 
   return (
     <div className="space-y-4">
-      {/* Header: período + tipo */}
+      {/* Selector de tipo */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-4">
-          <div>
-            <Label className="text-[10px] uppercase tracking-wider text-slate-400">
-              Período contable
-            </Label>
-            <p className="mt-1 font-mono text-lg font-semibold text-slate-900">
-              {periodoLabel}
-            </p>
-          </div>
-          <div className="flex-1">
-            <Label className="text-[10px] uppercase tracking-wider text-slate-400">
-              Tipo de transacción
-            </Label>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {TIPOS.map((t) => {
-                const Icon = t.icon;
-                const active = tipo === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTipo(t.id)}
-                    disabled={periodoCerrado}
-                    className={cn(
-                      'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-50',
-                      active
-                        ? 'border-brand-blue bg-brand-blue/5 text-brand-blue-dark ring-1 ring-brand-blue'
-                        : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50',
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <Label className="text-[10px] uppercase tracking-wider text-slate-400">
+          Tipo de transacción
+        </Label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {TIPOS.map((t) => {
+            const Icon = t.icon;
+            const active = tipo === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTipo(t.id)}
+                disabled={periodoCerrado}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-50',
+                  active
+                    ? 'border-brand-blue bg-brand-blue/5 text-brand-blue-dark ring-1 ring-brand-blue'
+                    : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -212,6 +195,7 @@ export function TransaccionWorkflow({
       {!periodoCerrado && tipo === 'INDIVIDUAL' && (
         <BuscarCotizante
           key={`cot-${resetKey}`}
+          periodoId={periodoId}
           onCotizanteFound={setCotizanteId}
         />
       )}
@@ -300,8 +284,10 @@ export function TransaccionWorkflow({
 // ========== Sub-selectores ==========
 
 function BuscarCotizante({
+  periodoId,
   onCotizanteFound,
 }: {
+  periodoId: string;
   onCotizanteFound: (cotizanteId: string) => void;
 }) {
   const [doc, setDoc] = useState('');
@@ -314,21 +300,27 @@ function BuscarCotizante({
     setResult(null);
     onCotizanteFound('');
     start(async () => {
-      const r = await buscarCotizanteAction(doc);
+      const r = await buscarCotizanteAction(doc, periodoId);
       if (r.error) {
         setError(r.error);
       } else if (r.found) {
         setResult(r.found);
+        // Bloqueo por unicidad: si ya hay factura en este período,
+        // NO disparar preview; el alert aparece debajo.
+        if (r.found.facturaExistente) {
+          return;
+        }
         const activas = r.found.afiliaciones.filter((a) => a.estado === 'ACTIVA');
         if (activas.length === 0) {
           setError('El cotizante no tiene afiliaciones activas');
         } else {
-          // Lanza el preview inmediatamente — sin paso intermedio
           onCotizanteFound(r.found.cotizante.id);
         }
       }
     });
   };
+
+  const facturaExistente = result?.facturaExistente;
 
   return (
     <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -388,6 +380,30 @@ function BuscarCotizante({
               : 'afiliaciones activas'}
           </p>
         </div>
+      )}
+
+      {facturaExistente && (
+        <Alert variant="warning">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">
+              Este cotizante ya tiene factura procesada en el período.
+            </p>
+            <p className="mt-0.5 text-[11px]">
+              Comprobante{' '}
+              <strong className="font-mono">{facturaExistente.consecutivo}</strong>
+              {facturaExistente.fechaPago && (
+                <> · Pago {facturaExistente.fechaPago}</>
+              )}{' '}
+              · Total{' '}
+              {copFmt.format(facturaExistente.totalGeneral)}
+            </p>
+            <p className="mt-1 text-[10px]">
+              Sólo se permite una factura por cotizante por período. Para ajustes,
+              anula la existente desde el Historial.
+            </p>
+          </div>
+        </Alert>
       )}
     </section>
   );

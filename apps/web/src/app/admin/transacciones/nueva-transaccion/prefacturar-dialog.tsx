@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
-import { Save, AlertCircle, CheckCircle2, Loader2, Receipt } from 'lucide-react';
+import {
+  Save,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  Receipt,
+  Download,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -48,9 +55,11 @@ export function PrefacturarDialog({
 
   const [procesando, startProcesar] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [exito, setExito] = useState<{ consecutivo: string; total: number } | null>(
-    null,
-  );
+  const [exito, setExito] = useState<{
+    consecutivo: string;
+    total: number;
+    comprobanteId: string;
+  } | null>(null);
 
   // Cargar medios de pago al abrir
   useEffect(() => {
@@ -86,11 +95,14 @@ export function PrefacturarDialog({
       });
       if (r.error) {
         setError(r.error);
-      } else if (r.ok && r.consecutivo) {
-        setExito({ consecutivo: r.consecutivo, total: r.totalGeneral ?? 0 });
-        setTimeout(() => {
-          onProcesado();
-        }, 1500);
+      } else if (r.ok && r.consecutivo && r.comprobanteId) {
+        setExito({
+          consecutivo: r.consecutivo,
+          total: r.totalGeneral ?? 0,
+          comprobanteId: r.comprobanteId,
+        });
+        // Auto-abre el PDF en nueva pestaña
+        window.open(`/api/comprobantes/${r.comprobanteId}/pdf`, '_blank');
       }
     });
   };
@@ -104,16 +116,35 @@ export function PrefacturarDialog({
       size="md"
     >
       {exito ? (
-        <Alert variant="success">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <div>
-            <p>
-              Transacción procesada · Comprobante{' '}
-              <strong className="font-mono">{exito.consecutivo}</strong>
-            </p>
-            <p className="mt-0.5 text-xs">Total: {copFmt.format(exito.total)}</p>
+        <div className="space-y-3">
+          <Alert variant="success">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <div>
+              <p>
+                Transacción procesada · Comprobante{' '}
+                <strong className="font-mono">{exito.consecutivo}</strong>
+              </p>
+              <p className="mt-0.5 text-xs">Total: {copFmt.format(exito.total)}</p>
+              <p className="mt-1 text-[11px] text-emerald-900">
+                El PDF se abrió en una pestaña nueva.
+              </p>
+            </div>
+          </Alert>
+          <div className="flex items-center justify-end gap-2">
+            <a
+              href={`/api/comprobantes/${exito.comprobanteId}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Abrir PDF
+            </a>
+            <Button type="button" variant="gradient" onClick={onProcesado}>
+              Nueva transacción
+            </Button>
           </div>
-        </Alert>
+        </div>
       ) : (
         <form
           onSubmit={(e) => {
