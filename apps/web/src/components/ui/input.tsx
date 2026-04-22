@@ -1,8 +1,31 @@
 import * as React from 'react';
 import type { LucideIcon } from 'lucide-react';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+const inputVariants = cva(
+  // Base: borde, bg, transición, placeholder, focus ring, disabled.
+  // `text-base` (16px) en mobile evita auto-zoom iOS; sm:text-sm lo compacta
+  // en desktop (salvo en size=lg donde queremos el 16px).
+  'flex w-full rounded-xl border border-brand-border bg-brand-surface text-brand-text-primary shadow-sm transition-all duration-200 placeholder:text-brand-text-muted focus-visible:border-brand-blue focus-visible:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-blue/15 disabled:cursor-not-allowed disabled:opacity-60',
+  {
+    variants: {
+      size: {
+        // Tamaño compacto para tablas/filtros.
+        sm: 'h-9 px-3 text-sm',
+        // Default para formularios del admin.
+        md: 'h-10 px-3.5 text-base sm:text-sm',
+        // Tamaño grande (login, formularios de onboarding).
+        lg: 'h-12 px-4 text-base sm:text-sm',
+      },
+    },
+    defaultVariants: { size: 'md' },
+  },
+);
+
+export interface InputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'>,
+    VariantProps<typeof inputVariants> {
   /** Ícono decorativo a la izquierda */
   icon?: LucideIcon;
   /** Elemento personalizado a la derecha (ej. toggle show/hide password) */
@@ -10,7 +33,7 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, icon: Icon, trailing, ...props }, ref) => {
+  ({ className, type, icon: Icon, trailing, size, ...props }, ref) => {
     const hasIcon = !!Icon;
     const hasTrailing = !!trailing;
 
@@ -23,9 +46,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           type={type}
           ref={ref}
           className={cn(
-            // text-base (16px) en mobile evita auto-zoom de iOS Safari en focus;
-            // sm:text-sm (14px) recupera densidad en desktop.
-            'flex h-12 w-full rounded-xl border border-brand-border bg-brand-surface px-4 text-base text-brand-text-primary shadow-sm transition-all duration-200 placeholder:text-brand-text-muted focus-visible:border-brand-blue focus-visible:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-blue/15 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm',
+            inputVariants({ size }),
             hasIcon && 'pl-10',
             hasTrailing && 'pr-10',
             className,

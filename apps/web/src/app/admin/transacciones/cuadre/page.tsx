@@ -19,6 +19,10 @@ import {
   fechaLegibleDesdeIso,
   fullName,
 } from '@/lib/format';
+import { Stat } from '@/components/admin/stat';
+import { ConceptoCard } from '@/components/admin/concepto-card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export const metadata = { title: 'Cuadre de caja — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -202,9 +206,9 @@ export default async function CuadreCajaPage({
         </div>
         <a
           href={excelHref}
-          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-green px-4 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
         >
-          <Download className="h-3.5 w-3.5" />
+          <Download className="h-4 w-4" />
           Descargar Excel
         </a>
       </header>
@@ -228,26 +232,31 @@ export default async function CuadreCajaPage({
               className="flex flex-wrap items-center gap-2"
             >
               <Calendar className="h-4 w-4 text-slate-400" />
-              <label className="text-[11px] text-slate-500">Desde</label>
-              <input
+              <label htmlFor="cuadre-desde" className="text-[11px] text-slate-500">
+                Desde
+              </label>
+              <Input
+                id="cuadre-desde"
                 type="date"
                 name="desde"
+                size="sm"
                 defaultValue={desdeIso}
-                className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+                className="w-auto"
               />
-              <label className="text-[11px] text-slate-500">Hasta</label>
-              <input
+              <label htmlFor="cuadre-hasta" className="text-[11px] text-slate-500">
+                Hasta
+              </label>
+              <Input
+                id="cuadre-hasta"
                 type="date"
                 name="hasta"
+                size="sm"
                 defaultValue={hastaIso}
-                className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+                className="w-auto"
               />
-              <button
-                type="submit"
-                className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800"
-              >
+              <Button type="submit" variant="primary" size="sm">
                 Ver
-              </button>
+              </Button>
               {(desdeIso !== hoy || hastaIso !== hoy) && (
                 <Link
                   href="/admin/transacciones/cuadre"
@@ -539,95 +548,3 @@ export default async function CuadreCajaPage({
   );
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-  mono = true,
-  tone = 'slate',
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  mono?: boolean;
-  tone?: 'slate' | 'emerald' | 'red';
-  highlight?: boolean;
-}) {
-  const toneCls = {
-    slate: 'text-slate-900',
-    emerald: 'text-emerald-700',
-    red: 'text-red-700',
-  }[tone];
-  return (
-    <div className="p-5">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p
-        className={cn(
-          'mt-1 text-xl font-bold tracking-tight',
-          mono && 'font-mono',
-          toneCls,
-          highlight && 'text-2xl',
-        )}
-      >
-        {value}
-      </p>
-      {sub && (
-        <p className="mt-0.5 text-[10px] text-slate-500">{sub}</p>
-      )}
-    </div>
-  );
-}
-
-function ConceptoCard({
-  icon: Icon,
-  label,
-  value,
-  desc,
-  tone,
-}: {
-  icon: typeof CreditCard;
-  label: string;
-  value: string;
-  desc: string;
-  tone: 'sky' | 'violet' | 'indigo' | 'amber';
-}) {
-  const toneBg = {
-    sky: 'bg-sky-50 text-sky-700',
-    violet: 'bg-violet-50 text-violet-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
-    amber: 'bg-amber-50 text-amber-700',
-  }[tone];
-  const toneBorder = {
-    sky: 'border-sky-200',
-    violet: 'border-violet-200',
-    indigo: 'border-indigo-200',
-    amber: 'border-amber-200',
-  }[tone];
-  return (
-    <div
-      className={cn(
-        'rounded-xl border bg-white p-4 shadow-sm',
-        toneBorder,
-      )}
-    >
-      <div
-        className={cn(
-          'inline-flex h-8 w-8 items-center justify-center rounded-lg',
-          toneBg,
-        )}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-      <p className="mt-3 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
-      <p className="mt-0.5 font-mono text-xl font-bold tracking-tight text-slate-900">
-        {value}
-      </p>
-      <p className="mt-1 text-[11px] text-slate-500">{desc}</p>
-    </div>
-  );
-}

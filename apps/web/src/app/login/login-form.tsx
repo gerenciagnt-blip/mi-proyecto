@@ -23,6 +23,7 @@ export function LoginForm() {
           id="email"
           name="email"
           type="email"
+          size="lg"
           required
           autoComplete="email"
           placeholder="tu@correo.com"
@@ -35,6 +36,7 @@ export function LoginForm() {
         <PasswordInput
           id="password"
           name="password"
+          size="lg"
           required
           autoComplete="current-password"
           placeholder="••••••••"
