@@ -47,12 +47,27 @@ const TIPOS: Array<{
   { id: 'ASESOR', label: 'Asesor comercial', icon: Users2 },
 ];
 
-type Props = {
-  periodoId: string;
-  periodoCerrado: boolean;
+export type PeriodoOpt = {
+  id: string;
+  anio: number;
+  mes: number;
+  label: string; // "2026-04"
+  mesLabel: string; // "Abril"
+  cerrado: boolean;
 };
 
-export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
+type Props = {
+  periodos: PeriodoOpt[];
+};
+
+export function TransaccionWorkflow({ periodos }: Props) {
+  // Período seleccionado. Default = el primero habilitado (mes en curso).
+  const defaultPeriodoId = periodos[0]?.id ?? '';
+  const [periodoId, setPeriodoId] = useState<string>(defaultPeriodoId);
+  const periodoActual =
+    periodos.find((p) => p.id === periodoId) ?? periodos[0];
+  const periodoCerrado = periodoActual?.cerrado ?? false;
+
   const [tipo, setTipo] = useState<TipoTransaccion>('INDIVIDUAL');
 
   // Destinatario (según tipo). Para INDIVIDUAL usamos cotizanteId y el
@@ -79,7 +94,8 @@ export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
   // Pre-facturar
   const [prefactOpen, setPrefactOpen] = useState(false);
 
-  // Reset al cambiar de tipo
+  // Reset al cambiar de tipo o de período (cambia "sin movimiento" y
+  // la validación de unicidad).
   useEffect(() => {
     setCotizanteId('');
     setCuentaCobroId('');
@@ -87,7 +103,9 @@ export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
     setRows(null);
     setTotales(null);
     setPreviewError(null);
-  }, [tipo]);
+    // Remonta sub-componentes (input de documento, listados)
+    setResetKey((k) => k + 1);
+  }, [tipo, periodoId]);
 
   const destinatarioListo =
     (tipo === 'INDIVIDUAL' && !!cotizanteId) ||
@@ -151,12 +169,35 @@ export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Selector de tipo */}
+      {/* Período + Tipo — todo en una fila */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <Label className="text-[10px] uppercase tracking-wider text-slate-400">
           Tipo de transacción
         </Label>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap items-stretch gap-2">
+          {/* Selector de período — primer chip */}
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Período
+            </span>
+            <select
+              value={periodoId}
+              onChange={(e) => setPeriodoId(e.target.value)}
+              className="h-7 rounded-md border-0 bg-transparent pr-6 font-mono text-sm font-semibold text-brand-blue-dark focus:outline-none focus:ring-1 focus:ring-brand-blue"
+            >
+              {periodos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                  {p.cerrado ? ' (cerrado)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Separador visual */}
+          <div className="hidden w-px self-stretch bg-slate-200 sm:block" aria-hidden />
+
+          {/* Botones de tipo */}
           {TIPOS.map((t) => {
             const Icon = t.icon;
             const active = tipo === t.id;
@@ -179,6 +220,14 @@ export function TransaccionWorkflow({ periodoId, periodoCerrado }: Props) {
             );
           })}
         </div>
+        {periodoActual && (
+          <p className="mt-2 text-[11px] text-slate-500">
+            {periodoActual.mesLabel} {periodoActual.anio}
+            {periodoActual.cerrado && (
+              <span className="ml-2 text-amber-700">· Período cerrado</span>
+            )}
+          </p>
+        )}
       </section>
 
       {periodoCerrado && (

@@ -1,7 +1,11 @@
 import { ArrowRightLeft, AlertCircle } from 'lucide-react';
+import type { PeriodoContable, SmlvConfig } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
-import { TransaccionWorkflow } from './nueva-transaccion/transaccion-workflow';
+import {
+  TransaccionWorkflow,
+  type PeriodoOpt,
+} from './nueva-transaccion/transaccion-workflow';
 
 export const metadata = { title: 'Transacción — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -21,44 +25,67 @@ const MESES = [
   'Diciembre',
 ];
 
-const copFmt = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
 /**
- * Asegura que exista el período del mes en curso. Si no existe y hay SMLV,
- * lo crea automáticamente (eliminando la necesidad de "Abrir período").
- * Devuelve el período del mes actual (o null si no hay SMLV configurado).
+ * Calcula los períodos contables habilitados para emitir transacciones:
+ *   - Desde el mes en curso hasta diciembre del año actual.
+ *   - A partir del 31-dic a las 23:59 (último minuto del año), se suma
+ *     enero del año siguiente para permitir facturación anticipada.
  */
-async function obtenerPeriodoActualOCrear() {
+function periodosHabilitados(): Array<{ anio: number; mes: number }> {
   const now = new Date();
   const anio = now.getFullYear();
-  const mes = now.getMonth() + 1;
+  const mesActual = now.getMonth() + 1;
+  const dia = now.getDate();
+  const hora = now.getHours();
+  const minuto = now.getMinutes();
 
-  const existente = await prisma.periodoContable.findUnique({
-    where: { anio_mes: { anio, mes } },
-  });
-  if (existente) return existente;
+  const items: Array<{ anio: number; mes: number }> = [];
+  for (let m = mesActual; m <= 12; m++) {
+    items.push({ anio, mes: m });
+  }
 
-  const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
-  if (!smlv) return null;
+  const esUltimoMinutoDelAnio =
+    mesActual === 12 && dia === 31 && hora === 23 && minuto >= 59;
+  if (esUltimoMinutoDelAnio) {
+    items.push({ anio: anio + 1, mes: 1 });
+  }
 
-  return prisma.periodoContable.create({
-    data: { anio, mes, smlvSnapshot: smlv.valor },
+  return items;
+}
+
+async function asegurarPeriodos(
+  smlv: SmlvConfig,
+): Promise<PeriodoContable[]> {
+  const disponibles = periodosHabilitados();
+  // Upsert de cada período disponible
+  for (const d of disponibles) {
+    await prisma.periodoContable.upsert({
+      where: { anio_mes: { anio: d.anio, mes: d.mes } },
+      create: { anio: d.anio, mes: d.mes, smlvSnapshot: smlv.valor },
+      update: {},
+    });
+  }
+  return prisma.periodoContable.findMany({
+    where: { OR: disponibles.map((d) => ({ anio: d.anio, mes: d.mes })) },
+    orderBy: [{ anio: 'asc' }, { mes: 'asc' }],
   });
 }
 
 export default async function TransaccionPage() {
-  const periodoActual = await obtenerPeriodoActualOCrear();
   const smlvConfig = await prisma.smlvConfig.findUnique({
     where: { id: 'singleton' },
   });
 
-  const now = new Date();
-  const anioActual = now.getFullYear();
-  const mesActual = now.getMonth() + 1;
+  const periodos = smlvConfig ? await asegurarPeriodos(smlvConfig) : [];
+
+  const periodoOpts: PeriodoOpt[] = periodos.map((p) => ({
+    id: p.id,
+    anio: p.anio,
+    mes: p.mes,
+    label: `${p.anio}-${String(p.mes).padStart(2, '0')}`,
+    mesLabel: MESES[p.mes - 1] ?? '',
+    cerrado: p.estado === 'CERRADO',
+  }));
 
   return (
     <div className="space-y-6">
@@ -83,62 +110,13 @@ export default async function TransaccionPage() {
             </p>
           </div>
         </Alert>
-      ) : !periodoActual ? (
+      ) : periodoOpts.length === 0 ? (
         <Alert variant="warning">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>
-            No se pudo crear el período del mes en curso. Verifica la configuración del
-            SMLV.
-          </span>
+          <span>No hay períodos disponibles para emitir transacciones.</span>
         </Alert>
       ) : (
-        <>
-          {/* Selector de período (solo el actual — anteriores se gestionan en Historial/Cartera) */}
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 bg-slate-50 px-5 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400">
-                    Período contable
-                  </p>
-                  <p className="mt-0.5 font-mono text-lg font-semibold text-brand-blue-dark">
-                    {anioActual}-{String(mesActual).padStart(2, '0')}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {MESES[mesActual - 1]} {anioActual} · SMLV{' '}
-                    <span className="font-mono font-medium">
-                      {copFmt.format(Number(periodoActual.smlvSnapshot))}
-                    </span>
-                  </p>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Solo se procesan transacciones del mes en curso.
-                  <br />
-                  Períodos anteriores: ver{' '}
-                  <a
-                    href="/admin/transacciones/historial"
-                    className="underline hover:text-slate-900"
-                  >
-                    Historial
-                  </a>{' '}
-                  /{' '}
-                  <a
-                    href="/admin/transacciones/cartera"
-                    className="underline hover:text-slate-900"
-                  >
-                    Cartera
-                  </a>
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Workflow principal */}
-          <TransaccionWorkflow
-            periodoId={periodoActual.id}
-            periodoCerrado={periodoActual.estado === 'CERRADO'}
-          />
-        </>
+        <TransaccionWorkflow periodos={periodoOpts} />
       )}
     </div>
   );
