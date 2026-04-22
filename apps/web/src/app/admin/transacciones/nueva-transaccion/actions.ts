@@ -204,7 +204,8 @@ export type PreviewRow = {
 export type PreviewInput = {
   periodoId: string;
   tipo: TipoTransaccion;
-  afiliacionId?: string;
+  /** Individual: una factura por cotizante (incluye todas sus afiliaciones activas) */
+  cotizanteId?: string;
   cuentaCobroId?: string;
   asesorComercialId?: string;
 };
@@ -239,10 +240,15 @@ export async function previsualizarTransaccionAction(
   // Recopila las afiliaciones a liquidar
   let afIds: string[] = [];
   switch (input.tipo) {
-    case 'INDIVIDUAL':
-      if (!input.afiliacionId) return { error: 'Selecciona una afiliación' };
-      afIds = [input.afiliacionId];
+    case 'INDIVIDUAL': {
+      if (!input.cotizanteId) return { error: 'Selecciona un cotizante' };
+      const afs = await prisma.afiliacion.findMany({
+        where: { cotizanteId: input.cotizanteId, estado: 'ACTIVA' },
+        select: { id: true },
+      });
+      afIds = afs.map((a) => a.id);
       break;
+    }
     case 'EMPRESA_CC': {
       if (!input.cuentaCobroId) return { error: 'Selecciona una empresa CC' };
       const afs = await prisma.afiliacion.findMany({
@@ -274,7 +280,14 @@ export async function previsualizarTransaccionAction(
       where: { id: { in: afIds } },
       include: {
         cotizante: true,
-        empresa: { select: { id: true, nombre: true, exoneraLey1607: true } },
+        empresa: {
+          select: {
+            id: true,
+            nombre: true,
+            exoneraLey1607: true,
+            arl: { select: { nombre: true } },
+          },
+        },
         planSgss: {
           select: {
             incluyeEps: true,
@@ -283,6 +296,10 @@ export async function previsualizarTransaccionAction(
             incluyeCcf: true,
           },
         },
+        eps: { select: { nombre: true } },
+        afp: { select: { nombre: true } },
+        arl: { select: { nombre: true } },
+        ccf: { select: { nombre: true } },
         serviciosAdicionales: {
           include: {
             servicio: {
@@ -307,6 +324,10 @@ export async function previsualizarTransaccionAction(
           fechaIngreso: af.fechaIngreso,
           empresa: af.empresa,
           planSgss: af.planSgss,
+          eps: af.eps,
+          afp: af.afp,
+          arl: af.arl,
+          ccf: af.ccf,
           serviciosAdicionales: af.serviciosAdicionales.map((s) => ({
             id: s.servicio.id,
             codigo: s.servicio.codigo,
@@ -413,15 +434,17 @@ export async function procesarTransaccionAction(
 
   switch (input.tipo) {
     case 'INDIVIDUAL': {
-      if (!input.afiliacionId) return { error: 'Selecciona una afiliación' };
-      afIds = [input.afiliacionId];
-      agrupacion = 'INDIVIDUAL';
-      const af = await prisma.afiliacion.findUnique({
-        where: { id: input.afiliacionId },
-        select: { cotizanteId: true },
+      if (!input.cotizanteId) return { error: 'Selecciona un cotizante' };
+      const afs = await prisma.afiliacion.findMany({
+        where: { cotizanteId: input.cotizanteId, estado: 'ACTIVA' },
+        select: { id: true },
       });
-      if (!af) return { error: 'Afiliación no existe' };
-      cotizanteId = af.cotizanteId;
+      if (afs.length === 0) {
+        return { error: 'El cotizante no tiene afiliaciones activas' };
+      }
+      afIds = afs.map((a) => a.id);
+      agrupacion = 'INDIVIDUAL';
+      cotizanteId = input.cotizanteId;
       break;
     }
     case 'EMPRESA_CC': {
@@ -452,6 +475,32 @@ export async function procesarTransaccionAction(
       asesorComercialId = input.asesorComercialId;
       break;
     }
+  }
+
+  // Restricción: una factura por destinatario por período contable
+  // (cotizante / empresa CC / asesor). Las ANULADAS no cuentan.
+  const whereUnicidad: Parameters<typeof prisma.comprobante.findFirst>[0] = {
+    where: {
+      periodoId: input.periodoId,
+      estado: { not: 'ANULADO' },
+      procesadoEn: { not: null },
+      ...(cotizanteId && { cotizanteId }),
+      ...(cuentaCobroId && { cuentaCobroId }),
+      ...(asesorComercialId && { asesorComercialId }),
+    },
+    select: { consecutivo: true },
+  };
+  const existeComprobante = await prisma.comprobante.findFirst(whereUnicidad);
+  if (existeComprobante) {
+    return {
+      error: `Ya existe una factura procesada para este ${
+        input.tipo === 'INDIVIDUAL'
+          ? 'cotizante'
+          : input.tipo === 'EMPRESA_CC'
+            ? 'empresa CC'
+            : 'asesor'
+      } en el período (${existeComprobante.consecutivo}). Solo se permite una por período.`,
+    };
   }
 
   // Correr motor + persistir liquidaciones

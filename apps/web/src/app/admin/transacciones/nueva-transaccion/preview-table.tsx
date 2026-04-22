@@ -140,7 +140,6 @@ export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
                               <tr>
                                 <th className="px-3 py-1.5">Concepto</th>
                                 <th className="px-3 py-1.5">Subconcepto</th>
-                                <th className="px-3 py-1.5 text-right">Base</th>
                                 <th className="px-3 py-1.5 text-right">%</th>
                                 <th className="px-3 py-1.5 text-right">Valor</th>
                               </tr>
@@ -175,9 +174,6 @@ export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
                                             {c.observaciones}
                                           </p>
                                         )}
-                                      </td>
-                                      <td className="px-3 py-1.5 text-right font-mono">
-                                        {copFmt.format(c.base)}
                                       </td>
                                       <td className="px-3 py-1.5 text-right font-mono text-slate-600">
                                         {pctFmt(c.porcentaje)}

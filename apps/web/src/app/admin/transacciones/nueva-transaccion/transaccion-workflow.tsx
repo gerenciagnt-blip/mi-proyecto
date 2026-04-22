@@ -7,9 +7,9 @@ import {
   Building2,
   Users2,
   AlertCircle,
+  CheckCircle2,
   Loader2,
   Receipt,
-  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,10 +60,15 @@ export function TransaccionWorkflow({
 }: Props) {
   const [tipo, setTipo] = useState<TipoTransaccion>('INDIVIDUAL');
 
-  // Destinatario (según tipo)
-  const [afiliacionId, setAfiliacionId] = useState<string>('');
+  // Destinatario (según tipo). Para INDIVIDUAL usamos cotizanteId y el
+  // motor agrupa TODAS sus afiliaciones activas.
+  const [cotizanteId, setCotizanteId] = useState<string>('');
   const [cuentaCobroId, setCuentaCobroId] = useState<string>('');
   const [asesorComercialId, setAsesorComercialId] = useState<string>('');
+
+  // Key para forzar remount de los sub-componentes (reset visual) después
+  // de procesar una transacción con éxito.
+  const [resetKey, setResetKey] = useState(0);
 
   // Preview
   const [rows, setRows] = useState<PreviewRow[] | null>(null);
@@ -81,7 +86,7 @@ export function TransaccionWorkflow({
 
   // Reset al cambiar de tipo
   useEffect(() => {
-    setAfiliacionId('');
+    setCotizanteId('');
     setCuentaCobroId('');
     setAsesorComercialId('');
     setRows(null);
@@ -90,7 +95,7 @@ export function TransaccionWorkflow({
   }, [tipo]);
 
   const destinatarioListo =
-    (tipo === 'INDIVIDUAL' && !!afiliacionId) ||
+    (tipo === 'INDIVIDUAL' && !!cotizanteId) ||
     (tipo === 'EMPRESA_CC' && !!cuentaCobroId) ||
     (tipo === 'ASESOR' && !!asesorComercialId);
 
@@ -107,7 +112,7 @@ export function TransaccionWorkflow({
       const r = await previsualizarTransaccionAction({
         periodoId,
         tipo,
-        afiliacionId: afiliacionId || undefined,
+        cotizanteId: cotizanteId || undefined,
         cuentaCobroId: cuentaCobroId || undefined,
         asesorComercialId: asesorComercialId || undefined,
       });
@@ -124,25 +129,27 @@ export function TransaccionWorkflow({
     destinatarioListo,
     periodoId,
     tipo,
-    afiliacionId,
+    cotizanteId,
     cuentaCobroId,
     asesorComercialId,
   ]);
 
   const onProcesado = () => {
     setPrefactOpen(false);
-    // Limpiar selección para siguiente transacción
-    setAfiliacionId('');
+    // Limpiar TODO (selección + input de documento + listas) para nueva tx
+    setCotizanteId('');
     setCuentaCobroId('');
     setAsesorComercialId('');
     setRows(null);
     setTotales(null);
+    setPreviewError(null);
+    setResetKey((k) => k + 1); // fuerza remount de BuscarCotizante/SeleccionarCC/SeleccionarAsesor
   };
 
   const contextParaProcesar: PreviewInput = {
     periodoId,
     tipo,
-    afiliacionId: afiliacionId || undefined,
+    cotizanteId: cotizanteId || undefined,
     cuentaCobroId: cuentaCobroId || undefined,
     asesorComercialId: asesorComercialId || undefined,
   };
@@ -204,12 +211,13 @@ export function TransaccionWorkflow({
       {/* Selector de destinatario según tipo */}
       {!periodoCerrado && tipo === 'INDIVIDUAL' && (
         <BuscarCotizante
-          onSelect={setAfiliacionId}
-          afiliacionIdActual={afiliacionId}
+          key={`cot-${resetKey}`}
+          onCotizanteFound={setCotizanteId}
         />
       )}
       {!periodoCerrado && tipo === 'EMPRESA_CC' && (
         <SeleccionarCC
+          key={`cc-${resetKey}`}
           periodoId={periodoId}
           value={cuentaCobroId}
           onChange={setCuentaCobroId}
@@ -217,6 +225,7 @@ export function TransaccionWorkflow({
       )}
       {!periodoCerrado && tipo === 'ASESOR' && (
         <SeleccionarAsesor
+          key={`as-${resetKey}`}
           periodoId={periodoId}
           value={asesorComercialId}
           onChange={setAsesorComercialId}
@@ -291,11 +300,9 @@ export function TransaccionWorkflow({
 // ========== Sub-selectores ==========
 
 function BuscarCotizante({
-  onSelect,
-  afiliacionIdActual,
+  onCotizanteFound,
 }: {
-  onSelect: (id: string) => void;
-  afiliacionIdActual: string;
+  onCotizanteFound: (cotizanteId: string) => void;
 }) {
   const [doc, setDoc] = useState('');
   const [pending, start] = useTransition();
@@ -305,14 +312,20 @@ function BuscarCotizante({
   const buscar = () => {
     setError(null);
     setResult(null);
-    onSelect('');
+    onCotizanteFound('');
     start(async () => {
       const r = await buscarCotizanteAction(doc);
-      if (r.error) setError(r.error);
-      else if (r.found) {
+      if (r.error) {
+        setError(r.error);
+      } else if (r.found) {
         setResult(r.found);
-        const activa = r.found.afiliaciones.find((a) => a.estado === 'ACTIVA');
-        if (activa) onSelect(activa.id);
+        const activas = r.found.afiliaciones.filter((a) => a.estado === 'ACTIVA');
+        if (activas.length === 0) {
+          setError('El cotizante no tiene afiliaciones activas');
+        } else {
+          // Lanza el preview inmediatamente — sin paso intermedio
+          onCotizanteFound(r.found.cotizante.id);
+        }
       }
     });
   };
@@ -323,6 +336,9 @@ function BuscarCotizante({
         <Label className="text-[10px] uppercase tracking-wider text-slate-400">
           Buscar cotizante
         </Label>
+        <p className="mt-0.5 text-[11px] text-slate-500">
+          Al encontrar el cotizante se liquidan todas sus afiliaciones activas
+        </p>
       </header>
 
       <div className="flex gap-2">
@@ -362,71 +378,15 @@ function BuscarCotizante({
       )}
 
       {result && (
-        <div className="space-y-3">
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="font-medium text-slate-900">{result.cotizante.nombreCompleto}</p>
-            <p className="font-mono text-xs text-slate-500">
-              {result.cotizante.tipoDocumento} {result.cotizante.numeroDocumento}
-            </p>
-          </div>
-
-          {result.afiliaciones.length === 0 ? (
-            <Alert variant="warning">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>El cotizante no tiene afiliaciones registradas</span>
-            </Alert>
-          ) : (
-            <div className="space-y-1.5">
-              {result.afiliaciones.map((a) => {
-                const selected = afiliacionIdActual === a.id;
-                const disabled = a.estado !== 'ACTIVA';
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onSelect(a.id)}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-md border p-2.5 text-left text-xs transition',
-                      disabled && 'cursor-not-allowed opacity-50',
-                      selected
-                        ? 'border-brand-blue bg-brand-blue/5 ring-1 ring-brand-blue'
-                        : 'border-slate-200 hover:border-slate-300',
-                    )}
-                  >
-                    <div>
-                      <p className="font-medium text-slate-800">
-                        {a.empresaNombre ?? (
-                          <span className="italic text-slate-400">
-                            Sin empresa · Independiente
-                          </span>
-                        )}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-slate-500">
-                        {a.modalidad} · Nivel {a.nivelRiesgo} · Ingreso {a.fechaIngreso} ·
-                        Salario {copFmt.format(a.salario)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {selected && (
-                        <CheckCircle2 className="h-4 w-4 text-brand-blue" />
-                      )}
-                      <span
-                        className={cn(
-                          'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          a.estado === 'ACTIVA'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-200 text-slate-500',
-                        )}
-                      >
-                        {a.estado}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <div className="rounded-lg bg-slate-50 p-3">
+          <p className="font-medium text-slate-900">{result.cotizante.nombreCompleto}</p>
+          <p className="font-mono text-xs text-slate-500">
+            {result.cotizante.tipoDocumento} {result.cotizante.numeroDocumento} ·{' '}
+            {result.afiliaciones.filter((a) => a.estado === 'ACTIVA').length}{' '}
+            {result.afiliaciones.filter((a) => a.estado === 'ACTIVA').length === 1
+              ? 'afiliación activa'
+              : 'afiliaciones activas'}
+          </p>
         </div>
       )}
     </section>

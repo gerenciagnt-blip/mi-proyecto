@@ -13,13 +13,25 @@ export type CalcInput = {
     salario: Prisma.Decimal;
     valorAdministracion: Prisma.Decimal;
     fechaIngreso: Date;
-    empresa: { id: string; exoneraLey1607: boolean } | null;
+    empresa: {
+      id: string;
+      exoneraLey1607: boolean;
+      /** ARL de la empresa — se muestra como subconcepto ARL en dependientes. */
+      arl?: { nombre: string } | null;
+    } | null;
     planSgss: {
       incluyeEps: boolean;
       incluyeAfp: boolean;
       incluyeArl: boolean;
       incluyeCcf: boolean;
     } | null;
+    /** Entidades SGSS asignadas al cotizante — se usan como subconcepto
+     * en el desglose (ej. "SURA EPS S.A.", "Colpensiones"). */
+    eps?: { nombre: string } | null;
+    afp?: { nombre: string } | null;
+    /** Sólo para INDEPENDIENTE — la ARL del dependiente viene de empresa.arl. */
+    arl?: { nombre: string } | null;
+    ccf?: { nombre: string } | null;
     /** Servicios adicionales asignados a la afiliación. Cada uno aporta
      * un concepto SERVICIO con valor = precio. */
     serviciosAdicionales?: Array<{
@@ -328,7 +340,9 @@ export function calcularLiquidacion(
     if (t) {
       addConcepto({
         concepto: 'EPS',
-        subconcepto: t.etiqueta ?? undefined,
+        // Subconcepto = nombre de la EPS asignada al cotizante (si existe),
+        // fallback a la etiqueta de la tarifa.
+        subconcepto: afiliacion.eps?.nombre ?? t.etiqueta ?? undefined,
         base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE' && !exonera, // dep no exonerado: 8.5%emp + 4%trab — simplificamos al total
@@ -345,7 +359,7 @@ export function calcularLiquidacion(
     if (t) {
       addConcepto({
         concepto: 'AFP',
-        subconcepto: t.etiqueta ?? undefined,
+        subconcepto: afiliacion.afp?.nombre ?? t.etiqueta ?? undefined,
         base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
@@ -368,13 +382,18 @@ export function calcularLiquidacion(
   }
 
   // ---- ARL ----
+  // DEPENDIENTE → se toma de empresa.arl. INDEPENDIENTE → de afiliacion.arl.
   const aplicaArl = !plan || plan.incluyeArl;
   if (aplicaArl) {
     const t = pickTarifa(tarifas, { concepto: 'ARL', nivelRiesgo: nivel });
     if (t) {
+      const arlNombre =
+        modalidad === 'DEPENDIENTE'
+          ? afiliacion.empresa?.arl?.nombre
+          : afiliacion.arl?.nombre;
       addConcepto({
         concepto: 'ARL',
-        subconcepto: t.etiqueta ?? `Nivel ${nivel}`,
+        subconcepto: arlNombre ?? t.etiqueta ?? `Nivel ${nivel}`,
         base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
@@ -391,7 +410,7 @@ export function calcularLiquidacion(
     if (t) {
       addConcepto({
         concepto: 'CCF',
-        subconcepto: t.etiqueta ?? undefined,
+        subconcepto: afiliacion.ccf?.nombre ?? t.etiqueta ?? undefined,
         base: baseCotizacion,
         porcentaje: toNum(t.porcentaje),
         aCargoEmpleador: modalidad === 'DEPENDIENTE',
@@ -514,7 +533,13 @@ export async function persistirLiquidacion(
     prisma.afiliacion.findUnique({
       where: { id: opts.afiliacionId },
       include: {
-        empresa: { select: { id: true, exoneraLey1607: true } },
+        empresa: {
+          select: {
+            id: true,
+            exoneraLey1607: true,
+            arl: { select: { nombre: true } },
+          },
+        },
         planSgss: {
           select: {
             incluyeEps: true,
@@ -523,6 +548,10 @@ export async function persistirLiquidacion(
             incluyeCcf: true,
           },
         },
+        eps: { select: { nombre: true } },
+        afp: { select: { nombre: true } },
+        arl: { select: { nombre: true } },
+        ccf: { select: { nombre: true } },
         serviciosAdicionales: {
           include: {
             servicio: {
@@ -550,6 +579,10 @@ export async function persistirLiquidacion(
         fechaIngreso: afiliacion.fechaIngreso,
         empresa: afiliacion.empresa,
         planSgss: afiliacion.planSgss,
+        eps: afiliacion.eps,
+        afp: afiliacion.afp,
+        arl: afiliacion.arl,
+        ccf: afiliacion.ccf,
         serviciosAdicionales: afiliacion.serviciosAdicionales.map((s) => ({
           id: s.servicio.id,
           codigo: s.servicio.codigo,
