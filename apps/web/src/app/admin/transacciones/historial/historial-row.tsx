@@ -128,15 +128,24 @@ export function HistorialRow({ row }: { row: HistorialRowData }) {
           >
             <Eye className="h-3.5 w-3.5" />
           </button>
-          <a
-            href={`/api/comprobantes/${row.id}/pdf`}
-            target="_blank"
-            rel="noreferrer"
-            title="Duplicado PDF"
-            className="flex h-7 w-7 items-center justify-center rounded text-brand-blue hover:bg-brand-blue/10 hover:text-brand-blue-dark"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </a>
+          {anulado ? (
+            <span
+              title="Comprobante anulado — PDF no disponible"
+              className="flex h-7 w-7 cursor-not-allowed items-center justify-center rounded text-slate-300"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </span>
+          ) : (
+            <a
+              href={`/api/comprobantes/${row.id}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              title="Duplicado PDF"
+              className="flex h-7 w-7 items-center justify-center rounded text-brand-blue hover:bg-brand-blue/10 hover:text-brand-blue-dark"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
+          )}
           {!anulado && (
             <button
               type="button"
@@ -286,15 +295,22 @@ function ConsultarDialog({
         </section>
 
         <div className="flex justify-end gap-2">
-          <a
-            href={`/api/comprobantes/${row.id}/pdf`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Duplicado PDF
-          </a>
+          {row.estadoDerivado === 'ANULADO' ? (
+            <span className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-400">
+              <Download className="h-3.5 w-3.5" />
+              PDF no disponible (anulado)
+            </span>
+          ) : (
+            <a
+              href={`/api/comprobantes/${row.id}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Duplicado PDF
+            </a>
+          )}
           <Button type="button" onClick={onClose}>
             Cerrar
           </Button>

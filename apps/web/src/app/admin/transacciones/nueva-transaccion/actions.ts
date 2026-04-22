@@ -438,6 +438,9 @@ export type ProcesarInput = PreviewInput & {
   /** Override del valor administración — sólo afecta esta transacción.
    * Se aplica a cada afiliación liquidada (mismo valor absoluto). */
   valorAdminOverride?: number;
+  /** Override de días cotizados (1..30) — útil al aplicar novedad de
+   * retiro parcial; recalcula la base SGSS proporcional. */
+  diasCotizadosOverride?: number;
   /** Al procesar, inactiva las afiliaciones del cotizante
    * (sólo INDIVIDUAL). Al anular se revierte. */
   aplicaNovedadRetiro?: boolean;
@@ -559,6 +562,7 @@ export async function procesarTransaccionAction(
         periodoId: input.periodoId,
         afiliacionId: afId,
         valorAdminOverride: input.valorAdminOverride,
+        diasCotizadosOverride: input.diasCotizadosOverride,
       });
       if (r) {
         liqIds.push(r.liquidacionId);

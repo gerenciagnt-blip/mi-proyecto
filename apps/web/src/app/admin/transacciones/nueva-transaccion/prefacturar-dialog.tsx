@@ -19,7 +19,6 @@ import {
   procesarTransaccionAction,
   listarMediosPagoAction,
   type PreviewInput,
-  type ProcesarInput,
   type TipoTransaccion,
 } from './actions';
 
@@ -41,10 +40,10 @@ type Props = {
   numAfiliaciones: number;
 };
 
-// Valor de forma de pago en el <select>.
-// - "CONSOLIDADO" → sin medio específico
-// - "MEDIO:<id>"  → medio del catálogo con ese id
-type FormaPagoOption = 'CONSOLIDADO' | `MEDIO:${string}`;
+// El dropdown de forma de pago lista únicamente los medios configurados
+// en el catálogo (efectivo, transferencia, etc.). El usuario selecciona
+// directamente uno; internamente siempre se guarda como POR_MEDIO_PAGO
+// + el medioPagoId elegido.
 
 export function PrefacturarDialog({
   open,
@@ -57,13 +56,14 @@ export function PrefacturarDialog({
   destinatarioInfo,
   numAfiliaciones,
 }: Props) {
-  const [formaPagoOpt, setFormaPagoOpt] = useState<FormaPagoOption>('CONSOLIDADO');
+  const [medioPagoId, setMedioPagoId] = useState<string>('');
   const [numero, setNumero] = useState('');
   const [fechaPago, setFechaPago] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
   const [valorAdmonStr, setValorAdmonStr] = useState<string>('');
   const [aplicaNovedadRetiro, setAplicaNovedadRetiro] = useState(false);
+  const [diasRetiroStr, setDiasRetiroStr] = useState<string>('30');
   const [medios, setMedios] = useState<
     Array<{ id: string; codigo: string; nombre: string }>
   >([]);
@@ -82,6 +82,8 @@ export function PrefacturarDialog({
     startLoad(async () => {
       const m = await listarMediosPagoAction();
       setMedios(m);
+      // Auto-selecciona el primer medio si hay exactamente uno
+      if (m.length === 1 && m[0]) setMedioPagoId(m[0].id);
     });
   }, [open]);
 
@@ -90,12 +92,12 @@ export function PrefacturarDialog({
       setError(null);
       setExito(null);
     } else {
-      // Al abrir, precargamos el valor admón del preview
       setValorAdmonStr(
         totalAdmonInicial > 0 ? String(Math.round(totalAdmonInicial)) : '',
       );
       setAplicaNovedadRetiro(false);
-      setFormaPagoOpt('CONSOLIDADO');
+      setDiasRetiroStr('30');
+      setMedioPagoId('');
       setNumero('');
     }
   }, [open, totalAdmonInicial]);
@@ -120,31 +122,32 @@ export function PrefacturarDialog({
       ? totalGeneral - totalAdmonInicial + overrideNumber * numAfiliaciones
       : totalGeneral;
 
+  // Días override: solo aplica cuando hay novedad de retiro y el valor es < 30
+  const diasOverride = (() => {
+    if (!aplicaNovedadRetiro) return undefined;
+    const n = parseInt(diasRetiroStr, 10);
+    if (!Number.isFinite(n) || n <= 0 || n >= 30) return undefined;
+    return n;
+  })();
+
   const onSubmit = () => {
     setError(null);
     setExito(null);
 
-    // Parsea formaPago + medioPagoId del dropdown unificado
-    let formaPago: ProcesarInput['formaPago'];
-    let medioPagoId: string | undefined;
-    if (formaPagoOpt === 'CONSOLIDADO') {
-      formaPago = 'CONSOLIDADO';
-    } else if (formaPagoOpt.startsWith('MEDIO:')) {
-      formaPago = 'POR_MEDIO_PAGO';
-      medioPagoId = formaPagoOpt.slice('MEDIO:'.length);
-    } else {
-      setError('Selecciona una forma de pago');
+    if (!medioPagoId) {
+      setError('Selecciona una forma de pago del catálogo');
       return;
     }
 
     startProcesar(async () => {
       const r = await procesarTransaccionAction({
         ...context,
-        formaPago,
+        formaPago: 'POR_MEDIO_PAGO',
         medioPagoId,
         numeroComprobanteExt: numero.trim() || undefined,
         fechaPago,
         valorAdminOverride: overrideNumber,
+        diasCotizadosOverride: diasOverride,
         aplicaNovedadRetiro: tipo === 'INDIVIDUAL' ? aplicaNovedadRetiro : false,
       });
       if (r.error) {
@@ -269,47 +272,66 @@ export function PrefacturarDialog({
 
           {/* Novedad de retiro — solo individual */}
           {tipo === 'INDIVIDUAL' && (
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={aplicaNovedadRetiro}
-                onChange={(e) => setAplicaNovedadRetiro(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300"
-              />
-              <div className="flex-1">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
-                  <UserMinus className="h-3.5 w-3.5 text-red-600" />
-                  Aplicar novedad de retiro
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  Al procesar, el cotizante se inactivará en base de datos. Si la
-                  factura se anula, se reactiva.
-                </p>
-              </div>
-            </label>
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={aplicaNovedadRetiro}
+                  onChange={(e) => setAplicaNovedadRetiro(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                />
+                <div className="flex-1">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <UserMinus className="h-3.5 w-3.5 text-red-600" />
+                    Aplicar novedad de retiro
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    El cotizante se inactivará al procesar. Si la factura se anula, se
+                    reactiva.
+                  </p>
+                </div>
+              </label>
+
+              {aplicaNovedadRetiro && (
+                <div className="ml-6 flex items-center gap-3 border-t border-slate-100 pt-2">
+                  <Label htmlFor="diasRetiro" className="text-xs">
+                    Días a liquidar
+                  </Label>
+                  <Input
+                    id="diasRetiro"
+                    type="number"
+                    min="1"
+                    max="30"
+                    step="1"
+                    value={diasRetiroStr}
+                    onChange={(e) => setDiasRetiroStr(e.target.value)}
+                    className="h-8 w-20"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    1 a 30. La SGSS se recalcula proporcional a estos días.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Forma de pago — dropdown unificado */}
+          {/* Forma de pago — solo medios del catálogo */}
           <div>
-            <Label htmlFor="formaPago">Forma de pago *</Label>
+            <Label htmlFor="medioPago">Forma de pago *</Label>
             <select
-              id="formaPago"
-              value={formaPagoOpt}
-              onChange={(e) => setFormaPagoOpt(e.target.value as FormaPagoOption)}
+              id="medioPago"
+              value={medioPagoId}
+              onChange={(e) => setMedioPagoId(e.target.value)}
               required
-              disabled={loadingMedios}
+              disabled={loadingMedios || medios.length === 0}
               className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
             >
-              <option value="CONSOLIDADO">Consolidado</option>
-              {medios.length > 0 && (
-                <optgroup label="Medios de pago">
-                  {medios.map((m) => (
-                    <option key={m.id} value={`MEDIO:${m.id}`}>
-                      {m.codigo} — {m.nombre}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              <option value="">— Seleccionar —</option>
+              {medios.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.codigo} — {m.nombre}
+                </option>
+              ))}
             </select>
             {loadingMedios && (
               <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
@@ -319,8 +341,8 @@ export function PrefacturarDialog({
             )}
             {!loadingMedios && medios.length === 0 && (
               <p className="mt-1 text-[11px] text-amber-700">
-                No hay medios de pago en el catálogo. Agrégalos en{' '}
-                /admin/catalogos/medios-pago.
+                No hay medios de pago configurados. Agrégalos en{' '}
+                <strong>Catálogos → Medios de pago</strong> antes de procesar.
               </p>
             )}
           </div>

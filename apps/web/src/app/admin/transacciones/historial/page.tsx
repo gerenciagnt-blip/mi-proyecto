@@ -33,15 +33,9 @@ type SP = {
   page?: string;
 };
 
-function fullName(c: {
-  primerNombre: string;
-  segundoNombre: string | null;
-  primerApellido: string;
-  segundoApellido: string | null;
-}) {
-  return [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
-    .filter(Boolean)
-    .join(' ');
+/** Solo primer nombre + primer apellido — para columnas estrechas. */
+function shortName(c: { primerNombre: string; primerApellido: string }) {
+  return [c.primerNombre, c.primerApellido].filter(Boolean).join(' ');
 }
 
 function buildHref(patch: Partial<SP>, current: SP) {
@@ -143,7 +137,7 @@ export default async function HistorialPage({
     let destinatario = '—';
     let sub: string | null = null;
     if (c.agrupacion === 'INDIVIDUAL' && c.cotizante) {
-      destinatario = fullName(c.cotizante);
+      destinatario = shortName(c.cotizante);
       sub = `${c.cotizante.tipoDocumento} ${c.cotizante.numeroDocumento}`;
     } else if (c.agrupacion === 'EMPRESA_CC' && c.cuentaCobro) {
       destinatario = c.cuentaCobro.razonSocial;

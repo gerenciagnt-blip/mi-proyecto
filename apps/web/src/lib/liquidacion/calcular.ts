@@ -54,6 +54,12 @@ export type CalcInput = {
    * concepto ADMIN. No persiste cambios en la afiliación.
    */
   valorAdminOverride?: number;
+  /**
+   * Override de días cotizados. Útil para retiros parciales (ej. cotizante
+   * que se retira el 15 → 15 días). Afecta la base prorrateada para el
+   * cálculo de SGSS. No cambia el cálculo de ADMIN (que es fijo).
+   */
+  diasCotizadosOverride?: number;
   /** Año/mes del período a liquidar. */
   periodo: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
@@ -252,6 +258,14 @@ export function calcularLiquidacion(
     diasCotizados = td.dias;
     diaDesde = td.diaDesde;
     diaHasta = td.diaHasta;
+  }
+
+  // Override explícito de días (p.ej. retiro a mitad de mes).
+  if (input.diasCotizadosOverride != null && input.diasCotizadosOverride > 0) {
+    diasCotizados = Math.min(30, Math.max(1, Math.floor(input.diasCotizadosOverride)));
+    // Cuando el admin fija los días, diaDesde/diaHasta pierden sentido automático.
+    diaDesde = null;
+    diaHasta = null;
   }
 
   const ibc = toNum(input.ibc ?? afiliacion.salario);
@@ -540,6 +554,7 @@ export async function persistirLiquidacion(
     ibc?: number;
     forzarTipo?: TipoLiq;
     valorAdminOverride?: number;
+    diasCotizadosOverride?: number;
   },
 ): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
@@ -609,6 +624,7 @@ export async function persistirLiquidacion(
       smlv: periodo.smlvSnapshot,
       forzarTipo: opts.forzarTipo,
       valorAdminOverride: opts.valorAdminOverride,
+      diasCotizadosOverride: opts.diasCotizadosOverride,
     },
     tarifas,
     fspRangos,

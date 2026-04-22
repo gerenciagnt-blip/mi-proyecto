@@ -85,6 +85,13 @@ export async function GET(
     return NextResponse.json({ error: 'Comprobante no encontrado' }, { status: 404 });
   }
 
+  if (comp.estado === 'ANULADO') {
+    return NextResponse.json(
+      { error: 'Comprobante anulado — PDF no disponible' },
+      { status: 410 },
+    );
+  }
+
   // Intentamos encontrar la sucursal para el formato
   // - EMPRESA_CC: la sucursal de la cuenta de cobro
   // - INDIVIDUAL: la sucursal de la primera cuenta de cobro entre las liquidaciones
