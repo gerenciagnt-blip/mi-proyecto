@@ -9,12 +9,11 @@ export const dynamic = 'force-dynamic';
  * GET /api/planos/[id]/plano.txt — descarga el archivo plano PILA de la
  * planilla. Respeta el formato de la resolución 2388/2016:
  *   - Encabezado 359 bytes (registro tipo 01)
- *   - Una línea por cotizante de 693 bytes (676 oficial + 17 padding
- *     operador)
- *   - Separador de líneas CRLF (\r\n)
+ *   - Una línea por cotizante de 693 bytes (676 oficial + 17 padding con
+ *     actividad económica del operador).
+ *   - Separador CRLF (\r\n).
  *
- * Solo se permite descargar planillas CONSOLIDADO o PAGADA (las ANULADAS
- * no).
+ * Solo se permite descargar planillas CONSOLIDADO o PAGADA.
  */
 export async function GET(
   _req: Request,
@@ -40,10 +39,20 @@ export async function GET(
           municipio: { select: { codigo: true } },
         },
       },
+      createdBy: {
+        include: {
+          sucursal: { select: { codigo: true, nombre: true } },
+        },
+      },
       comprobantes: {
         include: {
           comprobante: {
             include: {
+              cuentaCobro: {
+                include: {
+                  sucursal: { select: { codigo: true, nombre: true } },
+                },
+              },
               liquidaciones: {
                 include: {
                   liquidacion: {
@@ -63,6 +72,10 @@ export async function GET(
                               arl: { select: { codigo: true } },
                             },
                           },
+                          tipoCotizante: { select: { codigo: true } },
+                          subtipo: { select: { codigo: true } },
+                          planSgss: { select: { incluyeCcf: true } },
+                          actividadEconomica: { select: { codigoCiiu: true } },
                           eps: { select: { codigo: true } },
                           afp: { select: { codigo: true } },
                           arl: { select: { codigo: true } },
@@ -91,8 +104,52 @@ export async function GET(
     );
   }
 
+  // ----- Query de mensualidades previas para marcar ING -----
+  // Un cotizante es "primera mensualidad" si NO tiene otra mensualidad
+  // procesada fuera de esta planilla. Se busca a través de las
+  // liquidaciones (porque un comprobante EMPRESA_CC puede tener el
+  // cotizanteId en null pero la liquidación sí lo referencia).
+  const cotizanteIds = Array.from(
+    new Set(
+      planilla.comprobantes
+        .flatMap((cp) => cp.comprobante.liquidaciones)
+        .map((cl) => cl.liquidacion.afiliacion.cotizante.id),
+    ),
+  );
+  const comprobanteIdsPlanilla = planilla.comprobantes.map(
+    (cp) => cp.comprobanteId,
+  );
+
+  let cotizantesConMensualidadPrevia = new Set<string>();
+  if (cotizanteIds.length > 0) {
+    const liqsPrevias = await prisma.liquidacion.findMany({
+      where: {
+        tipo: 'MENSUALIDAD',
+        afiliacion: { cotizanteId: { in: cotizanteIds } },
+        comprobantes: {
+          some: {
+            comprobante: {
+              estado: { not: 'ANULADO' },
+              procesadoEn: { not: null },
+              id: { notIn: comprobanteIdsPlanilla },
+            },
+          },
+        },
+      },
+      select: { afiliacion: { select: { cotizanteId: true } } },
+    });
+    cotizantesConMensualidadPrevia = new Set(
+      liqsPrevias
+        .map((l) => l.afiliacion.cotizanteId)
+        .filter((x): x is string => x != null),
+    );
+  }
+
   try {
-    const { contenido, filename } = generarPlano(planilla);
+    const { contenido, filename } = generarPlano(
+      planilla,
+      cotizantesConMensualidadPrevia,
+    );
     return new NextResponse(contenido, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',

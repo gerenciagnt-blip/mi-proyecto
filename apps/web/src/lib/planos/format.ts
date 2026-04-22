@@ -52,6 +52,12 @@ export function padTarifa(percent: number | string, length: number = 7): string 
 /**
  * Valor monetario sin centavos. PILA los reporta como enteros. Los
  * Decimal de Prisma deben pasarse a Number antes.
+ *
+ * Importante: se TRUNCAN decimales (no se redondean). Ej: $1.500.000,50
+ * se envía como "001500000". El salario debe ser exacto.
+ *
+ * Los valores de cotización (IBC, aportes) ya vienen redondeados desde
+ * el motor de liquidación — el trunc no los altera.
  */
 export function padMoney(
   value: number | string | null | undefined,
@@ -59,7 +65,8 @@ export function padMoney(
 ): string {
   if (value == null) return '0'.repeat(length);
   const n = typeof value === 'string' ? Number(value) : value;
-  return padNum(Math.max(0, Math.round(n)), length);
+  if (!Number.isFinite(n)) return '0'.repeat(length);
+  return padNum(Math.max(0, Math.trunc(n)), length);
 }
 
 /** Fecha AAAA-MM-DD (10 bytes). Si no hay fecha, 10 espacios. */
