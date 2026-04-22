@@ -248,9 +248,11 @@ export function calcularLiquidacion(
   if (forzarTipo) {
     const auto = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
     tipo = forzarTipo;
-    // Si el tipo forzado coincide con el automático, usamos sus días;
-    // de lo contrario usamos mes completo.
-    if (auto && auto.tipo === forzarTipo) {
+    // Si auto existe (fechaIngreso dentro o antes del período), usamos
+    // sus días — esto da proporcional correcto cuando forzamos MENSUALIDAD
+    // y la fecha cae en el período actual (caso indep vigente).
+    // Si auto es null (fechaIngreso posterior al período) usamos mes completo.
+    if (auto) {
       diasCotizados = auto.dias;
       diaDesde = auto.diaDesde;
       diaHasta = auto.diaHasta;

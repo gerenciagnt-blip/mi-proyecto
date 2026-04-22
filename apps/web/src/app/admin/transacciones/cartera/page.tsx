@@ -4,7 +4,8 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
-import { puedeCerrarPeriodo } from './helpers';
+import { cn } from '@/lib/utils';
+import { puedeCerrarPeriodo, debeFacturarseEnPeriodo } from './helpers';
 import {
   ConsultarCotizanteButton,
   type ConsultaCotizante,
@@ -207,6 +208,7 @@ export default async function CarteraPage({
     numDoc: string;
     nombre: string;
     nombreCompleto: string;
+    modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
     empresaPlanilla: string | null;
     empresaCC: string | null;
     asesor: string | null;
@@ -222,16 +224,30 @@ export default async function CarteraPage({
   for (const c of cotizantes) {
     if (c.afiliaciones.length === 0) continue;
 
+    // Aplica el filtro de temporalidad: solo incluir afiliaciones que DEBEN
+    // facturarse en este período (según modalidad + formaPago).
+    const afsElegibles = c.afiliaciones.filter((af) =>
+      debeFacturarseEnPeriodo(
+        {
+          modalidad: af.modalidad,
+          formaPago: af.formaPago,
+          fechaIngreso: af.fechaIngreso,
+        },
+        { anio: periodo.anio, mes: periodo.mes },
+      ),
+    );
+    if (afsElegibles.length === 0) continue;
+
     let totalCot = 0;
     const afilsConsulta: ConsultaCotizante['afiliaciones'] = [];
 
-    // Para los campos de la tabla, tomamos la primera afiliación como "representativa"
-    const primera = c.afiliaciones[0];
+    // Para los campos de la tabla, tomamos la primera afiliación elegible
+    const primera = afsElegibles[0];
     if (!primera) continue;
 
     const esPrimeraMens = !cotsConMens.has(c.id);
 
-    for (const af of c.afiliaciones) {
+    for (const af of afsElegibles) {
       const calc = calcularLiquidacion(
         {
           afiliacion: {
@@ -307,6 +323,7 @@ export default async function CarteraPage({
       numDoc: c.numeroDocumento,
       nombre: shortName(c),
       nombreCompleto: fullName(c),
+      modalidad: primera.modalidad,
       empresaPlanilla: primera.empresa?.nombre ?? null,
       empresaCC: primera.cuentaCobro?.razonSocial ?? null,
       asesor: primera.asesorComercial?.nombre ?? null,
@@ -435,6 +452,7 @@ export default async function CarteraPage({
                   <th className="px-4 py-2">Tipo doc</th>
                   <th className="px-4 py-2">N° documento</th>
                   <th className="px-4 py-2">Nombre</th>
+                  <th className="px-4 py-2">Modalidad</th>
                   <th className="px-4 py-2">Empresa planilla</th>
                   <th className="px-4 py-2">Empresa CC</th>
                   <th className="px-4 py-2">Asesor</th>
@@ -450,6 +468,18 @@ export default async function CarteraPage({
                     <td className="px-4 py-2.5 font-mono text-xs">{r.numDoc}</td>
                     <td className="px-4 py-2.5">
                       <p className="font-medium">{r.nombre}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                          r.modalidad === 'DEPENDIENTE'
+                            ? 'bg-sky-100 text-sky-700'
+                            : 'bg-amber-100 text-amber-700',
+                        )}
+                      >
+                        {r.modalidad === 'DEPENDIENTE' ? 'Dep.' : 'Indep.'}
+                      </span>
                     </td>
                     <td className="px-4 py-2.5 text-xs">
                       {r.empresaPlanilla ?? (

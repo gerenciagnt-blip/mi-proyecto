@@ -5,7 +5,7 @@ import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
-import { puedeCerrarPeriodo } from './helpers';
+import { puedeCerrarPeriodo, debeFacturarseEnPeriodo } from './helpers';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -123,7 +123,12 @@ export async function cerrarPeriodoMasivoAction(
       id: true,
       afiliaciones: {
         where: { estado: 'ACTIVA' },
-        select: { id: true },
+        select: {
+          id: true,
+          modalidad: true,
+          formaPago: true,
+          fechaIngreso: true,
+        },
       },
     },
   });
@@ -140,7 +145,19 @@ export async function cerrarPeriodoMasivoAction(
   });
 
   for (const c of cotizantesPendientes) {
-    const afIds = c.afiliaciones.map((a) => a.id);
+    // Solo liquida afiliaciones que deben facturarse en este período según
+    // modalidad + forma de pago (ver helper `debeFacturarseEnPeriodo`).
+    const afsElegibles = c.afiliaciones.filter((af) =>
+      debeFacturarseEnPeriodo(
+        {
+          modalidad: af.modalidad,
+          formaPago: af.formaPago,
+          fechaIngreso: af.fechaIngreso,
+        },
+        { anio: periodo.anio, mes: periodo.mes },
+      ),
+    );
+    const afIds = afsElegibles.map((a) => a.id);
     if (afIds.length === 0) continue;
 
     try {
