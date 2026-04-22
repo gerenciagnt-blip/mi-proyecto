@@ -19,8 +19,10 @@ function fullName(c: { primerNombre: string; primerApellido: string }) {
   return `${c.primerNombre} ${c.primerApellido}`.trim();
 }
 
-function esConceptoInterno(c: { subconcepto: string | null }): boolean {
-  return c.subconcepto?.toLowerCase().includes('interno') ?? false;
+/** Identifica si un concepto SGSS es un COBRO INTERNO del aliado (p.ej. CCF $100,
+ * ARL 1 día nivel I) por la palabra "interno" en el subconcepto. */
+function esConceptoInterno(subconcepto: string | null): boolean {
+  return subconcepto?.toLowerCase().includes('interno') ?? false;
 }
 
 export async function GET(req: Request) {
@@ -66,7 +68,35 @@ export async function GET(req: Request) {
           liquidacion: {
             include: {
               conceptos: {
-                select: { concepto: true, subconcepto: true, valor: true },
+                select: {
+                  concepto: true,
+                  subconcepto: true,
+                  valor: true,
+                  porcentaje: true,
+                },
+              },
+              afiliacion: {
+                include: {
+                  cotizante: {
+                    select: {
+                      tipoDocumento: true,
+                      numeroDocumento: true,
+                      primerNombre: true,
+                      primerApellido: true,
+                    },
+                  },
+                  empresa: { select: { nombre: true } },
+                  cuentaCobro: { select: { codigo: true, razonSocial: true } },
+                  asesorComercial: { select: { codigo: true, nombre: true } },
+                  planSgss: { select: { nombre: true } },
+                  eps: { select: { nombre: true } },
+                  afp: { select: { nombre: true } },
+                  arl: { select: { nombre: true } },
+                  ccf: { select: { nombre: true } },
+                  serviciosAdicionales: {
+                    include: { servicio: { select: { nombre: true } } },
+                  },
+                },
               },
             },
           },
@@ -80,51 +110,82 @@ export async function GET(req: Request) {
   wb.creator = 'Sistema PILA';
   wb.created = new Date();
 
-  // ===== Hoja 1: Detalle =====
+  // ===== Hoja 1: Detalle (una fila por liquidación) =====
   const ws = wb.addWorksheet('Detalle');
 
   ws.columns = [
-    { header: 'Fecha', key: 'fecha', width: 12 },
-    { header: 'Hora', key: 'hora', width: 8 },
+    { header: 'Fecha proc.', key: 'fechaProc', width: 12 },
+    { header: 'Hora proc.', key: 'horaProc', width: 10 },
     { header: 'Consecutivo', key: 'consecutivo', width: 14 },
-    { header: 'N° externo', key: 'numeroExt', width: 14 },
     { header: 'Tipo', key: 'tipo', width: 14 },
     { header: 'Agrupación', key: 'agrupacion', width: 18 },
-    { header: 'Destinatario', key: 'destinatario', width: 32 },
-    { header: 'Documento / Código', key: 'docCodigo', width: 20 },
-    { header: 'Forma de pago', key: 'formaPago', width: 18 },
-    { header: 'Medio de pago', key: 'medio', width: 22 },
-    { header: 'Usuario', key: 'usuario', width: 22 },
-    { header: 'Periodo contable', key: 'periodoContable', width: 16 },
-    { header: 'SGSS real', key: 'sgssReal', width: 14 },
-    { header: 'SGSS interno', key: 'sgssInterno', width: 14 },
-    { header: 'Administración', key: 'admon', width: 14 },
-    { header: 'Servicios', key: 'servicios', width: 14 },
-    { header: 'Total', key: 'total', width: 16 },
+    { header: 'Destinatario', key: 'destinatario', width: 30 },
+    { header: 'Tipo doc.', key: 'tipoDoc', width: 10 },
+    { header: 'N° documento', key: 'numDoc', width: 16 },
+    { header: 'Modalidad', key: 'modalidad', width: 14 },
+    { header: 'Régimen', key: 'regimen', width: 14 },
+    { header: 'Plan SGSS', key: 'planSgss', width: 22 },
+    { header: 'Periodo contable', key: 'periodoContable', width: 14 },
+    { header: 'Días', key: 'dias', width: 7 },
+    { header: 'Primera factura', key: 'primeraFactura', width: 15 },
+    { header: 'Retiro', key: 'retiro', width: 8 },
+    { header: 'EPS', key: 'eps', width: 22 },
+    { header: 'Valor EPS', key: 'valorEps', width: 12 },
+    { header: 'AFP', key: 'afp', width: 22 },
+    { header: 'Valor AFP', key: 'valorAfp', width: 12 },
+    { header: 'Nivel ARL', key: 'nivelArl', width: 10 },
+    { header: '% ARL', key: 'pctArl', width: 9 },
+    { header: 'Valor ARL', key: 'valorArl', width: 12 },
+    { header: 'CCF', key: 'ccf', width: 22 },
+    { header: 'Valor CCF', key: 'valorCcf', width: 12 },
+    { header: 'Admón', key: 'admon', width: 12 },
+    { header: 'Servicios adicionales', key: 'servicios', width: 28 },
+    { header: 'Valor servicios', key: 'valorServicios', width: 14 },
+    { header: 'Total', key: 'total', width: 14 },
     { header: 'Estado', key: 'estado', width: 12 },
+    { header: 'Usuario', key: 'usuario', width: 22 },
+    { header: 'Medio de pago', key: 'medio', width: 22 },
+    { header: 'N° comprobante', key: 'numComp', width: 16 },
+    { header: 'Fecha comprobante', key: 'fechaComp', width: 14 },
+    { header: 'Empresa planilla', key: 'empPlanilla', width: 26 },
+    { header: 'Empresa CC', key: 'empCc', width: 26 },
+    { header: 'Asesor comercial', key: 'asesor', width: 22 },
+    { header: 'N° planilla', key: 'numPlanilla', width: 14 },
+    { header: 'Estado pago planilla', key: 'estadoPagoPlanilla', width: 18 },
     { header: 'Observaciones', key: 'obs', width: 30 },
   ];
 
   // Estilo encabezado
   ws.getRow(1).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
     cell.fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF1E40AF' },
     };
-    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   });
-  ws.getRow(1).height = 22;
+  ws.getRow(1).height = 30;
 
-  type Desglose = {
+  // Columnas monetarias para formato
+  const colsMoneda = [
+    'valorEps',
+    'valorAfp',
+    'valorArl',
+    'valorCcf',
+    'admon',
+    'valorServicios',
+    'total',
+  ];
+
+  // Totales para hoja Resumen (a nivel COMPROBANTE, no liquidación, para evitar doble conteo)
+  type DesgloseComp = {
     sgssReal: number;
     sgssInterno: number;
     admon: number;
     servicios: number;
   };
-
-  const totalesActivos: Desglose & { total: number } = {
+  const totalesActivos = {
     sgssReal: 0,
     sgssInterno: 0,
     admon: 0,
@@ -145,114 +206,189 @@ export async function GET(req: Request) {
   >();
 
   for (const c of comprobantes) {
-    // desglose conceptos
-    const d: Desglose = {
+    const anulado = c.estado === 'ANULADO';
+    const totalComp = Number(c.totalGeneral);
+
+    // Destinatario del comprobante
+    let destinatario = '—';
+    if (c.agrupacion === 'INDIVIDUAL' && c.cotizante) {
+      destinatario = fullName(c.cotizante);
+    } else if (c.agrupacion === 'EMPRESA_CC' && c.cuentaCobro) {
+      destinatario = c.cuentaCobro.razonSocial;
+    } else if (c.agrupacion === 'ASESOR_COMERCIAL' && c.asesorComercial) {
+      destinatario = c.asesorComercial.nombre;
+    }
+
+    const procesadoEn = c.procesadoEn ? new Date(c.procesadoEn) : null;
+    const fechaProc = procesadoEn ? procesadoEn.toISOString().slice(0, 10) : '—';
+    const horaProc = procesadoEn
+      ? procesadoEn.toLocaleTimeString('es-CO', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+          timeZone: 'America/Bogota',
+        })
+      : '—';
+
+    const fechaComp = c.fechaPago
+      ? new Date(c.fechaPago).toISOString().slice(0, 10)
+      : c.emitidoEn
+        ? new Date(c.emitidoEn).toISOString().slice(0, 10)
+        : '—';
+
+    const medio = c.medioPago
+      ? `${c.medioPago.codigo} — ${c.medioPago.nombre}`
+      : '—';
+    const usuario = c.createdBy?.name ?? c.createdBy?.email ?? '—';
+    const periodoContable = `${String(c.periodo.mes).padStart(2, '0')}/${c.periodo.anio}`;
+
+    // Desglose para resumen (por comprobante)
+    const desgComp: DesgloseComp = {
       sgssReal: 0,
       sgssInterno: 0,
       admon: 0,
       servicios: 0,
     };
+
+    // --- Fila por cada liquidación del comprobante ---
     for (const cl of c.liquidaciones) {
-      for (const con of cl.liquidacion.conceptos) {
+      const liq = cl.liquidacion;
+      const af = liq.afiliacion;
+
+      // Desglose de conceptos de ESTA liquidación
+      let valorEps = 0;
+      let valorAfp = 0;
+      let valorArl = 0;
+      let valorCcf = 0;
+      let valorAdmon = 0;
+      let valorServicios = 0;
+      let pctArl: number | null = null;
+      for (const con of liq.conceptos) {
         const v = Number(con.valor);
-        if (con.concepto === 'ADMIN') {
-          d.admon += v;
-          continue;
+        const pct = Number(con.porcentaje);
+        const interno = esConceptoInterno(con.subconcepto);
+
+        switch (con.concepto) {
+          case 'EPS':
+            valorEps += v;
+            if (!interno) desgComp.sgssReal += v;
+            else desgComp.sgssInterno += v;
+            break;
+          case 'AFP':
+            valorAfp += v;
+            if (!interno) desgComp.sgssReal += v;
+            else desgComp.sgssInterno += v;
+            break;
+          case 'ARL':
+            valorArl += v;
+            if (pctArl == null && pct > 0) pctArl = pct;
+            if (!interno) desgComp.sgssReal += v;
+            else desgComp.sgssInterno += v;
+            break;
+          case 'CCF':
+            valorCcf += v;
+            if (!interno) desgComp.sgssReal += v;
+            else desgComp.sgssInterno += v;
+            break;
+          case 'ADMIN':
+            valorAdmon += v;
+            desgComp.admon += v;
+            break;
+          case 'SERVICIO':
+            valorServicios += v;
+            desgComp.servicios += v;
+            break;
+          default:
+            // SENA/ICBF/FSP (u otros) → suman al SGSS real
+            if (!interno) desgComp.sgssReal += v;
+            else desgComp.sgssInterno += v;
         }
-        if (con.concepto === 'SERVICIO') {
-          d.servicios += v;
-          continue;
-        }
-        if (esConceptoInterno(con)) d.sgssInterno += v;
-        else d.sgssReal += v;
+      }
+
+      const serviciosNombres = af.serviciosAdicionales
+        .map((s) => s.servicio.nombre)
+        .join(', ');
+
+      const primeraFactura = liq.tipo === 'VINCULACION' ? 'SI' : 'NO';
+      const retiro = c.aplicaNovedadRetiro ? 'SI' : 'NO';
+      const estadoPagoPlanilla = c.numeroPlanilla ? 'PROCESADA' : 'EN PROCESO';
+
+      const row = ws.addRow({
+        fechaProc,
+        horaProc,
+        consecutivo: c.consecutivo,
+        tipo: c.tipo,
+        agrupacion: c.agrupacion,
+        destinatario,
+        tipoDoc: af.cotizante.tipoDocumento,
+        numDoc: af.cotizante.numeroDocumento,
+        modalidad: af.modalidad,
+        regimen: af.regimen ?? '—',
+        planSgss: af.planSgss?.nombre ?? '—',
+        periodoContable,
+        dias: liq.diasCotizados,
+        primeraFactura,
+        retiro,
+        eps: af.eps?.nombre ?? '—',
+        valorEps,
+        afp: af.afp?.nombre ?? '—',
+        valorAfp,
+        nivelArl: af.nivelRiesgo,
+        pctArl: pctArl != null ? pctArl / 100 : null,
+        valorArl,
+        ccf: af.ccf?.nombre ?? '—',
+        valorCcf,
+        admon: valorAdmon,
+        servicios: serviciosNombres || '—',
+        valorServicios,
+        total: Number(liq.totalGeneral),
+        estado: anulado ? 'ANULADO' : 'RECIBIDO',
+        usuario,
+        medio,
+        numComp: c.numeroComprobanteExt ?? '',
+        fechaComp,
+        empPlanilla: af.empresa?.nombre ?? '—',
+        empCc:
+          c.cuentaCobro?.razonSocial ?? af.cuentaCobro?.razonSocial ?? '—',
+        asesor:
+          c.asesorComercial?.nombre ?? af.asesorComercial?.nombre ?? '—',
+        numPlanilla: c.numeroPlanilla ?? '',
+        estadoPagoPlanilla,
+        obs: c.observaciones ?? '',
+      });
+
+      // Formato monetario
+      for (const key of colsMoneda) {
+        row.getCell(key).numFmt = '"$"#,##0';
+      }
+      // % ARL
+      row.getCell('pctArl').numFmt = '0.0000%';
+
+      // Tachado + gris si anulado
+      if (anulado) {
+        row.eachCell((cell) => {
+          cell.font = { color: { argb: 'FF9CA3AF' }, strike: true, size: 10 };
+        });
+      } else {
+        row.eachCell((cell) => {
+          cell.font = { size: 10 };
+        });
       }
     }
 
-    const anulado = c.estado === 'ANULADO';
-    const total = Number(c.totalGeneral);
-
-    let destinatario = '—';
-    let docCodigo = '';
-    if (c.agrupacion === 'INDIVIDUAL' && c.cotizante) {
-      destinatario = fullName(c.cotizante);
-      docCodigo = `${c.cotizante.tipoDocumento} ${c.cotizante.numeroDocumento}`;
-    } else if (c.agrupacion === 'EMPRESA_CC' && c.cuentaCobro) {
-      destinatario = c.cuentaCobro.razonSocial;
-      docCodigo = c.cuentaCobro.codigo;
-    } else if (c.agrupacion === 'ASESOR_COMERCIAL' && c.asesorComercial) {
-      destinatario = c.asesorComercial.nombre;
-      docCodigo = c.asesorComercial.codigo;
-    }
-
-    const fechaPago = c.fechaPago ? new Date(c.fechaPago) : null;
-    const fechaIso = fechaPago ? fechaPago.toISOString().slice(0, 10) : '—';
-    const hora = c.procesadoEn
-      ? new Date(c.procesadoEn).toLocaleTimeString('es-CO', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })
-      : '—';
-
-    const medio = c.medioPago
-      ? `${c.medioPago.codigo} — ${c.medioPago.nombre}`
-      : '—';
-
-    const usuario =
-      c.createdBy?.name ?? c.createdBy?.email ?? '—';
-
-    const periodoContable = `${String(c.periodo.mes).padStart(2, '0')}/${c.periodo.anio}`;
-
-    const row = ws.addRow({
-      fecha: fechaIso,
-      hora,
-      consecutivo: c.consecutivo,
-      numeroExt: c.numeroComprobanteExt ?? '',
-      tipo: c.tipo,
-      agrupacion: c.agrupacion,
-      destinatario,
-      docCodigo,
-      formaPago: c.formaPago ?? '',
-      medio,
-      usuario,
-      periodoContable,
-      sgssReal: d.sgssReal,
-      sgssInterno: d.sgssInterno,
-      admon: d.admon,
-      servicios: d.servicios,
-      total,
-      estado: anulado ? 'ANULADO' : 'RECIBIDO',
-      obs: c.observaciones ?? '',
-    });
-
-    // Formato monetario
-    for (const key of [
-      'sgssReal',
-      'sgssInterno',
-      'admon',
-      'servicios',
-      'total',
-    ]) {
-      const cell = row.getCell(key);
-      cell.numFmt = '"$"#,##0';
-    }
-
-    // Color por estado
+    // Acumular a nivel de comprobante (para no doble contar)
     if (anulado) {
-      row.eachCell((cell) => {
-        cell.font = { color: { argb: 'FF9CA3AF' }, strike: true };
-      });
-      totalAnulado += total;
+      totalAnulado += totalComp;
       countAnulados++;
     } else {
-      totalesActivos.sgssReal += d.sgssReal;
-      totalesActivos.sgssInterno += d.sgssInterno;
-      totalesActivos.admon += d.admon;
-      totalesActivos.servicios += d.servicios;
-      totalesActivos.total += total;
+      totalesActivos.sgssReal += desgComp.sgssReal;
+      totalesActivos.sgssInterno += desgComp.sgssInterno;
+      totalesActivos.admon += desgComp.admon;
+      totalesActivos.servicios += desgComp.servicios;
+      totalesActivos.total += totalComp;
       countActivos++;
 
-      // Agrupar por medio
       const mKey = c.medioPago?.codigo ?? 'SIN_MEDIO';
       const mNombre = c.medioPago?.nombre ?? 'Sin medio de pago';
       const mCurr = porMedio.get(mKey) ?? {
@@ -262,61 +398,17 @@ export async function GET(req: Request) {
         total: 0,
       };
       mCurr.count++;
-      mCurr.total += total;
+      mCurr.total += totalComp;
       porMedio.set(mKey, mCurr);
 
-      // Agrupar por usuario
-      const uKey = usuario;
-      const uCurr = porUsuario.get(uKey) ?? {
-        nombre: uKey,
+      const uCurr = porUsuario.get(usuario) ?? {
+        nombre: usuario,
         count: 0,
         total: 0,
       };
       uCurr.count++;
-      uCurr.total += total;
-      porUsuario.set(uKey, uCurr);
-    }
-  }
-
-  // Fila TOTAL (solo activos)
-  if (countActivos > 0) {
-    const totalRow = ws.addRow({
-      fecha: '',
-      hora: '',
-      consecutivo: '',
-      numeroExt: '',
-      tipo: '',
-      agrupacion: '',
-      destinatario: 'TOTAL RECIBIDO',
-      docCodigo: '',
-      formaPago: '',
-      medio: '',
-      usuario: '',
-      periodoContable: '',
-      sgssReal: totalesActivos.sgssReal,
-      sgssInterno: totalesActivos.sgssInterno,
-      admon: totalesActivos.admon,
-      servicios: totalesActivos.servicios,
-      total: totalesActivos.total,
-      estado: '',
-      obs: '',
-    });
-    totalRow.eachCell((cell) => {
-      cell.font = { bold: true };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE0E7FF' },
-      };
-    });
-    for (const key of [
-      'sgssReal',
-      'sgssInterno',
-      'admon',
-      'servicios',
-      'total',
-    ]) {
-      totalRow.getCell(key).numFmt = '"$"#,##0';
+      uCurr.total += totalComp;
+      porUsuario.set(usuario, uCurr);
     }
   }
 
@@ -373,7 +465,7 @@ export async function GET(req: Request) {
     ['SGSS (va al operador PILA)', totalesActivos.sgssReal],
     ['Administración', totalesActivos.admon],
     ['Servicios adicionales', totalesActivos.servicios],
-    ['Cobros internos (CCF $100 / ARL)', totalesActivos.sgssInterno],
+    ['Cobros internos (CCF $100 / ARL 1 día)', totalesActivos.sgssInterno],
   ] as const;
   for (const [label, val] of conceptos) {
     ws2.getCell(`A${r2}`).value = label;
@@ -448,7 +540,6 @@ export async function GET(req: Request) {
   // ------ Serializar ------
   const buffer = await wb.xlsx.writeBuffer();
 
-  // Nombre del archivo
   const stamp = desdeIso === hastaIso ? desdeIso : `${desdeIso}_a_${hastaIso}`;
   const filename = `cuadre-caja_${stamp}.xlsx`;
 
