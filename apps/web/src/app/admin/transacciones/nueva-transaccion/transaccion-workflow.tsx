@@ -214,9 +214,8 @@ export function TransaccionWorkflow({ periodos }: Props) {
                 key={t.id}
                 type="button"
                 onClick={() => setTipo(t.id)}
-                disabled={periodoCerrado}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-50',
+                  'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition',
                   active
                     ? 'border-brand-blue bg-brand-blue/5 text-brand-blue-dark ring-1 ring-brand-blue'
                     : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50',
@@ -241,15 +240,20 @@ export function TransaccionWorkflow({ periodos }: Props) {
       {periodoCerrado && (
         <Alert variant="warning">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>
-            El período está cerrado. Reábrelo desde <strong>Cartera</strong> para emitir
-            transacciones.
-          </span>
+          <div className="text-sm">
+            <p className="font-medium">Período cerrado</p>
+            <p className="mt-0.5 text-xs">
+              Solo se permite emitir <strong>vinculaciones</strong> (afiliaciones nuevas
+              que ingresaron dentro del mes). Las mensualidades quedan bloqueadas hasta
+              reabrir el período (se reabre automáticamente al anular una factura de
+              cierre masivo).
+            </p>
+          </div>
         </Alert>
       )}
 
       {/* Selector de destinatario según tipo */}
-      {!periodoCerrado && tipo === 'INDIVIDUAL' && (
+      {tipo === 'INDIVIDUAL' && (
         <BuscarCotizante
           key={`cot-${resetKey}`}
           periodoId={periodoId}
@@ -260,7 +264,7 @@ export function TransaccionWorkflow({ periodos }: Props) {
           }}
         />
       )}
-      {!periodoCerrado && tipo === 'EMPRESA_CC' && (
+      {tipo === 'EMPRESA_CC' && (
         <SeleccionarCC
           key={`cc-${resetKey}`}
           periodoId={periodoId}
@@ -271,7 +275,7 @@ export function TransaccionWorkflow({ periodos }: Props) {
           }}
         />
       )}
-      {!periodoCerrado && tipo === 'ASESOR' && (
+      {tipo === 'ASESOR' && (
         <SeleccionarAsesor
           key={`as-${resetKey}`}
           periodoId={periodoId}

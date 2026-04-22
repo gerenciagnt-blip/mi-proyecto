@@ -72,13 +72,16 @@ export async function buscarCotizanteAction(
     .filter(Boolean)
     .join(' ');
 
-  // Si se pasó el período, verifica si ya hay factura procesada
+  // Si se pasó el período, verifica si ya hay MENSUALIDAD procesada.
+  // Las AFILIACION/VINCULACION no bloquean la búsqueda — un cotizante
+  // puede tener ambas (una afiliación + una mensualidad separadas).
   let facturaExistente: CotizanteEncontrado['facturaExistente'];
   if (periodoId) {
     const comp = await prisma.comprobante.findFirst({
       where: {
         periodoId,
         cotizanteId: cotizante.id,
+        tipo: 'MENSUALIDAD',
         estado: { not: 'ANULADO' },
         procesadoEn: { not: null },
       },
@@ -468,9 +471,10 @@ export async function procesarTransaccionAction(
     where: { id: input.periodoId },
   });
   if (!periodo) return { error: 'Período no existe' };
-  if (periodo.estado === 'CERRADO') {
-    return { error: 'Período cerrado — reabrir antes de procesar' };
-  }
+  // NOTA: si el período está cerrado, permitimos la emisión SOLO si
+  // todas las liquidaciones son VINCULACION (afiliaciones nuevas del mes).
+  // La validación concreta ocurre después del cálculo del motor, donde
+  // ya tenemos `tipoDetectado`.
 
   // Determinar afiliaciones + agrupación del comprobante
   let afIds: string[] = [];
@@ -524,32 +528,6 @@ export async function procesarTransaccionAction(
     }
   }
 
-  // Restricción: una factura por destinatario por período contable
-  // (cotizante / empresa CC / asesor). Las ANULADAS no cuentan.
-  const whereUnicidad: Parameters<typeof prisma.comprobante.findFirst>[0] = {
-    where: {
-      periodoId: input.periodoId,
-      estado: { not: 'ANULADO' },
-      procesadoEn: { not: null },
-      ...(cotizanteId && { cotizanteId }),
-      ...(cuentaCobroId && { cuentaCobroId }),
-      ...(asesorComercialId && { asesorComercialId }),
-    },
-    select: { consecutivo: true },
-  };
-  const existeComprobante = await prisma.comprobante.findFirst(whereUnicidad);
-  if (existeComprobante) {
-    return {
-      error: `Ya existe una factura procesada para este ${
-        input.tipo === 'INDIVIDUAL'
-          ? 'cotizante'
-          : input.tipo === 'EMPRESA_CC'
-            ? 'empresa CC'
-            : 'asesor'
-      } en el período (${existeComprobante.consecutivo}). Solo se permite una por período.`,
-    };
-  }
-
   // Correr motor + persistir liquidaciones
   const liqIds: string[] = [];
   const totales = { sgss: 0, admon: 0, servicios: 0, general: 0 };
@@ -583,6 +561,44 @@ export async function procesarTransaccionAction(
   if (liqIds.length === 0) return { error: 'No se pudo liquidar ninguna afiliación' };
 
   const tipoComp = tipoDetectado === 'VINCULACION' ? 'AFILIACION' : 'MENSUALIDAD';
+
+  // Si el período está CERRADO, sólo se permite emitir VINCULACIÓN
+  // (afiliaciones nuevas que ingresaron dentro del mes). Las
+  // MENSUALIDADES quedan bloqueadas hasta reabrir.
+  if (periodo.estado === 'CERRADO' && tipoComp !== 'AFILIACION') {
+    return {
+      error:
+        'Período cerrado — solo se pueden emitir vinculaciones de afiliaciones nuevas del mes. Reabre el período para procesar mensualidades.',
+    };
+  }
+
+  // Restricción: una factura por destinatario + período + tipo.
+  // Permite 1 AFILIACION + 1 MENSUALIDAD separadas para el mismo cotizante.
+  const existeComprobante = await prisma.comprobante.findFirst({
+    where: {
+      periodoId: input.periodoId,
+      tipo: tipoComp,
+      estado: { not: 'ANULADO' },
+      procesadoEn: { not: null },
+      ...(cotizanteId && { cotizanteId }),
+      ...(cuentaCobroId && { cuentaCobroId }),
+      ...(asesorComercialId && { asesorComercialId }),
+    },
+    select: { consecutivo: true },
+  });
+  if (existeComprobante) {
+    const destinatarioLabel =
+      input.tipo === 'INDIVIDUAL'
+        ? 'cotizante'
+        : input.tipo === 'EMPRESA_CC'
+          ? 'empresa CC'
+          : 'asesor';
+    const tipoLabel = tipoComp === 'AFILIACION' ? 'afiliación' : 'mensualidad';
+    return {
+      error: `Ya existe una factura de ${tipoLabel} procesada para este ${destinatarioLabel} en el período (${existeComprobante.consecutivo}).`,
+    };
+  }
+
   const consecutivo = await nextComprobanteConsecutivo();
   const ahora = new Date();
   const fechaPago = input.fechaPago ? new Date(input.fechaPago) : ahora;
@@ -663,7 +679,9 @@ export async function anularTransaccionAction(
       id: true,
       estado: true,
       aplicaNovedadRetiro: true,
+      esCierreMasivo: true,
       cotizanteId: true,
+      periodoId: true,
     },
   });
   if (!comp) return { error: 'Comprobante no existe' };
@@ -681,6 +699,21 @@ export async function anularTransaccionAction(
         where: { cotizanteId: comp.cotizanteId, estado: 'INACTIVA' },
         data: { estado: 'ACTIVA', fechaRetiro: null },
       });
+    }
+
+    // Si la factura provenía del cierre masivo, reabrir el período
+    // para permitir emitir una factura normal.
+    if (comp.esCierreMasivo) {
+      const periodo = await tx.periodoContable.findUnique({
+        where: { id: comp.periodoId },
+        select: { estado: true },
+      });
+      if (periodo?.estado === 'CERRADO') {
+        await tx.periodoContable.update({
+          where: { id: comp.periodoId },
+          data: { estado: 'ABIERTO', cerradoEn: null },
+        });
+      }
     }
   });
 

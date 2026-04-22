@@ -96,12 +96,13 @@ export async function cerrarPeriodoMasivoAction(
     };
   }
 
-  // Cotizantes con alguna afiliación ACTIVA pero sin comprobante INDIVIDUAL
-  // procesado (no anulado) en el período.
+  // Cotizantes con MENSUALIDAD procesada y no anulada en el período
+  // (las afiliaciones/vinculaciones no cuentan).
   const cotizantesConFactura = await prisma.comprobante.findMany({
     where: {
       periodoId,
       agrupacion: 'INDIVIDUAL',
+      tipo: 'MENSUALIDAD',
       estado: { not: 'ANULADO' },
       procesadoEn: { not: null },
     },
@@ -197,6 +198,7 @@ export async function cerrarPeriodoMasivoAction(
             emitidoEn: ahora,
             valorAdminOverride: 0,
             aplicaNovedadRetiro: true,
+            esCierreMasivo: true,
             observaciones: 'Cierre masivo de período — 1 día, admón $0, retiro automático',
             liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
           },

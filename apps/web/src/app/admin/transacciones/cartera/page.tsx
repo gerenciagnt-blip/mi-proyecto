@@ -92,11 +92,14 @@ export default async function CarteraPage({
     );
   }
 
-  // Cotizantes con factura INDIVIDUAL procesada y no anulada en el período
+  // Cotizantes con MENSUALIDAD procesada y no anulada en el período.
+  // Las vinculaciones/afiliaciones NO cuentan — un cotizante puede tener
+  // su afiliación pagada y aún así aparecer en cartera por la mensualidad.
   const conFactura = await prisma.comprobante.findMany({
     where: {
       periodoId: periodo.id,
       agrupacion: 'INDIVIDUAL',
+      tipo: 'MENSUALIDAD',
       estado: { not: 'ANULADO' },
       procesadoEn: { not: null },
     },

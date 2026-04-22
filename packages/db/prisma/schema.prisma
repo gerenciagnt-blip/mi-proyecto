@@ -860,6 +860,10 @@ model Comprobante {
   // de retiro). Al anular se reactiva.
   aplicaNovedadRetiro Boolean  @default(false)
 
+  // Marca que esta factura se creó durante el cierre masivo del período.
+  // Al anularse, el período se reabre automáticamente.
+  esCierreMasivo      Boolean  @default(false)
+
   // Número de planilla PILA asignado cuando se procesa en el módulo de
   // Planos. Mientras NULL, la transacción se muestra "En proceso".
   numeroPlanilla      String?
