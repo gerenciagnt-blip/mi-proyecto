@@ -86,7 +86,7 @@ export function ComprobanteForm({
               type="file"
               accept="image/png,image/jpeg,image/webp,image/svg+xml"
               onChange={handleFile}
-              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:hover:bg-slate-800"
+              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-brand-blue file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:hover:bg-brand-blue-dark"
             />
             <p className="text-[11px] text-slate-500">
               PNG, JPG, WEBP o SVG. Máximo 2 MB. Se sube automáticamente al servidor al presionar

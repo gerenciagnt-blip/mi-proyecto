@@ -379,7 +379,7 @@ export default async function BaseDatosPage({
                     className={cn(
                       'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition',
                       m.active
-                        ? 'bg-slate-900 text-white'
+                        ? 'bg-brand-blue text-white'
                         : 'bg-white text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-100',
                     )}
                   >

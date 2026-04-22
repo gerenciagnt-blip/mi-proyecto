@@ -1,6 +1,8 @@
 'use client';
 
 import { useActionState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 import { createEmpresaAction, type ActionState } from './actions';
 import { EmpresaFields, type DeptoOpt } from './empresa-fields';
 
@@ -29,22 +31,12 @@ export function CreateEmpresaForm({
     <form ref={ref} action={action} className="space-y-4">
       <EmpresaFields arls={arls} departamentos={departamentos} />
 
-      {state.error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
-      )}
-      {state.ok && (
-        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          Empresa creada
-        </p>
-      )}
+      {state.error && <Alert variant="danger">{state.error}</Alert>}
+      {state.ok && <Alert variant="success">Empresa creada</Alert>}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-slate-900 px-6 py-2 text-sm font-medium text-white disabled:opacity-60"
-      >
+      <Button type="submit" disabled={pending}>
         {pending ? 'Creando…' : 'Crear empresa'}
-      </button>
+      </Button>
     </form>
   );
 }

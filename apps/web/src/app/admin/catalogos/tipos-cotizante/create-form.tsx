@@ -1,6 +1,11 @@
 'use client';
 
 import { useActionState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Alert } from '@/components/ui/alert';
 import { createTipoAction, type ActionState } from './actions';
 
 export function CreateTipoForm() {
@@ -14,44 +19,33 @@ export function CreateTipoForm() {
   return (
     <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
       <div className="min-w-[100px]">
-        <label className="block text-xs font-medium text-slate-600">Código *</label>
-        <input
-          name="codigo"
-          required
-          placeholder="01"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
+        <Label htmlFor="codigo">Código *</Label>
+        <Input id="codigo" name="codigo" required placeholder="01" className="mt-1" />
       </div>
-      <div className="flex-1 min-w-[240px]">
-        <label className="block text-xs font-medium text-slate-600">Nombre *</label>
-        <input
-          name="nombre"
-          required
-          placeholder="Dependiente"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
+      <div className="min-w-[240px] flex-1">
+        <Label htmlFor="nombre">Nombre *</Label>
+        <Input id="nombre" name="nombre" required placeholder="Dependiente" className="mt-1" />
       </div>
       <div className="min-w-[160px]">
-        <label className="block text-xs font-medium text-slate-600">Modalidad *</label>
-        <select
+        <Label htmlFor="modalidad">Modalidad *</Label>
+        <Select
+          id="modalidad"
           name="modalidad"
           required
           defaultValue="DEPENDIENTE"
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="mt-1"
         >
           <option value="DEPENDIENTE">Dependiente</option>
           <option value="INDEPENDIENTE">Independiente</option>
-        </select>
+        </Select>
       </div>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-      >
+      <Button type="submit" disabled={pending}>
         {pending ? 'Creando…' : 'Crear tipo'}
-      </button>
+      </Button>
       {state.error && (
-        <p className="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <Alert variant="danger" className="w-full">
+          {state.error}
+        </Alert>
       )}
     </form>
   );

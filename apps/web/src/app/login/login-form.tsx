@@ -24,6 +24,7 @@ export function LoginForm() {
           name="email"
           type="email"
           size="lg"
+          tone="glass"
           required
           autoComplete="email"
           placeholder="tu@correo.com"
@@ -37,6 +38,7 @@ export function LoginForm() {
           id="password"
           name="password"
           size="lg"
+          tone="glass"
           required
           autoComplete="current-password"
           placeholder="••••••••"

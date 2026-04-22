@@ -3,23 +3,31 @@ import type { LucideIcon } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
+/**
+ * Input estándar del admin: sobrio, bg blanco, borde gris claro, rounded-lg.
+ * Esta es la línea gráfica validada para formularios densos (empresa planilla,
+ * catálogos, cuentas de cobro, etc.).
+ *
+ * Para pantallas de onboarding (login) se usa `tone="glass"` que mantiene el
+ * look azulado con `bg-brand-surface` y bordes redondeados más pronunciados.
+ */
 const inputVariants = cva(
-  // Base: borde, bg, transición, placeholder, focus ring, disabled.
-  // `text-base` (16px) en mobile evita auto-zoom iOS; sm:text-sm lo compacta
-  // en desktop (salvo en size=lg donde queremos el 16px).
-  'flex w-full rounded-xl border border-brand-border bg-brand-surface text-brand-text-primary shadow-sm transition-all duration-200 placeholder:text-brand-text-muted focus-visible:border-brand-blue focus-visible:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-blue/15 disabled:cursor-not-allowed disabled:opacity-60',
+  'flex w-full text-brand-text-primary transition-all duration-200 placeholder:text-slate-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70',
   {
     variants: {
+      tone: {
+        admin:
+          'rounded-lg border border-slate-300 bg-white shadow-sm focus-visible:border-brand-blue focus-visible:ring-[3px] focus-visible:ring-brand-blue/15',
+        glass:
+          'rounded-xl border border-brand-border bg-brand-surface shadow-sm focus-visible:border-brand-blue focus-visible:bg-white focus-visible:ring-[3px] focus-visible:ring-brand-blue/15',
+      },
       size: {
-        // Tamaño compacto para tablas/filtros.
         sm: 'h-9 px-3 text-sm',
-        // Default para formularios del admin.
-        md: 'h-10 px-3.5 text-base sm:text-sm',
-        // Tamaño grande (login, formularios de onboarding).
+        md: 'h-10 px-3 text-sm',
         lg: 'h-12 px-4 text-base sm:text-sm',
       },
     },
-    defaultVariants: { size: 'md' },
+    defaultVariants: { tone: 'admin', size: 'md' },
   },
 );
 
@@ -33,20 +41,20 @@ export interface InputProps
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, icon: Icon, trailing, size, ...props }, ref) => {
+  ({ className, type, icon: Icon, trailing, tone, size, ...props }, ref) => {
     const hasIcon = !!Icon;
     const hasTrailing = !!trailing;
 
     return (
       <div className="relative">
         {hasIcon && Icon && (
-          <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted" />
+          <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         )}
         <input
           type={type}
           ref={ref}
           className={cn(
-            inputVariants({ size }),
+            inputVariants({ tone, size }),
             hasIcon && 'pl-10',
             hasTrailing && 'pr-10',
             className,

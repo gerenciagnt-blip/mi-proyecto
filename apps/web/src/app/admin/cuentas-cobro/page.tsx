@@ -135,7 +135,7 @@ export default async function EmpresasCCPage({
               </div>
               <button
                 type="submit"
-                className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800"
+                className="h-9 rounded-lg bg-brand-blue px-3 text-sm font-medium text-white hover:bg-brand-blue-dark"
               >
                 Buscar
               </button>

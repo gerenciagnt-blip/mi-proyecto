@@ -3,6 +3,7 @@
 import { useActionState, useRef, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { calcularDV } from '@/lib/nit';
@@ -10,8 +11,8 @@ import { createCuentaCobroAction, type ActionState } from './actions';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
-const selectClass =
-  'mt-1 h-12 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-base text-brand-text-primary sm:text-sm';
+const sectionClass = 'rounded-lg border border-slate-200 bg-white p-4';
+const sectionTitleClass = 'mb-3 text-sm font-semibold text-slate-900';
 
 export function CreateCuentaCobroForm({
   sucursales,
@@ -47,23 +48,29 @@ export function CreateCuentaCobroForm({
   return (
     <form ref={ref} action={action} className="space-y-4">
       {/* Identificación */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold">Identificación</h3>
+      <div className={sectionClass}>
+        <h3 className={sectionTitleClass}>Identificación</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
             <Label htmlFor="sucursalId">Sucursal *</Label>
-            <select id="sucursalId" name="sucursalId" required className={selectClass}>
+            <Select id="sucursalId" name="sucursalId" required className="mt-1">
               <option value="">—</option>
               {sucursales.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.codigo} — {s.nombre}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div>
             <Label htmlFor="codigo">Código interno *</Label>
-            <Input id="codigo" name="codigo" required placeholder="CCB-001" className="mt-1 uppercase" />
+            <Input
+              id="codigo"
+              name="codigo"
+              required
+              placeholder="CCB-001"
+              className="mt-1 uppercase"
+            />
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="razonSocial">Razón social *</Label>
@@ -93,30 +100,32 @@ export function CreateCuentaCobroForm({
               }}
               className="mt-1"
             />
-            <p className="mt-1 text-[10px] text-slate-400">{dvAuto ? 'Auto' : 'Manual'}</p>
+            <p className="mt-1 text-[10px] text-slate-400">
+              {dvAuto ? 'Auto' : 'Manual'}
+            </p>
           </div>
           <div>
             <Label htmlFor="tipoPersona">Tipo persona</Label>
-            <select id="tipoPersona" name="tipoPersona" defaultValue="" className={selectClass}>
+            <Select id="tipoPersona" name="tipoPersona" defaultValue="" className="mt-1">
               <option value="">—</option>
               <option value="JURIDICA">Jurídica</option>
               <option value="NATURAL">Natural</option>
-            </select>
+            </Select>
           </div>
         </div>
       </div>
 
       {/* Rep legal */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold">Representante legal (opcional)</h3>
+      <div className={sectionClass}>
+        <h3 className={sectionTitleClass}>Representante legal (opcional)</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
             <Label htmlFor="repLegalTipoDoc">Tipo doc.</Label>
-            <select
+            <Select
               id="repLegalTipoDoc"
               name="repLegalTipoDoc"
               defaultValue=""
-              className={selectClass}
+              className="mt-1"
             >
               <option value="">—</option>
               <option value="CC">CC</option>
@@ -126,7 +135,7 @@ export function CreateCuentaCobroForm({
               <option value="TI">TI</option>
               <option value="RC">RC</option>
               <option value="NIP">NIP</option>
-            </select>
+            </Select>
           </div>
           <div>
             <Label htmlFor="repLegalNumeroDoc">Número doc.</Label>
@@ -140,8 +149,8 @@ export function CreateCuentaCobroForm({
       </div>
 
       {/* Contacto */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold">Contacto (opcional)</h3>
+      <div className={sectionClass}>
+        <h3 className={sectionTitleClass}>Contacto (opcional)</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <Label htmlFor="direccion">Dirección</Label>
@@ -168,7 +177,7 @@ export function CreateCuentaCobroForm({
 
       {state.error && <Alert variant="danger">{state.error}</Alert>}
 
-      <Button type="submit" size="lg" disabled={pending}>
+      <Button type="submit" disabled={pending}>
         {pending ? 'Creando…' : 'Crear cuenta de cobro'}
       </Button>
     </form>

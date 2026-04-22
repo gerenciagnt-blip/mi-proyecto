@@ -1,6 +1,8 @@
 'use client';
 
 import { useActionState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 
 export type ImportState = {
   error?: string;
@@ -42,20 +44,14 @@ export function ImportForm({
           name="file"
           required
           accept=".xlsx,.xls,.csv"
-          className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
+          className="text-sm file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-brand-blue file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-blue-dark"
         />
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-60"
-        >
+        <Button type="submit" variant="outline" size="sm" disabled={pending}>
           {pending ? 'Importando…' : 'Importar'}
-        </button>
+        </Button>
       </div>
 
-      {state.error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
-      )}
+      {state.error && <Alert variant="danger">{state.error}</Alert>}
 
       {done && typeof state.total === 'number' && (
         <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
