@@ -3,16 +3,16 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
-import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
+import {
+  calcularLiquidacion,
+  persistirLiquidacion,
+  type CalcResult,
+} from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 
 // ============ Tipos compartidos ============
 
-export type TipoTransaccion =
-  | 'INDIVIDUAL' // mensualidad de un cotizante
-  | 'VINCULACION' // afiliación / cobro administrativo de un cotizante
-  | 'EMPRESA_CC' // mensualidad agrupada por cuenta de cobro
-  | 'ASESOR'; // mensualidad informativa por asesor
+export type TipoTransaccion = 'INDIVIDUAL' | 'EMPRESA_CC' | 'ASESOR';
 
 export type CotizanteEncontrado = {
   cotizante: {
@@ -30,24 +30,12 @@ export type CotizanteEncontrado = {
     estado: 'ACTIVA' | 'INACTIVA';
     fechaIngreso: string;
   }>;
-  comprobantesPeriodo: Array<{
-    id: string;
-    consecutivo: string;
-    tipo: 'AFILIACION' | 'MENSUALIDAD';
-    total: number;
-    estado: 'BORRADOR' | 'EMITIDO' | 'PAGADO' | 'ANULADO';
-  }>;
 };
 
 // ============ Búsquedas ============
 
-/**
- * Busca un cotizante por número de documento y devuelve sus afiliaciones
- * + comprobantes ya emitidos en el período indicado.
- */
 export async function buscarCotizanteAction(
   numeroDocumento: string,
-  periodoId: string,
 ): Promise<{ found: CotizanteEncontrado | null; error?: string }> {
   await requireAdmin();
 
@@ -58,29 +46,12 @@ export async function buscarCotizanteAction(
     where: { numeroDocumento: doc },
     include: {
       afiliaciones: {
-        include: {
-          empresa: { select: { nombre: true } },
-        },
+        include: { empresa: { select: { nombre: true } } },
         orderBy: { createdAt: 'desc' },
       },
     },
   });
   if (!cotizante) return { found: null, error: 'Cotizante no encontrado' };
-
-  const comprobantes = await prisma.comprobante.findMany({
-    where: {
-      periodoId,
-      cotizanteId: cotizante.id,
-    },
-    select: {
-      id: true,
-      consecutivo: true,
-      tipo: true,
-      totalGeneral: true,
-      estado: true,
-    },
-    orderBy: { consecutivo: 'asc' },
-  });
 
   const nombreCompleto = [
     cotizante.primerNombre,
@@ -108,13 +79,6 @@ export async function buscarCotizanteAction(
         estado: a.estado,
         fechaIngreso: a.fechaIngreso.toISOString().slice(0, 10),
       })),
-      comprobantesPeriodo: comprobantes.map((c) => ({
-        id: c.id,
-        consecutivo: c.consecutivo,
-        tipo: c.tipo,
-        total: Number(c.totalGeneral),
-        estado: c.estado,
-      })),
     },
   };
 }
@@ -127,23 +91,22 @@ export type CuentaCobroDisponible = {
   afiliacionesActivas: number;
 };
 
-/**
- * Lista cuentas de cobro con afiliaciones activas y SIN comprobante
- * EMPRESA_CC en el período indicado (solo las "sin movimiento").
- */
-export async function listarCuentasCobroSinMovimientoAction(
+export async function listarCuentasCobroAction(
   periodoId: string,
+  soloSinMovimiento = true,
 ): Promise<CuentaCobroDisponible[]> {
   await requireAdmin();
 
-  // CCs que YA tienen comprobante EMPRESA_CC en este período
-  const conMovimiento = await prisma.comprobante.findMany({
-    where: { periodoId, agrupacion: 'EMPRESA_CC', estado: { not: 'ANULADO' } },
-    select: { cuentaCobroId: true },
-  });
-  const excluirIds = new Set(
-    conMovimiento.map((c) => c.cuentaCobroId).filter((id): id is string => id != null),
-  );
+  let excluirIds = new Set<string>();
+  if (soloSinMovimiento) {
+    const conMovimiento = await prisma.comprobante.findMany({
+      where: { periodoId, agrupacion: 'EMPRESA_CC', estado: { not: 'ANULADO' } },
+      select: { cuentaCobroId: true },
+    });
+    excluirIds = new Set(
+      conMovimiento.map((c) => c.cuentaCobroId).filter((id): id is string => id != null),
+    );
+  }
 
   const cuentas = await prisma.cuentaCobro.findMany({
     where: {
@@ -174,24 +137,28 @@ export type AsesorDisponible = {
   afiliacionesActivas: number;
 };
 
-/**
- * Lista asesores comerciales con afiliaciones activas y SIN comprobante
- * ASESOR_COMERCIAL en el período indicado.
- */
-export async function listarAsesoresSinMovimientoAction(
+export async function listarAsesoresAction(
   periodoId: string,
+  soloSinMovimiento = true,
 ): Promise<AsesorDisponible[]> {
   await requireAdmin();
 
-  const conMovimiento = await prisma.comprobante.findMany({
-    where: { periodoId, agrupacion: 'ASESOR_COMERCIAL', estado: { not: 'ANULADO' } },
-    select: { asesorComercialId: true },
-  });
-  const excluirIds = new Set(
-    conMovimiento
-      .map((c) => c.asesorComercialId)
-      .filter((id): id is string => id != null),
-  );
+  let excluirIds = new Set<string>();
+  if (soloSinMovimiento) {
+    const conMovimiento = await prisma.comprobante.findMany({
+      where: {
+        periodoId,
+        agrupacion: 'ASESOR_COMERCIAL',
+        estado: { not: 'ANULADO' },
+      },
+      select: { asesorComercialId: true },
+    });
+    excluirIds = new Set(
+      conMovimiento
+        .map((c) => c.asesorComercialId)
+        .filter((id): id is string => id != null),
+    );
+  }
 
   const asesores = await prisma.asesorComercial.findMany({
     where: {
@@ -213,33 +180,220 @@ export async function listarAsesoresSinMovimientoAction(
   }));
 }
 
-// ============ Creación de transacción ============
+// ============ Preview (cálculo en memoria sin persistir) ============
 
-export type CrearTransaccionInput = {
-  periodoId: string;
-  tipo: TipoTransaccion;
-  afiliacionId?: string; // INDIVIDUAL / VINCULACION
-  cuentaCobroId?: string; // EMPRESA_CC
-  asesorComercialId?: string; // ASESOR
+export type PreviewRow = {
+  afiliacionId: string;
+  cotizante: {
+    tipoDocumento: string;
+    numeroDocumento: string;
+    nombreCompleto: string;
+  };
+  empresaNombre: string | null;
+  modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
+  tipo: 'VINCULACION' | 'MENSUALIDAD';
+  ibc: number;
+  diasCotizados: number;
+  totalSgss: number;
+  totalAdmon: number;
+  totalServicios: number;
+  totalGeneral: number;
+  conceptos: CalcResult['conceptos'];
 };
 
-export type CrearTransaccionResult = {
+export type PreviewInput = {
+  periodoId: string;
+  tipo: TipoTransaccion;
+  afiliacionId?: string;
+  cuentaCobroId?: string;
+  asesorComercialId?: string;
+};
+
+export type PreviewResult = {
+  ok?: boolean;
+  error?: string;
+  rows?: PreviewRow[];
+  totales?: {
+    sgss: number;
+    admon: number;
+    servicios: number;
+    general: number;
+  };
+};
+
+/**
+ * Calcula las liquidaciones en memoria (sin persistir) según el tipo y
+ * destinatario elegidos. Sirve para mostrar la tabla-preview antes de
+ * pre-facturar. No crea registros en BD.
+ */
+export async function previsualizarTransaccionAction(
+  input: PreviewInput,
+): Promise<PreviewResult> {
+  await requireAdmin();
+
+  const periodo = await prisma.periodoContable.findUnique({
+    where: { id: input.periodoId },
+  });
+  if (!periodo) return { error: 'Período no existe' };
+
+  // Recopila las afiliaciones a liquidar
+  let afIds: string[] = [];
+  switch (input.tipo) {
+    case 'INDIVIDUAL':
+      if (!input.afiliacionId) return { error: 'Selecciona una afiliación' };
+      afIds = [input.afiliacionId];
+      break;
+    case 'EMPRESA_CC': {
+      if (!input.cuentaCobroId) return { error: 'Selecciona una empresa CC' };
+      const afs = await prisma.afiliacion.findMany({
+        where: { cuentaCobroId: input.cuentaCobroId, estado: 'ACTIVA' },
+        select: { id: true },
+      });
+      afIds = afs.map((a) => a.id);
+      break;
+    }
+    case 'ASESOR': {
+      if (!input.asesorComercialId) return { error: 'Selecciona un asesor' };
+      const afs = await prisma.afiliacion.findMany({
+        where: { asesorComercialId: input.asesorComercialId, estado: 'ACTIVA' },
+        select: { id: true },
+      });
+      afIds = afs.map((a) => a.id);
+      break;
+    }
+  }
+  if (afIds.length === 0) return { error: 'Sin afiliaciones a liquidar' };
+
+  const [tarifas, fspRangos, afiliaciones] = await Promise.all([
+    prisma.tarifaSgss.findMany({ where: { active: true } }),
+    prisma.fspRango.findMany({
+      where: { active: true },
+      orderBy: { smlvDesde: 'asc' },
+    }),
+    prisma.afiliacion.findMany({
+      where: { id: { in: afIds } },
+      include: {
+        cotizante: true,
+        empresa: { select: { id: true, nombre: true, exoneraLey1607: true } },
+        planSgss: {
+          select: {
+            incluyeEps: true,
+            incluyeAfp: true,
+            incluyeArl: true,
+            incluyeCcf: true,
+          },
+        },
+        serviciosAdicionales: {
+          include: {
+            servicio: {
+              select: { id: true, codigo: true, nombre: true, precio: true },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const rows: PreviewRow[] = [];
+  for (const af of afiliaciones) {
+    const calc = calcularLiquidacion(
+      {
+        afiliacion: {
+          id: af.id,
+          modalidad: af.modalidad,
+          nivelRiesgo: af.nivelRiesgo,
+          salario: af.salario,
+          valorAdministracion: af.valorAdministracion,
+          fechaIngreso: af.fechaIngreso,
+          empresa: af.empresa,
+          planSgss: af.planSgss,
+          serviciosAdicionales: af.serviciosAdicionales.map((s) => ({
+            id: s.servicio.id,
+            codigo: s.servicio.codigo,
+            nombre: s.servicio.nombre,
+            precio: s.servicio.precio,
+          })),
+        },
+        periodo: { anio: periodo.anio, mes: periodo.mes },
+        smlv: periodo.smlvSnapshot,
+      },
+      tarifas,
+      fspRangos,
+    );
+    if (!calc) continue;
+
+    const nombreCompleto = [
+      af.cotizante.primerNombre,
+      af.cotizante.segundoNombre,
+      af.cotizante.primerApellido,
+      af.cotizante.segundoApellido,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    rows.push({
+      afiliacionId: af.id,
+      cotizante: {
+        tipoDocumento: af.cotizante.tipoDocumento,
+        numeroDocumento: af.cotizante.numeroDocumento,
+        nombreCompleto,
+      },
+      empresaNombre: af.empresa?.nombre ?? null,
+      modalidad: af.modalidad,
+      tipo: calc.tipo,
+      ibc: calc.ibc,
+      diasCotizados: calc.diasCotizados,
+      totalSgss: calc.totalSgss,
+      totalAdmon: calc.totalAdmon,
+      totalServicios: calc.totalServicios,
+      totalGeneral: calc.totalGeneral,
+      conceptos: calc.conceptos,
+    });
+  }
+
+  if (rows.length === 0) {
+    return { error: 'Ninguna afiliación aplica para este período (fechas de ingreso)' };
+  }
+
+  const totales = rows.reduce(
+    (acc, r) => {
+      acc.sgss += r.totalSgss;
+      acc.admon += r.totalAdmon;
+      acc.servicios += r.totalServicios;
+      acc.general += r.totalGeneral;
+      return acc;
+    },
+    { sgss: 0, admon: 0, servicios: 0, general: 0 },
+  );
+
+  return { ok: true, rows, totales };
+}
+
+// ============ Procesar (persiste comprobante + liquidaciones) ============
+
+export type ProcesarInput = PreviewInput & {
+  numeroComprobanteExt?: string;
+  formaPago: 'POR_CONFIGURACION' | 'CONSOLIDADO' | 'POR_MEDIO_PAGO';
+  fechaPago: string; // yyyy-mm-dd
+  medioPagoId?: string;
+};
+
+export type ProcesarResult = {
   ok?: boolean;
   error?: string;
   comprobanteId?: string;
   consecutivo?: string;
   totalGeneral?: number;
-  afiliacionesLiquidadas?: number;
 };
 
 /**
- * Crea una transacción (liquidación + comprobante) según el tipo
- * seleccionado. Es la reemplazo del flujo masivo: el admin emite
- * uno-a-uno según el modelo de negocio.
+ * Persiste la transacción. Corre el motor sobre las afiliaciones,
+ * crea/actualiza las liquidaciones y emite UN comprobante consolidado
+ * con los datos de pre-factura.
  */
-export async function crearTransaccionAction(
-  input: CrearTransaccionInput,
-): Promise<CrearTransaccionResult> {
+export async function procesarTransaccionAction(
+  input: ProcesarInput,
+): Promise<ProcesarResult> {
   await requireAdmin();
 
   const periodo = await prisma.periodoContable.findUnique({
@@ -247,13 +401,11 @@ export async function crearTransaccionAction(
   });
   if (!periodo) return { error: 'Período no existe' };
   if (periodo.estado === 'CERRADO') {
-    return { error: 'Período cerrado — reabrir antes de emitir transacciones' };
+    return { error: 'Período cerrado — reabrir antes de procesar' };
   }
 
-  // Determinar qué afiliaciones liquidar y con qué tipo
-  let afiliacionIds: string[] = [];
-  let forzarTipo: 'VINCULACION' | 'MENSUALIDAD' | undefined;
-  let tipoComprobante: 'AFILIACION' | 'MENSUALIDAD';
+  // Determinar afiliaciones + agrupación del comprobante
+  let afIds: string[] = [];
   let agrupacion: 'INDIVIDUAL' | 'EMPRESA_CC' | 'ASESOR_COMERCIAL';
   let cotizanteId: string | null = null;
   let cuentaCobroId: string | null = null;
@@ -262,23 +414,7 @@ export async function crearTransaccionAction(
   switch (input.tipo) {
     case 'INDIVIDUAL': {
       if (!input.afiliacionId) return { error: 'Selecciona una afiliación' };
-      afiliacionIds = [input.afiliacionId];
-      forzarTipo = 'MENSUALIDAD';
-      tipoComprobante = 'MENSUALIDAD';
-      agrupacion = 'INDIVIDUAL';
-      const af = await prisma.afiliacion.findUnique({
-        where: { id: input.afiliacionId },
-        select: { cotizanteId: true },
-      });
-      if (!af) return { error: 'Afiliación no existe' };
-      cotizanteId = af.cotizanteId;
-      break;
-    }
-    case 'VINCULACION': {
-      if (!input.afiliacionId) return { error: 'Selecciona una afiliación' };
-      afiliacionIds = [input.afiliacionId];
-      forzarTipo = 'VINCULACION';
-      tipoComprobante = 'AFILIACION';
+      afIds = [input.afiliacionId];
       agrupacion = 'INDIVIDUAL';
       const af = await prisma.afiliacion.findUnique({
         where: { id: input.afiliacionId },
@@ -297,9 +433,7 @@ export async function crearTransaccionAction(
       if (afs.length === 0) {
         return { error: 'La empresa CC no tiene afiliaciones activas' };
       }
-      afiliacionIds = afs.map((a) => a.id);
-      forzarTipo = 'MENSUALIDAD';
-      tipoComprobante = 'MENSUALIDAD';
+      afIds = afs.map((a) => a.id);
       agrupacion = 'EMPRESA_CC';
       cuentaCobroId = input.cuentaCobroId;
       break;
@@ -313,65 +447,79 @@ export async function crearTransaccionAction(
       if (afs.length === 0) {
         return { error: 'El asesor no tiene afiliaciones activas' };
       }
-      afiliacionIds = afs.map((a) => a.id);
-      forzarTipo = 'MENSUALIDAD';
-      tipoComprobante = 'MENSUALIDAD';
+      afIds = afs.map((a) => a.id);
       agrupacion = 'ASESOR_COMERCIAL';
       asesorComercialId = input.asesorComercialId;
       break;
     }
-    default:
-      return { error: 'Tipo de transacción inválido' };
   }
 
-  // Persistir/actualizar liquidaciones
-  const liquidacionIds: string[] = [];
-  const totales = { empleador: 0, trabajador: 0, general: 0 };
+  // Correr motor + persistir liquidaciones
+  const liqIds: string[] = [];
+  const totales = { sgss: 0, admon: 0, servicios: 0, general: 0 };
+  const empTra = { empleador: 0, trabajador: 0 };
+  let tipoDetectado: 'VINCULACION' | 'MENSUALIDAD' = 'MENSUALIDAD';
 
-  for (const afId of afiliacionIds) {
+  for (const afId of afIds) {
     try {
       const r = await persistirLiquidacion(prisma, {
         periodoId: input.periodoId,
         afiliacionId: afId,
-        forzarTipo,
       });
       if (r) {
-        liquidacionIds.push(r.liquidacionId);
-        totales.empleador += r.calc.totalEmpleador;
-        totales.trabajador += r.calc.totalTrabajador;
+        liqIds.push(r.liquidacionId);
+        totales.sgss += r.calc.totalSgss;
+        totales.admon += r.calc.totalAdmon;
+        totales.servicios += r.calc.totalServicios;
         totales.general += r.calc.totalGeneral;
+        empTra.empleador += r.calc.totalEmpleador;
+        empTra.trabajador += r.calc.totalTrabajador;
+        // Si hay varias, gana el tipo más común — para individual es la única
+        tipoDetectado = r.calc.tipo;
       }
     } catch {
-      // continúa con las demás
+      // ignora y sigue
     }
   }
 
-  if (liquidacionIds.length === 0) {
-    return { error: 'Ninguna afiliación se pudo liquidar' };
-  }
+  if (liqIds.length === 0) return { error: 'No se pudo liquidar ninguna afiliación' };
 
-  // Crear comprobante consolidado
+  const tipoComp = tipoDetectado === 'VINCULACION' ? 'AFILIACION' : 'MENSUALIDAD';
   const consecutivo = await nextComprobanteConsecutivo();
+  const ahora = new Date();
+  const fechaPago = input.fechaPago ? new Date(input.fechaPago) : ahora;
+
   const comprobante = await prisma.comprobante.create({
     data: {
       periodoId: input.periodoId,
-      tipo: tipoComprobante,
+      tipo: tipoComp,
       agrupacion,
       consecutivo,
       cotizanteId,
       cuentaCobroId,
       asesorComercialId,
-      totalEmpleador: totales.empleador,
-      totalTrabajador: totales.trabajador,
+      totalSgss: totales.sgss,
+      totalAdmon: totales.admon,
+      totalServicios: totales.servicios,
+      totalEmpleador: empTra.empleador,
+      totalTrabajador: empTra.trabajador,
       totalGeneral: totales.general,
-      liquidaciones: {
-        create: liquidacionIds.map((id) => ({ liquidacionId: id })),
-      },
+      estado: 'EMITIDO',
+      numeroComprobanteExt: input.numeroComprobanteExt?.trim() || null,
+      formaPago: input.formaPago,
+      fechaPago,
+      medioPagoId:
+        input.formaPago === 'POR_MEDIO_PAGO' && input.medioPagoId
+          ? input.medioPagoId
+          : null,
+      procesadoEn: ahora,
+      emitidoEn: ahora,
+      liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
     },
   });
 
   revalidatePath('/admin/transacciones');
-  revalidatePath('/admin/transacciones/comprobantes');
+  revalidatePath('/admin/transacciones/historial');
   revalidatePath('/admin/transacciones/cartera');
 
   return {
@@ -379,6 +527,17 @@ export async function crearTransaccionAction(
     comprobanteId: comprobante.id,
     consecutivo: comprobante.consecutivo,
     totalGeneral: totales.general,
-    afiliacionesLiquidadas: liquidacionIds.length,
   };
+}
+
+export async function listarMediosPagoAction(): Promise<
+  Array<{ id: string; codigo: string; nombre: string }>
+> {
+  await requireAdmin();
+  const medios = await prisma.medioPago.findMany({
+    where: { active: true },
+    orderBy: { codigo: 'asc' },
+    select: { id: true, codigo: true, nombre: true },
+  });
+  return medios;
 }

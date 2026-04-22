@@ -20,6 +20,14 @@ export type CalcInput = {
       incluyeArl: boolean;
       incluyeCcf: boolean;
     } | null;
+    /** Servicios adicionales asignados a la afiliación. Cada uno aporta
+     * un concepto SERVICIO con valor = precio. */
+    serviciosAdicionales?: Array<{
+      id: string;
+      codigo: string;
+      nombre: string;
+      precio: Prisma.Decimal | number;
+    }>;
   };
   /**
    * Si se pasa, fuerza el tipo de liquidación ignorando la lógica
@@ -37,7 +45,16 @@ export type CalcInput = {
 };
 
 export type CalcConcepto = {
-  concepto: 'EPS' | 'AFP' | 'ARL' | 'CCF' | 'SENA' | 'ICBF' | 'FSP' | 'ADMIN';
+  concepto:
+    | 'EPS'
+    | 'AFP'
+    | 'ARL'
+    | 'CCF'
+    | 'SENA'
+    | 'ICBF'
+    | 'FSP'
+    | 'ADMIN'
+    | 'SERVICIO';
   subconcepto?: string;
   base: number;
   porcentaje: number;
@@ -53,9 +70,14 @@ export type CalcResult = {
   diasCotizados: number;
   diaDesde: number | null;
   diaHasta: number | null;
+  // Totales desglosados según modelo de negocio
+  totalSgss: number; // EPS + AFP + FSP + ARL + CCF + SENA + ICBF
+  totalAdmon: number; // concepto ADMIN
+  totalServicios: number; // conceptos SERVICIO
+  totalGeneral: number; // SGSS + Admon + Servicios
+  // Legado — se mantienen pero NO se muestran en UI (campo 'A cargo' retirado)
   totalEmpleador: number;
   totalTrabajador: number;
-  totalGeneral: number;
   conceptos: CalcConcepto[];
   advertencias: string[];
 };
@@ -242,7 +264,7 @@ export function calcularLiquidacion(
   if (tipo === 'VINCULACION') {
     const valorAdmin = toNum(afiliacion.valorAdministracion);
     const valorRedondeado = round100Up(valorAdmin);
-    const unico: CalcConcepto = {
+    const vinc: CalcConcepto = {
       concepto: 'ADMIN',
       subconcepto: 'Valor administración (vinculación)',
       base: valorAdmin,
@@ -251,6 +273,29 @@ export function calcularLiquidacion(
       aCargoEmpleador: modalidad === 'DEPENDIENTE',
       observaciones: 'Cobro administrativo por afiliación — no incluye SGSS',
     };
+    const conceptosVinc: CalcConcepto[] = [vinc];
+
+    // Servicios adicionales también se cobran en la vinculación
+    const serviciosVinc = afiliacion.serviciosAdicionales ?? [];
+    for (const s of serviciosVinc) {
+      const precio = toNum(s.precio);
+      if (precio <= 0) continue;
+      conceptosVinc.push({
+        concepto: 'SERVICIO',
+        subconcepto: `${s.codigo} — ${s.nombre}`,
+        base: precio,
+        porcentaje: 100,
+        valor: round100Up(precio),
+        aCargoEmpleador: false,
+      });
+    }
+
+    const totalAdmonV = valorRedondeado;
+    const totalServiciosV = conceptosVinc
+      .filter((c) => c.concepto === 'SERVICIO')
+      .reduce((s, c) => s + c.valor, 0);
+    const totalGeneralV = totalAdmonV + totalServiciosV;
+
     return {
       tipo,
       ibc,
@@ -258,10 +303,13 @@ export function calcularLiquidacion(
       diasCotizados,
       diaDesde,
       diaHasta,
-      totalEmpleador: unico.aCargoEmpleador ? valorRedondeado : 0,
-      totalTrabajador: unico.aCargoEmpleador ? 0 : valorRedondeado,
-      totalGeneral: valorRedondeado,
-      conceptos: [unico],
+      totalSgss: 0,
+      totalAdmon: totalAdmonV,
+      totalServicios: totalServiciosV,
+      totalGeneral: totalGeneralV,
+      totalEmpleador: vinc.aCargoEmpleador ? valorRedondeado : 0,
+      totalTrabajador: vinc.aCargoEmpleador ? 0 : valorRedondeado,
+      conceptos: conceptosVinc,
       advertencias: [],
     };
   }
@@ -373,16 +421,59 @@ export function calcularLiquidacion(
     }
   }
 
+  // ---- ADMIN (cobro operativo mensual del aliado) ----
+  // En MENSUALIDAD el valor administración también se cobra mes a mes.
+  const valorAdmin = toNum(afiliacion.valorAdministracion);
+  if (valorAdmin > 0) {
+    const valorRedondeado = round100Up(valorAdmin);
+    conceptos.push({
+      concepto: 'ADMIN',
+      subconcepto: 'Valor administración (mensual)',
+      base: valorAdmin,
+      porcentaje: 100,
+      valor: valorRedondeado,
+      aCargoEmpleador: modalidad === 'DEPENDIENTE',
+    });
+  }
+
+  // ---- SERVICIOS ADICIONALES ----
+  const servicios = afiliacion.serviciosAdicionales ?? [];
+  for (const s of servicios) {
+    const precio = toNum(s.precio);
+    if (precio <= 0) continue;
+    const valorRedondeado = round100Up(precio);
+    conceptos.push({
+      concepto: 'SERVICIO',
+      subconcepto: `${s.codigo} — ${s.nombre}`,
+      base: precio,
+      porcentaje: 100,
+      valor: valorRedondeado,
+      aCargoEmpleador: false,
+    });
+  }
+
   // ---- Totales ----
   // Cada concepto ya viene redondeado al múltiplo de 100 hacia arriba,
   // así que los totales son suma directa (y también múltiplos de 100).
+  const SGSS = new Set(['EPS', 'AFP', 'FSP', 'ARL', 'CCF', 'SENA', 'ICBF']);
+  const totalSgss = conceptos
+    .filter((c) => SGSS.has(c.concepto))
+    .reduce((s, c) => s + c.valor, 0);
+  const totalAdmon = conceptos
+    .filter((c) => c.concepto === 'ADMIN')
+    .reduce((s, c) => s + c.valor, 0);
+  const totalServicios = conceptos
+    .filter((c) => c.concepto === 'SERVICIO')
+    .reduce((s, c) => s + c.valor, 0);
+  const totalGeneral = totalSgss + totalAdmon + totalServicios;
+
+  // Legado — se mantienen por compatibilidad de schema
   const totalEmpleador = conceptos
     .filter((c) => c.aCargoEmpleador)
     .reduce((s, c) => s + c.valor, 0);
   const totalTrabajador = conceptos
     .filter((c) => !c.aCargoEmpleador)
     .reduce((s, c) => s + c.valor, 0);
-  const totalGeneral = totalEmpleador + totalTrabajador;
 
   return {
     tipo,
@@ -391,9 +482,12 @@ export function calcularLiquidacion(
     diasCotizados,
     diaDesde,
     diaHasta,
+    totalSgss,
+    totalAdmon,
+    totalServicios,
+    totalGeneral,
     totalEmpleador,
     totalTrabajador,
-    totalGeneral,
     conceptos,
     advertencias,
   };
@@ -429,6 +523,13 @@ export async function persistirLiquidacion(
             incluyeCcf: true,
           },
         },
+        serviciosAdicionales: {
+          include: {
+            servicio: {
+              select: { id: true, codigo: true, nombre: true, precio: true },
+            },
+          },
+        },
       },
     }),
     prisma.tarifaSgss.findMany({ where: { active: true } }),
@@ -449,6 +550,12 @@ export async function persistirLiquidacion(
         fechaIngreso: afiliacion.fechaIngreso,
         empresa: afiliacion.empresa,
         planSgss: afiliacion.planSgss,
+        serviciosAdicionales: afiliacion.serviciosAdicionales.map((s) => ({
+          id: s.servicio.id,
+          codigo: s.servicio.codigo,
+          nombre: s.servicio.nombre,
+          precio: s.servicio.precio,
+        })),
       },
       periodo: { anio: periodo.anio, mes: periodo.mes },
       ibc: opts.ibc,

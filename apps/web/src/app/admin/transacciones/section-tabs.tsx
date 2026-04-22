@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRightLeft, Wallet, Calculator } from 'lucide-react';
+import { ArrowRightLeft, Wallet, Calculator, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type Tab = {
@@ -17,8 +17,15 @@ const TABS: Tab[] = [
     href: '/admin/transacciones',
     label: 'Transacción',
     icon: ArrowRightLeft,
+    match: (p) => p === '/admin/transacciones',
+  },
+  {
+    href: '/admin/transacciones/historial',
+    label: 'Historial',
+    icon: History,
     match: (p) =>
-      p === '/admin/transacciones' || p.startsWith('/admin/transacciones/comprobantes'),
+      p.startsWith('/admin/transacciones/historial') ||
+      p.startsWith('/admin/transacciones/comprobantes'),
   },
   {
     href: '/admin/transacciones/cartera',

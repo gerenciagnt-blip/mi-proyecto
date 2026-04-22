@@ -438,6 +438,8 @@ model MedioPago {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  comprobantes Comprobante[]
+
   @@map("medios_pago")
 }
 
@@ -676,6 +678,16 @@ enum EstadoComprobante {
   ANULADO
 }
 
+// Forma de pago al procesar una transacción.
+// POR_CONFIGURACION = toma la forma de pago configurada (ej. Nequi/Bancolombia)
+// CONSOLIDADO       = pago consolidado (múltiples liquidaciones agrupadas)
+// POR_MEDIO_PAGO    = se referencia un MedioPago específico del catálogo
+enum FormaPagoTransaccion {
+  POR_CONFIGURACION
+  CONSOLIDADO
+  POR_MEDIO_PAGO
+}
+
 // Período contable mensual — uno por (año, mes). El admin abre el período,
 // corre la liquidación, revisa y eventualmente cierra. SMLV y tarifas
 // vigentes al momento de abrir quedan denormalizadas en cada liquidación.
@@ -816,15 +828,27 @@ model Comprobante {
   cotizanteId       String?
   cuentaCobroId     String?
   asesorComercialId String?
-  // Totales denormalizados (suma de las liquidaciones asociadas)
-  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0)
-  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0)
+  // Totales denormalizados — se desglosan para facturación y reporte.
+  // totalGeneral = totalSgss + totalAdmon + totalServicios
+  totalSgss       Decimal           @db.Decimal(14, 2) @default(0)
+  totalAdmon      Decimal           @db.Decimal(14, 2) @default(0)
+  totalServicios  Decimal           @db.Decimal(14, 2) @default(0)
+  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0) // (legado — no se muestra en UI)
+  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0) // (legado — no se muestra en UI)
   totalGeneral    Decimal           @db.Decimal(14, 2) @default(0)
   totalPagado     Decimal           @db.Decimal(14, 2) @default(0)
   estado          EstadoComprobante @default(BORRADOR)
   observaciones   String?
-  emitidoEn       DateTime?
-  pagadoEn        DateTime?
+
+  // Pre-facturación y procesamiento
+  numeroComprobanteExt String? // número impreso / externo ingresado por el admin
+  formaPago            FormaPagoTransaccion?
+  fechaPago            DateTime?
+  medioPagoId          String?
+  procesadoEn          DateTime? // timestamp del click "Procesar"
+  emitidoEn            DateTime?
+  pagadoEn             DateTime?
+
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -832,6 +856,7 @@ model Comprobante {
   cotizante       Cotizante?               @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
   cuentaCobro     CuentaCobro?             @relation(fields: [cuentaCobroId], references: [id], onDelete: Restrict)
   asesorComercial AsesorComercial?         @relation(fields: [asesorComercialId], references: [id], onDelete: Restrict)
+  medioPago       MedioPago?               @relation(fields: [medioPagoId], references: [id], onDelete: SetNull)
   liquidaciones   ComprobanteLiquidacion[]
 
   @@index([periodoId])
@@ -840,6 +865,8 @@ model Comprobante {
   @@index([cotizanteId])
   @@index([cuentaCobroId])
   @@index([asesorComercialId])
+  @@index([medioPagoId])
+  @@index([procesadoEn])
   @@map("comprobantes")
 }
 
