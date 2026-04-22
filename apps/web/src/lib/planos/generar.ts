@@ -443,12 +443,14 @@ export function construirCotizante(d: DatosCotizante): string {
   parts.push(padMoney(ibcBase, 9)); // 95 · IBC otros parafiscales
   parts.push(padNum(horas, 3)); // 96 · N° horas laboradas (días × 8)
 
-  // Padding operador (17 bytes): actividad económica justificada a la
-  // derecha con espacios a la izquierda — así luce como el plano ejemplo.
-  const actividad = d.actividadEconomicaCodigo.trim();
+  // Padding operador (17 bytes): actividad económica (CIIU) justificada a
+  // la derecha con espacios a la izquierda — así luce como el plano
+  // ejemplo del operador. Si la afiliación no tiene actividad asignada,
+  // el código ya viene como "0" desde el orquestador.
+  const actividad = (d.actividadEconomicaCodigo || '0').trim() || '0';
   const padding = actividad
-    ? actividad.padStart(PADDING_OPERADOR_LEN, ' ').slice(-PADDING_OPERADOR_LEN)
-    : blank(PADDING_OPERADOR_LEN);
+    .padStart(PADDING_OPERADOR_LEN, ' ')
+    .slice(-PADDING_OPERADOR_LEN);
   parts.push(padding);
 
   const linea = parts.join('');
@@ -522,11 +524,10 @@ export function generarPlano(
         ? empresa?.arl?.codigo ?? af.arl?.codigo ?? ''
         : af.arl?.codigo ?? '';
 
-      // Actividad económica: preferir la de la afiliación; fallback a la
-      // de la empresa (ciiuPrincipal) para dependientes.
-      const actividadEconomica =
-        af.actividadEconomica?.codigoCiiu ??
-        (esDep ? empresa?.ciiuPrincipal ?? '' : '');
+      // Actividad económica: se toma SIEMPRE de la afiliación del
+      // cotizante (tanto dependientes como independientes). Si la
+      // afiliación no la tiene asignada, el campo se rellena con "0".
+      const actividadEconomica = af.actividadEconomica?.codigoCiiu ?? '0';
 
       const esPrimeraMensualidad = !cotizantesConMensualidadPrevia.has(c.id);
 
