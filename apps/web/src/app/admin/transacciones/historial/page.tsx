@@ -191,6 +191,22 @@ export default async function HistorialPage({
       tipoLabel: c.tipo === 'AFILIACION' ? 'Afiliación' : 'Mensualidad',
       agrupacionLabel: AGRUPACION_LABEL[c.agrupacion] ?? c.agrupacion,
       periodoLabel: `${c.periodo.anio}-${String(c.periodo.mes).padStart(2, '0')}`,
+      periodoAporteLabel: (() => {
+        const liqs = c.liquidaciones.map((cl) => cl.liquidacion);
+        if (liqs.length === 0) return null;
+        const primera = liqs[0];
+        if (!primera?.periodoAporteAnio || !primera?.periodoAporteMes) return null;
+        const a = primera.periodoAporteAnio;
+        const m = primera.periodoAporteMes;
+        // No mostrar si coincide con el período contable
+        if (a === c.periodo.anio && m === c.periodo.mes) return null;
+        // Verificar que todas las liquidaciones coincidan
+        const todasIguales = liqs.every(
+          (l) => l.periodoAporteAnio === a && l.periodoAporteMes === m,
+        );
+        if (!todasIguales) return null;
+        return `${a}-${String(m).padStart(2, '0')}`;
+      })(),
       fechaPago: c.fechaPago
         ? new Date(c.fechaPago).toLocaleDateString('es-CO')
         : null,

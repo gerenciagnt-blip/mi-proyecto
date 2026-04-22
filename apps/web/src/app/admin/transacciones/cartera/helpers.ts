@@ -19,6 +19,12 @@ export function puedeCerrarPeriodo(periodo: {
   return diffDias <= 8;
 }
 
+type AfiliacionMinFact = {
+  modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
+  formaPago: 'VIGENTE' | 'VENCIDO' | null;
+  fechaIngreso: Date;
+};
+
 /**
  * ¿Debe una afiliación facturarse como MENSUALIDAD en el período dado?
  *
@@ -33,36 +39,82 @@ export function puedeCerrarPeriodo(periodo: {
  *     afilió 2026-04-01 → cartera 2026-05.
  */
 export function debeFacturarseEnPeriodo(
-  af: {
-    modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
-    formaPago: 'VIGENTE' | 'VENCIDO' | null;
-    fechaIngreso: Date;
-  },
+  af: AfiliacionMinFact,
   periodo: { anio: number; mes: number },
 ): boolean {
-  // Primer día del período (00:00 UTC)
   const firstDay = new Date(Date.UTC(periodo.anio, periodo.mes - 1, 1));
-  // Último día del período
   const lastDay = new Date(Date.UTC(periodo.anio, periodo.mes, 0));
-  const fechaIng = new Date(
-    Date.UTC(
-      af.fechaIngreso.getUTCFullYear(),
-      af.fechaIngreso.getUTCMonth(),
-      af.fechaIngreso.getUTCDate(),
-    ),
-  );
+  const fechaIng = toUtcDateOnly(af.fechaIngreso);
 
   if (af.modalidad === 'DEPENDIENTE') {
-    // fechaIngreso estrictamente anterior al primer día del período
     return fechaIng.getTime() < firstDay.getTime();
   }
 
-  // INDEPENDIENTE
   if (af.formaPago === 'VIGENTE') {
-    // Afilió este mes o antes
     return fechaIng.getTime() <= lastDay.getTime();
   }
 
-  // VENCIDO (o null) — como dependiente
   return fechaIng.getTime() < firstDay.getTime();
+}
+
+/**
+ * Opciones de facturación para una afiliación elegible en el período.
+ *
+ * Devuelve los overrides que el caller debe pasar al motor:
+ *   - `forzarTipo: MENSUALIDAD` cuando es indep VIGENTE y fecha ingreso
+ *     cae dentro del período (el motor auto daría VINCULACION, pero
+ *     queremos emitir mensualidad proporcional).
+ *   - `periodoAporte` (año + mes) cuando el aporte SGSS corresponde a un
+ *     mes distinto del período contable (indep VENCIDO: mes anterior).
+ *
+ * Si el período de aporte coincide con el período contable, no se
+ * devuelve — el caller persiste NULL.
+ */
+export function opcionesFacturacion(
+  af: AfiliacionMinFact,
+  periodo: { anio: number; mes: number },
+): {
+  forzarTipo?: 'MENSUALIDAD';
+  periodoAporteAnio?: number;
+  periodoAporteMes?: number;
+} {
+  const fechaIng = toUtcDateOnly(af.fechaIngreso);
+  const firstDay = new Date(Date.UTC(periodo.anio, periodo.mes - 1, 1));
+  const mismoMes =
+    fechaIng.getUTCFullYear() === periodo.anio &&
+    fechaIng.getUTCMonth() + 1 === periodo.mes;
+
+  // Indep VIGENTE + fecha dentro del mes → forzar MENSUALIDAD proporcional
+  if (
+    af.modalidad === 'INDEPENDIENTE' &&
+    af.formaPago === 'VIGENTE' &&
+    mismoMes
+  ) {
+    return { forzarTipo: 'MENSUALIDAD' };
+  }
+
+  // Indep VENCIDO que se factura en un período POSTERIOR al de afiliación:
+  // el aporte SGSS corresponde al mes anterior al período contable.
+  if (
+    af.modalidad === 'INDEPENDIENTE' &&
+    (af.formaPago === 'VENCIDO' || af.formaPago === null) &&
+    fechaIng.getTime() < firstDay.getTime()
+  ) {
+    const prev = prevPeriodo(periodo);
+    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
+  }
+
+  return {};
+}
+
+function toUtcDateOnly(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function prevPeriodo(p: { anio: number; mes: number }): {
+  anio: number;
+  mes: number;
+} {
+  if (p.mes === 1) return { anio: p.anio - 1, mes: 12 };
+  return { anio: p.anio, mes: p.mes - 1 };
 }

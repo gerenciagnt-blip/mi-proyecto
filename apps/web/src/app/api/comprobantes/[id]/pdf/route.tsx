@@ -199,6 +199,35 @@ export async function GET(
       mes: comp.periodo.mes,
       mesLabel: MESES[comp.periodo.mes - 1] ?? '',
     },
+    // Si TODAS las liquidaciones del comprobante comparten el mismo
+    // periodoAporte (y difiere del periodo contable), se muestra en el
+    // PDF. En el caso típico INDIVIDUAL con una sola liquidación, esto
+    // refleja el desfase del indep VENCIDO.
+    periodoAporte: (() => {
+      const liqs = comp.liquidaciones.map((cl) => cl.liquidacion);
+      if (liqs.length === 0) return null;
+      const primera = liqs[0];
+      if (!primera?.periodoAporteAnio || !primera?.periodoAporteMes) return null;
+      const { periodoAporteAnio, periodoAporteMes } = primera;
+      const todasIguales = liqs.every(
+        (l) =>
+          l.periodoAporteAnio === periodoAporteAnio &&
+          l.periodoAporteMes === periodoAporteMes,
+      );
+      if (!todasIguales) return null;
+      // Si coincide con el período contable, no mostrar
+      if (
+        periodoAporteAnio === comp.periodo.anio &&
+        periodoAporteMes === comp.periodo.mes
+      ) {
+        return null;
+      }
+      return {
+        anio: periodoAporteAnio,
+        mes: periodoAporteMes,
+        mesLabel: MESES[periodoAporteMes - 1] ?? '',
+      };
+    })(),
 
     destinatario,
     afiliaciones,

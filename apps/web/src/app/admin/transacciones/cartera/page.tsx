@@ -5,7 +5,11 @@ import { prisma } from '@pila/db';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import { puedeCerrarPeriodo, debeFacturarseEnPeriodo } from './helpers';
+import {
+  puedeCerrarPeriodo,
+  debeFacturarseEnPeriodo,
+  opcionesFacturacion,
+} from './helpers';
 import {
   ConsultarCotizanteButton,
   type ConsultaCotizante,
@@ -248,6 +252,15 @@ export default async function CarteraPage({
     const esPrimeraMens = !cotsConMens.has(c.id);
 
     for (const af of afsElegibles) {
+      const opciones = opcionesFacturacion(
+        {
+          modalidad: af.modalidad,
+          formaPago: af.formaPago,
+          fechaIngreso: af.fechaIngreso,
+        },
+        { anio: periodo.anio, mes: periodo.mes },
+      );
+
       const calc = calcularLiquidacion(
         {
           afiliacion: {
@@ -272,8 +285,8 @@ export default async function CarteraPage({
           },
           periodo: { anio: periodo.anio, mes: periodo.mes },
           smlv: periodo.smlvSnapshot,
-          forzarTipo: 'MENSUALIDAD', // cartera es siempre mensualidad
-          aplicaArlObligatoria: esPrimeraMens, // ARL interna si es primera mens.
+          forzarTipo: opciones.forzarTipo ?? 'MENSUALIDAD', // cartera = mensualidad
+          aplicaArlObligatoria: esPrimeraMens,
         },
         tarifas,
         fspRangos,

@@ -9,6 +9,10 @@ import {
   type CalcResult,
 } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
+import {
+  debeFacturarseEnPeriodo,
+  opcionesFacturacion,
+} from '../cartera/helpers';
 
 /**
  * Para cada cotizante de la lista, indica si YA tiene alguna MENSUALIDAD
@@ -386,6 +390,29 @@ export async function previsualizarTransaccionAction(
 
   const rows: PreviewRow[] = [];
   for (const af of afiliaciones) {
+    // Regla de temporalidad por modalidad + formaPago:
+    // - Dep: primera mensualidad al mes siguiente de la afiliación
+    // - Indep VIGENTE: desde el mes de afiliación
+    // - Indep VENCIDO: mes siguiente (con periodoAporte retrocedido)
+    const elegible = debeFacturarseEnPeriodo(
+      {
+        modalidad: af.modalidad,
+        formaPago: af.formaPago,
+        fechaIngreso: af.fechaIngreso,
+      },
+      { anio: periodo.anio, mes: periodo.mes },
+    );
+    if (!elegible) continue;
+
+    const opciones = opcionesFacturacion(
+      {
+        modalidad: af.modalidad,
+        formaPago: af.formaPago,
+        fechaIngreso: af.fechaIngreso,
+      },
+      { anio: periodo.anio, mes: periodo.mes },
+    );
+
     const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
     const calc = calcularLiquidacion(
       {
@@ -411,6 +438,7 @@ export async function previsualizarTransaccionAction(
         },
         periodo: { anio: periodo.anio, mes: periodo.mes },
         smlv: periodo.smlvSnapshot,
+        forzarTipo: opciones.forzarTipo,
         aplicaArlObligatoria: esPrimeraMensualidad, // preview sin novedad
       },
       tarifas,
@@ -568,19 +596,47 @@ export async function procesarTransaccionAction(
   const empTra = { empleador: 0, trabajador: 0 };
   let tipoDetectado: 'VINCULACION' | 'MENSUALIDAD' = 'MENSUALIDAD';
 
-  // Mapea afiliacion → cotizante para saber si es primera mensualidad
+  // Carga datos mínimos para aplicar las reglas de temporalidad
   const afsMini = await prisma.afiliacion.findMany({
     where: { id: { in: afIds } },
-    select: { id: true, cotizanteId: true },
+    select: {
+      id: true,
+      cotizanteId: true,
+      modalidad: true,
+      formaPago: true,
+      fechaIngreso: true,
+    },
   });
-  const afToCot = new Map(afsMini.map((a) => [a.id, a.cotizanteId]));
+  const afMap = new Map(afsMini.map((a) => [a.id, a]));
   const cotIdsUnicos = Array.from(new Set(afsMini.map((a) => a.cotizanteId)));
   const conMens = await cotizantesConMensualidad(cotIdsUnicos);
 
   for (const afId of afIds) {
     try {
-      const cot = afToCot.get(afId);
-      const esPrimeraMensualidad = cot ? !conMens.has(cot) : false;
+      const af = afMap.get(afId);
+      if (!af) continue;
+
+      // Regla de temporalidad — salta si la afiliación aún no aplica
+      const elegible = debeFacturarseEnPeriodo(
+        {
+          modalidad: af.modalidad,
+          formaPago: af.formaPago,
+          fechaIngreso: af.fechaIngreso,
+        },
+        { anio: periodo.anio, mes: periodo.mes },
+      );
+      if (!elegible) continue;
+
+      const opciones = opcionesFacturacion(
+        {
+          modalidad: af.modalidad,
+          formaPago: af.formaPago,
+          fechaIngreso: af.fechaIngreso,
+        },
+        { anio: periodo.anio, mes: periodo.mes },
+      );
+
+      const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
       // ARL interna obligatoria si: es primera mensualidad OR hay novedad de retiro
       const aplicaArlObligatoria =
         !!input.aplicaNovedadRetiro || esPrimeraMensualidad;
@@ -590,6 +646,9 @@ export async function procesarTransaccionAction(
         valorAdminOverride: input.valorAdminOverride,
         diasCotizadosOverride: input.diasCotizadosOverride,
         aplicaArlObligatoria,
+        forzarTipo: opciones.forzarTipo,
+        periodoAporteAnio: opciones.periodoAporteAnio,
+        periodoAporteMes: opciones.periodoAporteMes,
       });
       if (r) {
         liqIds.push(r.liquidacionId);

@@ -722,6 +722,12 @@ model Liquidacion {
   afiliacionId    String
   tipo            TipoLiquidacion   @default(MENSUALIDAD)
   ibc             Decimal           @db.Decimal(12, 2)
+  // Período al que corresponde el APORTE SGSS (clave para el plano PILA).
+  // Puede diferir del `periodoId` cuando es un independiente con forma
+  // de pago VENCIDO: se factura en el mes siguiente pero cotiza por el
+  // mes anterior. NULL → mismo mes que el período contable.
+  periodoAporteAnio Int?
+  periodoAporteMes  Int?
   diasCotizados   Int               @default(30) // sobre mes PILA de 30 días
   diaDesde        Int? // día (1..30) de inicio del periodo cotizado; NULL = mes completo
   diaHasta        Int? // día (1..30) de fin del periodo cotizado; NULL = mes completo

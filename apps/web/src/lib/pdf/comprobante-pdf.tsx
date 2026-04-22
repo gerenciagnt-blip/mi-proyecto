@@ -21,6 +21,9 @@ export type ComprobantePdfData = {
   fechaPago?: string | null;
 
   periodo: { anio: number; mes: number; mesLabel: string };
+  /** Período al que corresponde el aporte SGSS (PILA) cuando difiere del
+   * periodo contable. Útil para independientes con forma de pago VENCIDO. */
+  periodoAporte?: { anio: number; mes: number; mesLabel: string } | null;
 
   destinatario: {
     etiqueta: string; // "Cotizante" | "Empresa CC" | "Asesor"
@@ -446,6 +449,16 @@ export function ComprobantePdf({ data }: { data: ComprobantePdfData }) {
                 {data.periodo.anio}-{String(data.periodo.mes).padStart(2, '0')}
               </Text>
             </View>
+            {data.periodoAporte ? (
+              <View style={styles.detalleItem}>
+                <Text style={styles.label}>Período de aporte (PILA)</Text>
+                <Text style={styles.value}>
+                  {data.periodoAporte.anio}-
+                  {String(data.periodoAporte.mes).padStart(2, '0')} ·{' '}
+                  {data.periodoAporte.mesLabel}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.detalleItem}>
               <Text style={styles.label}>Tipo</Text>
               <Text style={styles.value}>{tipoLabel}</Text>

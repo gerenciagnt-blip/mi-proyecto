@@ -593,6 +593,11 @@ export async function persistirLiquidacion(
     valorAdminOverride?: number;
     diasCotizadosOverride?: number;
     aplicaArlObligatoria?: boolean;
+    /** Período de aporte SGSS cuando difiere del período contable.
+     * Null/undefined = mismo período. Si se pasa, se persiste en la
+     * liquidación para el plano PILA. */
+    periodoAporteAnio?: number;
+    periodoAporteMes?: number;
   },
 ): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
@@ -698,6 +703,8 @@ export async function persistirLiquidacion(
             totalEmpleador: calc.totalEmpleador,
             totalTrabajador: calc.totalTrabajador,
             totalGeneral: calc.totalGeneral,
+            periodoAporteAnio: opts.periodoAporteAnio ?? null,
+            periodoAporteMes: opts.periodoAporteMes ?? null,
             estado: 'BORRADOR',
             calculadoEn: new Date(),
           },
@@ -714,6 +721,8 @@ export async function persistirLiquidacion(
             totalEmpleador: calc.totalEmpleador,
             totalTrabajador: calc.totalTrabajador,
             totalGeneral: calc.totalGeneral,
+            periodoAporteAnio: opts.periodoAporteAnio ?? null,
+            periodoAporteMes: opts.periodoAporteMes ?? null,
           },
         });
 

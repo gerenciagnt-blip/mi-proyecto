@@ -36,6 +36,7 @@ export type HistorialRowData = {
   tipoLabel: string;
   agrupacionLabel: string;
   periodoLabel: string;
+  periodoAporteLabel: string | null;
   fechaPago: string | null;
   procesadoEn: string | null;
   destinatario: string;
@@ -278,6 +279,14 @@ function ConsultarDialog({
             <Info label="Fecha de pago" value={row.fechaPago ?? '—'} />
             <Info label="Procesado" value={row.procesadoEn ?? '—'} />
             <Info label="N° planilla" value={row.numeroPlanilla ?? '—'} mono />
+            {row.periodoAporteLabel && (
+              <Info
+                label="Período aporte PILA"
+                value={row.periodoAporteLabel}
+                mono
+                highlight="amber"
+              />
+            )}
             {row.valorAdminOverride != null && (
               <Info
                 label="Admón ajustado"

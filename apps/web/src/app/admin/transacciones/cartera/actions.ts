@@ -5,7 +5,11 @@ import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
-import { puedeCerrarPeriodo, debeFacturarseEnPeriodo } from './helpers';
+import {
+  puedeCerrarPeriodo,
+  debeFacturarseEnPeriodo,
+  opcionesFacturacion,
+} from './helpers';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -157,6 +161,7 @@ export async function cerrarPeriodoMasivoAction(
         { anio: periodo.anio, mes: periodo.mes },
       ),
     );
+    const afsMap = new Map(afsElegibles.map((a) => [a.id, a]));
     const afIds = afsElegibles.map((a) => a.id);
     if (afIds.length === 0) continue;
 
@@ -167,12 +172,24 @@ export async function cerrarPeriodoMasivoAction(
       let tipoDetectado: 'VINCULACION' | 'MENSUALIDAD' = 'MENSUALIDAD';
 
       for (const afId of afIds) {
+        const af = afsMap.get(afId)!;
+        const opciones = opcionesFacturacion(
+          {
+            modalidad: af.modalidad,
+            formaPago: af.formaPago,
+            fechaIngreso: af.fechaIngreso,
+          },
+          { anio: periodo.anio, mes: periodo.mes },
+        );
         const r = await persistirLiquidacion(prisma, {
           periodoId,
           afiliacionId: afId,
           diasCotizadosOverride: 1, // regla del cierre
           valorAdminOverride: 0, // regla del cierre
           aplicaArlObligatoria: true, // cierre = novedad de retiro
+          forzarTipo: opciones.forzarTipo,
+          periodoAporteAnio: opciones.periodoAporteAnio,
+          periodoAporteMes: opciones.periodoAporteMes,
         });
         if (r) {
           liqIds.push(r.liquidacionId);
