@@ -3,6 +3,7 @@ import { Mail, Shield, Building } from 'lucide-react';
 import { auth } from '@/auth';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { Avatar } from '@/components/ui/avatar';
+import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from './logout-button';
 
 export const metadata = {
@@ -26,6 +27,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
+      <IdleLogout />
       {/* Header */}
       <header className="flex items-center justify-between border-b border-slate-200 pb-6">
         <PilaLogo size="sm" />

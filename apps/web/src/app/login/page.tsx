@@ -1,12 +1,24 @@
-import { ShieldCheck } from 'lucide-react';
+import { Clock, ShieldCheck } from 'lucide-react';
 import { PilaLogo } from '@/components/brand/pila-logo';
+import { Alert } from '@/components/ui/alert';
 import { LoginForm } from './login-form';
 
 export const metadata = {
   title: 'Ingresar — Sistema PILA',
 };
 
-export default function LoginPage() {
+type SP = { reason?: string };
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<SP>;
+}) {
+  const sp = await searchParams;
+  const mensajeInfo =
+    sp.reason === 'idle'
+      ? 'Cerramos tu sesión por inactividad. Ingresa nuevamente para continuar.'
+      : null;
   return (
     <main
       className="relative flex min-h-[100dvh] min-h-screen items-center justify-center overflow-hidden px-4 py-8 sm:px-6 sm:py-12"
@@ -44,6 +56,13 @@ export default function LoginPage() {
               Usa tus credenciales para acceder al sistema.
             </p>
           </header>
+
+          {mensajeInfo && (
+            <Alert variant="warning" className="mb-5">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{mensajeInfo}</span>
+            </Alert>
+          )}
 
           <LoginForm />
         </div>

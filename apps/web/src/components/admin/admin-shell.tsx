@@ -7,6 +7,7 @@ import type { Role } from '@pila/db';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { AdminNav } from '@/components/admin/admin-nav';
 import { Avatar } from '@/components/ui/avatar';
+import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +43,7 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      <IdleLogout />
       {/* Sidebar — colapsable via transición de width */}
       <aside
         aria-label="Menú principal"

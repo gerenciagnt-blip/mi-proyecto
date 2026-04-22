@@ -99,6 +99,24 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// Bitácora de intentos de login — usada por el rate-limit de 3 fallos
+// en 10 min. Se consulta filtrando por email y createdAt > ahora-10min.
+// `success` permite diferenciar intentos exitosos y correctos (para
+// limpiar contador) de los fallidos (que suman al bloqueo).
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  email      String // normalizado a lowercase
+  ip         String?
+  userAgent  String?
+  success    Boolean  @default(false)
+  motivo     String? // "password_wrong" | "user_inactive" | "unknown_email" | "rate_limited"
+  createdAt  DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
 // Permisos granulares: qué puede hacer cada rol en cada módulo.
 // Presencia en la tabla = permitido. Ausencia = denegado.
 // ADMIN implícitamente tiene todos los permisos (se saltea esta tabla).
