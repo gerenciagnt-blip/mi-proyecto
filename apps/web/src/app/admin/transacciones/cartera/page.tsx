@@ -4,7 +4,7 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
-import { puedeCerrarPeriodo } from './actions';
+import { puedeCerrarPeriodo } from './helpers';
 import {
   ConsultarCotizanteButton,
   type ConsultaCotizante,

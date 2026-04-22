@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
+import { puedeCerrarPeriodo } from './helpers';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -66,19 +67,6 @@ export async function listarGestionesAction(
 }
 
 // ============ Cierre masivo del período ============
-
-/**
- * ¿Se puede cerrar el período?
- * Regla: se habilita faltando 8 días o menos para el fin del mes del período.
- */
-export function puedeCerrarPeriodo(periodo: { anio: number; mes: number }): boolean {
-  const hoy = new Date();
-  // Último día del mes del período
-  const ultimo = new Date(periodo.anio, periodo.mes, 0);
-  const diffMs = ultimo.getTime() - hoy.getTime();
-  const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  return diffDias <= 8; // incluye el último día y los 8 previos
-}
 
 /**
  * Cierra el período: genera comprobantes automáticos para todos los
