@@ -321,6 +321,69 @@ export async function generarPlanillasAction(
   return { ok: true, mensaje: partes.join(' · ') };
 }
 
+// ============ Marcar como pagada ============
+
+/**
+ * Confirma el pago de una planilla: cambia estado a PAGADA, guarda el
+ * número oficial que asignó el operador PILA y la fecha de pago, y
+ * propaga el `numeroPlanilla` a todos los comprobantes enlazados.
+ *
+ * Una vez pagada, la planilla no puede anularse.
+ */
+export async function marcarPlanillaPagadaAction(
+  planillaId: string,
+  numeroPlanillaExt: string,
+  fechaPagoIso: string,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const num = numeroPlanillaExt.trim();
+  if (!num) return { error: 'El número de planilla es obligatorio' };
+
+  // Parsear fecha como mediodía UTC para evitar corrimiento TZ
+  const [y, m, d] = fechaPagoIso.split('-').map(Number);
+  if (!y || !m || !d) return { error: 'Fecha de pago inválida' };
+  const fechaPago = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+
+  const planilla = await prisma.planilla.findUnique({
+    where: { id: planillaId },
+    select: {
+      estado: true,
+      comprobantes: { select: { comprobanteId: true } },
+    },
+  });
+  if (!planilla) return { error: 'Planilla no existe' };
+  if (planilla.estado === 'PAGADA') {
+    return { error: 'La planilla ya está marcada como pagada' };
+  }
+  if (planilla.estado === 'ANULADA') {
+    return { error: 'La planilla está anulada' };
+  }
+
+  const comprobanteIds = planilla.comprobantes.map((c) => c.comprobanteId);
+
+  // Un solo $transaction: actualizar planilla + propagar a comprobantes
+  await prisma.$transaction([
+    prisma.planilla.update({
+      where: { id: planillaId },
+      data: {
+        estado: 'PAGADA',
+        numeroPlanillaExt: num,
+        pagadoEn: fechaPago,
+      },
+    }),
+    prisma.comprobante.updateMany({
+      where: { id: { in: comprobanteIds } },
+      data: { numeroPlanilla: num },
+    }),
+  ]);
+
+  revalidatePath('/admin/planos');
+  revalidatePath('/admin/transacciones');
+  revalidatePath('/admin/transacciones/historial');
+  return { ok: true, mensaje: `Planilla ${num} marcada como pagada` };
+}
+
 // ============ Anular planilla ============
 
 /**

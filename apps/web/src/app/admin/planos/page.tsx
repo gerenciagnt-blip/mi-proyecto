@@ -7,6 +7,7 @@ import {
   Building2,
   User,
   AlertCircle,
+  Download,
 } from 'lucide-react';
 import type { EstadoPlanilla } from '@pila/db';
 import { prisma } from '@pila/db';
@@ -15,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
+import { MarcarPagadaDialog } from './marcar-pagada-dialog';
 
 export const metadata = { title: 'Planos PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -526,9 +528,8 @@ async function PlanillasTable({
               <th className="px-4 py-2 text-right">Comprobantes</th>
               <th className="px-4 py-2 text-right">Total</th>
               <th className="px-4 py-2">Estado</th>
-              {estado === 'CONSOLIDADO' && (
-                <th className="px-4 py-2 text-right">Acciones</th>
-              )}
+              {estado === 'PAGADA' && <th className="px-4 py-2">N° planilla</th>}
+              <th className="px-4 py-2 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -580,11 +581,32 @@ async function PlanillasTable({
                   <td className="px-4 py-2.5">
                     <EstadoBadge estado={p.estado} />
                   </td>
-                  {estado === 'CONSOLIDADO' && (
-                    <td className="px-4 py-2.5 text-right">
-                      <AnularPlanillaButton planillaId={p.id} />
+                  {estado === 'PAGADA' && (
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
+                      {p.numeroPlanillaExt ?? '—'}
                     </td>
                   )}
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-2">
+                      <a
+                        href={`/api/planos/${p.id}/plano.txt`}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        title="Descargar archivo plano"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Descargar
+                      </a>
+                      {estado === 'CONSOLIDADO' && (
+                        <>
+                          <MarcarPagadaDialog
+                            planillaId={p.id}
+                            consecutivo={p.consecutivo}
+                          />
+                          <AnularPlanillaButton planillaId={p.id} />
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
