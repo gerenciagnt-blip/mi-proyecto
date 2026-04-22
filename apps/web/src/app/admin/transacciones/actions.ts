@@ -98,6 +98,7 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
   let procesadas = 0;
   let skipped = 0;
   let errores = 0;
+  const erroresDetalle: { afiliacionId: string; mensaje: string }[] = [];
   for (const a of afiliacionesActivas) {
     try {
       const r = await persistirLiquidacion(prisma, {
@@ -106,9 +107,30 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
       });
       if (r) procesadas++;
       else skipped++; // afiliación aún no arranca en este período
-    } catch {
+    } catch (err) {
       errores++;
+      const mensaje =
+        err instanceof Error ? err.message : 'Error desconocido';
+      erroresDetalle.push({ afiliacionId: a.id, mensaje });
+      // Log en consola (server) para debugging inmediato
+      console.error(
+        `[liquidarPeriodo] afiliacion=${a.id} error:`,
+        mensaje,
+      );
     }
+  }
+
+  // Persistir errores en AuditLog para trazabilidad posterior
+  if (erroresDetalle.length > 0) {
+    await prisma.auditLog.create({
+      data: {
+        entidad: 'PeriodoContable',
+        entidadId: periodoId,
+        accion: 'LIQUIDAR_ERRORES',
+        descripcion: `${erroresDetalle.length} afiliaciones fallaron en liquidación masiva`,
+        cambios: { errores: erroresDetalle.slice(0, 100) }, // limita payload
+      },
+    });
   }
 
   revalidatePath('/admin/transacciones');

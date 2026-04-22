@@ -2,22 +2,11 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { fullName, hoyIso } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
 const RX_ISO = /^\d{4}-\d{2}-\d{2}$/;
-
-function hoyIso(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function fullName(c: { primerNombre: string; primerApellido: string }) {
-  return `${c.primerNombre} ${c.primerApellido}`.trim();
-}
 
 /** Identifica si un concepto SGSS es un COBRO INTERNO del aliado (p.ej. CCF $100,
  * ARL 1 día nivel I) por la palabra "interno" en el subconcepto. */

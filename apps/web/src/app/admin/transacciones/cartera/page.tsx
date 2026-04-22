@@ -6,6 +6,11 @@ import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import {
+  formatCOP,
+  fullName,
+  nombreCompleto as getNombreCompleto,
+} from '@/lib/format';
+import {
   puedeCerrarPeriodo,
   debeFacturarseEnPeriodo,
   opcionesFacturacion,
@@ -35,28 +40,7 @@ const MESES = [
   'Diciembre',
 ];
 
-const copFmt = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
 type SP = { q?: string };
-
-function fullName(c: {
-  primerNombre: string;
-  segundoNombre: string | null;
-  primerApellido: string;
-  segundoApellido: string | null;
-}) {
-  return [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
-    .filter(Boolean)
-    .join(' ');
-}
-
-function shortName(c: { primerNombre: string; primerApellido: string }) {
-  return [c.primerNombre, c.primerApellido].filter(Boolean).join(' ');
-}
 
 export default async function CarteraPage({
   searchParams,
@@ -334,8 +318,8 @@ export default async function CarteraPage({
       cotizanteId: c.id,
       tipoDoc: c.tipoDocumento,
       numDoc: c.numeroDocumento,
-      nombre: shortName(c),
-      nombreCompleto: fullName(c),
+      nombre: fullName(c),
+      nombreCompleto: getNombreCompleto(c),
       modalidad: primera.modalidad,
       empresaPlanilla: primera.empresa?.nombre ?? null,
       empresaCC: primera.cuentaCobro?.razonSocial ?? null,
@@ -347,7 +331,7 @@ export default async function CarteraPage({
         cotizante: {
           tipoDocumento: c.tipoDocumento,
           numeroDocumento: c.numeroDocumento,
-          nombreCompleto: fullName(c),
+          nombreCompleto: getNombreCompleto(c),
           email: c.email,
           telefono: c.telefono,
           celular: c.celular,
@@ -397,7 +381,7 @@ export default async function CarteraPage({
             </span>{' '}
             ({MESES[mes - 1]}). Total estimado:{' '}
             <strong className="font-mono">
-              {copFmt.format(totalGeneralCartera)}
+              {formatCOP(totalGeneralCartera)}
             </strong>
           </p>
         </div>
@@ -509,7 +493,7 @@ export default async function CarteraPage({
                       {r.fechaIngreso}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-brand-blue-dark">
-                      {copFmt.format(r.totalGeneral)}
+                      {formatCOP(r.totalGeneral)}
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-1">

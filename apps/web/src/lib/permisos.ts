@@ -41,11 +41,16 @@ export function agruparModulos(): { grupo: string; modulos: ModuloDef[] }[] {
   const map = new Map<string, ModuloDef[]>();
   const orden: string[] = [];
   for (const m of MODULOS) {
-    if (!map.has(m.grupo)) {
-      map.set(m.grupo, []);
+    let arr = map.get(m.grupo);
+    if (!arr) {
+      arr = [];
+      map.set(m.grupo, arr);
       orden.push(m.grupo);
     }
-    map.get(m.grupo)!.push(m);
+    arr.push(m);
   }
-  return orden.map((grupo) => ({ grupo, modulos: map.get(grupo)! }));
+  return orden.map((grupo) => ({
+    grupo,
+    modulos: map.get(grupo) ?? [],
+  }));
 }

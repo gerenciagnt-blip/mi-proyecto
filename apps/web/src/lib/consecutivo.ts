@@ -55,18 +55,15 @@ export async function nextPlanSgssCodigo(): Promise<string> {
 
 /**
  * Siguiente consecutivo global para un comprobante. Formato CMP-000001.
- * Seis dígitos para que alcance mucho tiempo sin reordenar.
+ * Usa una SEQUENCE de Postgres (`comprobante_consecutivo_seq`) — atómica
+ * por diseño, sin race conditions cuando dos admins procesan en paralelo.
+ *
+ * Migración que la crea: `20260422200000_comprobante_consecutivo_seq`.
  */
 export async function nextComprobanteConsecutivo(): Promise<string> {
-  const last = await prisma.comprobante.findFirst({
-    where: { consecutivo: { startsWith: 'CMP-' } },
-    orderBy: { consecutivo: 'desc' },
-    select: { consecutivo: true },
-  });
-  let n = 1;
-  if (last) {
-    const m = last.consecutivo.match(/^CMP-(\d+)$/);
-    if (m && m[1]) n = parseInt(m[1], 10) + 1;
-  }
+  const rows = await prisma.$queryRaw<
+    { next_val: bigint }[]
+  >`SELECT nextval('comprobante_consecutivo_seq') AS next_val`;
+  const n = Number(rows[0]?.next_val ?? 1);
   return `CMP-${String(n).padStart(6, '0')}`;
 }

@@ -142,6 +142,7 @@ export async function cerrarPeriodoMasivoAction(
   const ahora = new Date();
   let procesados = 0;
   let errores = 0;
+  const erroresDetalle: { cotizanteId: string; mensaje: string }[] = [];
 
   // Medio de pago default — tomamos el primero activo si hay.
   const medio = await prisma.medioPago.findFirst({
@@ -250,9 +251,29 @@ export async function cerrarPeriodoMasivoAction(
       });
 
       procesados++;
-    } catch {
+    } catch (err) {
       errores++;
+      const mensaje = err instanceof Error ? err.message : 'Error desconocido';
+      erroresDetalle.push({ cotizanteId: c.id, mensaje });
+      console.error(
+        `[cerrarPeriodoMasivo] cotizante=${c.id} error:`,
+        mensaje,
+      );
     }
+  }
+
+  // Persistir errores en AuditLog para trazabilidad posterior
+  if (erroresDetalle.length > 0) {
+    await prisma.auditLog.create({
+      data: {
+        entidad: 'PeriodoContable',
+        entidadId: periodoId,
+        accion: 'CIERRE_MASIVO_ERRORES',
+        userId,
+        descripcion: `${erroresDetalle.length} cotizantes fallaron en cierre masivo`,
+        cambios: { errores: erroresDetalle.slice(0, 100) },
+      },
+    });
   }
 
   // Marca el período como CERRADO

@@ -12,42 +12,16 @@ import {
 } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
+import {
+  formatCOP,
+  hoyIso,
+  parseIsoToUtcNoon,
+  fechaLegibleDesdeIso,
+  fullName,
+} from '@/lib/format';
 
 export const metadata = { title: 'Cuadre de caja — Sistema PILA' };
 export const dynamic = 'force-dynamic';
-
-const copFmt = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-});
-
-function hoyISO(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function fechaLegible(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d) return iso;
-  const fecha = new Date(y, m - 1, d);
-  return fecha.toLocaleDateString('es-CO', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
-function fullName(c: {
-  primerNombre: string;
-  primerApellido: string;
-}) {
-  return `${c.primerNombre} ${c.primerApellido}`.trim();
-}
 
 /** Identifica si un concepto es un COBRO INTERNO del aliado (no va al
  * operador PILA): se detecta por la palabra "interno" en el subconcepto. */
@@ -56,13 +30,6 @@ function esConceptoInterno(c: { subconcepto: string | null }): boolean {
 }
 
 type SP = { fecha?: string; desde?: string; hasta?: string };
-
-/** Parsea YYYY-MM-DD como mediodía UTC para evitar corrimiento por timezone. */
-function parseIsoToUtcNoon(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d) return new Date();
-  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-}
 
 function diaSiguienteIso(iso: string): string {
   const dt = parseIsoToUtcNoon(iso);
@@ -84,7 +51,7 @@ export default async function CuadreCajaPage({
   const valid = (s?: string) => (s?.match(/^\d{4}-\d{2}-\d{2}$/) ? s : null);
 
   // Modo rango: si viene `desde` y `hasta` usa rango, sino usa `fecha` (o hoy).
-  const hoy = hoyISO();
+  const hoy = hoyIso();
   const rangoDesde = valid(sp.desde);
   const rangoHasta = valid(sp.hasta);
   const fechaUnica = valid(sp.fecha);
@@ -302,8 +269,8 @@ export default async function CuadreCajaPage({
           </div>
           <p className="text-xs text-slate-500 first-letter:uppercase">
             {diaUnico
-              ? fechaLegible(desdeIso)
-              : `${fechaLegible(desdeIso)} — ${fechaLegible(hastaIso)}`}
+              ? fechaLegibleDesdeIso(desdeIso)
+              : `${fechaLegibleDesdeIso(desdeIso)} — ${fechaLegibleDesdeIso(hastaIso)}`}
           </p>
         </div>
 
@@ -321,14 +288,14 @@ export default async function CuadreCajaPage({
           />
           <Stat
             label="Recibido neto"
-            value={copFmt.format(totalActivo)}
+            value={formatCOP(totalActivo)}
             tone="emerald"
             highlight
           />
           {anulados.length > 0 && (
             <Stat
               label="Anulado"
-              value={copFmt.format(totalAnulado)}
+              value={formatCOP(totalAnulado)}
               tone="red"
             />
           )}
@@ -346,28 +313,28 @@ export default async function CuadreCajaPage({
           <ConceptoCard
             icon={FileStack}
             label="SGSS"
-            value={copFmt.format(desgloseDia.sgssReal)}
+            value={formatCOP(desgloseDia.sgssReal)}
             desc="Va al operador PILA"
             tone="sky"
           />
           <ConceptoCard
             icon={Briefcase}
             label="Administración"
-            value={copFmt.format(desgloseDia.admon)}
+            value={formatCOP(desgloseDia.admon)}
             desc="Ingreso del aliado"
             tone="violet"
           />
           <ConceptoCard
             icon={Sparkles}
             label="Servicios adicionales"
-            value={copFmt.format(desgloseDia.servicios)}
+            value={formatCOP(desgloseDia.servicios)}
             desc="Ingreso del aliado"
             tone="indigo"
           />
           <ConceptoCard
             icon={Wallet}
             label="Cobros internos"
-            value={copFmt.format(desgloseDia.sgssInterno)}
+            value={formatCOP(desgloseDia.sgssInterno)}
             desc="CCF $100 · ARL 1 día — cubre rubros no pactados"
             tone="amber"
           />
@@ -396,7 +363,7 @@ export default async function CuadreCajaPage({
                     {m.nombre}
                   </p>
                   <p className="mt-2 font-mono text-xl font-bold tracking-tight text-brand-blue-dark">
-                    {copFmt.format(m.total)}
+                    {formatCOP(m.total)}
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
                     {m.count}{' '}
@@ -519,21 +486,21 @@ export default async function CuadreCajaPage({
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs">
-                        {copFmt.format(d.sgssReal)}
+                        {formatCOP(d.sgssReal)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs">
-                        {copFmt.format(d.admon)}
+                        {formatCOP(d.admon)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs">
-                        {copFmt.format(d.servicios)}
+                        {formatCOP(d.servicios)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs text-amber-700">
                         {d.sgssInterno > 0
-                          ? copFmt.format(d.sgssInterno)
+                          ? formatCOP(d.sgssInterno)
                           : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
-                        {copFmt.format(Number(c.totalGeneral))}
+                        {formatCOP(Number(c.totalGeneral))}
                       </td>
                       <td className="px-4 py-2.5">
                         {anulado ? (
@@ -561,7 +528,7 @@ export default async function CuadreCajaPage({
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
           <p className="font-medium">ℹ️ Sobre los cobros internos</p>
           <p className="mt-1">
-            Los cobros internos ({copFmt.format(desgloseDia.sgssInterno)}) corresponden
+            Los cobros internos ({formatCOP(desgloseDia.sgssInterno)}) corresponden
             a CCF fijo de $100 y ARL de 1 día (Nivel I) que se aplican cuando el plan
             SGSS del cotizante no los incluye. Son ingresos del aliado — no se
             transfieren al operador PILA con el resto del SGSS.
