@@ -181,6 +181,26 @@ export default async function CarteraPage({
     }),
   ]);
 
+  // Cotizantes que YA tienen alguna mensualidad procesada en cualquier
+  // período — para decidir si aplica la regla interna de ARL obligatoria.
+  const cotIdsCartera = cotizantes.map((c) => c.id);
+  const conMens =
+    cotIdsCartera.length > 0
+      ? await prisma.comprobante.findMany({
+          where: {
+            cotizanteId: { in: cotIdsCartera },
+            tipo: 'MENSUALIDAD',
+            estado: { not: 'ANULADO' },
+            procesadoEn: { not: null },
+          },
+          select: { cotizanteId: true },
+          distinct: ['cotizanteId'],
+        })
+      : [];
+  const cotsConMens = new Set(
+    conMens.map((r) => r.cotizanteId).filter((x): x is string => x != null),
+  );
+
   type FilaCartera = {
     cotizanteId: string;
     tipoDoc: string;
@@ -190,6 +210,7 @@ export default async function CarteraPage({
     empresaPlanilla: string | null;
     empresaCC: string | null;
     asesor: string | null;
+    fechaIngreso: string; // yyyy-mm-dd de la afiliación más reciente
     totalGeneral: number;
     gestionesCount: number;
     consulta: ConsultaCotizante;
@@ -207,6 +228,8 @@ export default async function CarteraPage({
     // Para los campos de la tabla, tomamos la primera afiliación como "representativa"
     const primera = c.afiliaciones[0];
     if (!primera) continue;
+
+    const esPrimeraMens = !cotsConMens.has(c.id);
 
     for (const af of c.afiliaciones) {
       const calc = calcularLiquidacion(
@@ -234,6 +257,7 @@ export default async function CarteraPage({
           periodo: { anio: periodo.anio, mes: periodo.mes },
           smlv: periodo.smlvSnapshot,
           forzarTipo: 'MENSUALIDAD', // cartera es siempre mensualidad
+          aplicaArlObligatoria: esPrimeraMens, // ARL interna si es primera mens.
         },
         tarifas,
         fspRangos,
@@ -286,6 +310,7 @@ export default async function CarteraPage({
       empresaPlanilla: primera.empresa?.nombre ?? null,
       empresaCC: primera.cuentaCobro?.razonSocial ?? null,
       asesor: primera.asesorComercial?.nombre ?? null,
+      fechaIngreso: primera.fechaIngreso.toISOString().slice(0, 10),
       totalGeneral: totalCot,
       gestionesCount: c.gestionesCartera.length,
       consulta: {
@@ -305,6 +330,18 @@ export default async function CarteraPage({
     });
 
     totalGeneralCartera += totalCot;
+  }
+
+  // Regla: si el período está CERRADO pero hay cotizantes pendientes de
+  // mensualidad, lo reabrimos automáticamente. Un período con cartera
+  // activa no debería estar cerrado.
+  let periodoEstado: 'ABIERTO' | 'CERRADO' = periodo.estado;
+  if (periodo.estado === 'CERRADO' && filas.length > 0) {
+    await prisma.periodoContable.update({
+      where: { id: periodo.id },
+      data: { estado: 'ABIERTO', cerradoEn: null },
+    });
+    periodoEstado = 'ABIERTO';
   }
 
   // Cálculo "¿se puede cerrar?"
@@ -334,7 +371,7 @@ export default async function CarteraPage({
             </strong>
           </p>
         </div>
-        {periodo.estado === 'ABIERTO' && (
+        {periodoEstado === 'ABIERTO' && (
           <CerrarPeriodoButton
             periodoId={periodo.id}
             periodoLabel={`${anio}-${String(mes).padStart(2, '0')}`}
@@ -401,6 +438,7 @@ export default async function CarteraPage({
                   <th className="px-4 py-2">Empresa planilla</th>
                   <th className="px-4 py-2">Empresa CC</th>
                   <th className="px-4 py-2">Asesor</th>
+                  <th className="px-4 py-2">Fecha ingreso</th>
                   <th className="px-4 py-2 text-right">Total a pagar</th>
                   <th className="px-4 py-2 text-right">Acciones</th>
                 </tr>
@@ -423,6 +461,9 @@ export default async function CarteraPage({
                     </td>
                     <td className="px-4 py-2.5 text-xs">
                       {r.asesor ?? <span className="italic text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
+                      {r.fechaIngreso}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-brand-blue-dark">
                       {copFmt.format(r.totalGeneral)}

@@ -60,6 +60,14 @@ export type CalcInput = {
    * cálculo de SGSS. No cambia el cálculo de ADMIN (que es fijo).
    */
   diasCotizadosOverride?: number;
+  /**
+   * Reglas internas por plan SGSS:
+   *   - Si el plan NO incluye ARL y este flag es true (primera mensualidad
+   *     o novedad de retiro), se cobra internamente 1 día de ARL nivel I.
+   *   - El CCF interno ($100) se aplica siempre que el plan no incluya CCF
+   *     (no depende de este flag).
+   */
+  aplicaArlObligatoria?: boolean;
   /** Año/mes del período a liquidar. */
   periodo: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
@@ -424,6 +432,21 @@ export function calcularLiquidacion(
     } else {
       advertencias.push(`Sin tarifa ARL para nivel ${nivel}`);
     }
+  } else if (input.aplicaArlObligatoria) {
+    // Regla interna: si el plan NO incluye ARL pero es primera mensualidad
+    // o hay novedad de retiro, se cobra 1 día de ARL nivel I.
+    const tNivelI = pickTarifa(tarifas, { concepto: 'ARL', nivelRiesgo: 'I' });
+    if (tNivelI) {
+      const baseUnDia = Math.round(ibc / 30);
+      addConcepto({
+        concepto: 'ARL',
+        subconcepto: 'ARL Nivel I (interno · 1 día)',
+        base: baseUnDia,
+        porcentaje: toNum(tNivelI.porcentaje),
+        aCargoEmpleador: modalidad === 'DEPENDIENTE',
+        observaciones: 'Plan sin ARL — cobro interno obligatorio',
+      });
+    }
   }
 
   // ---- CCF ----
@@ -441,6 +464,18 @@ export function calcularLiquidacion(
     } else {
       advertencias.push(`Sin tarifa CCF para ${modalidad}`);
     }
+  } else {
+    // Regla interna: el plan NO incluye CCF → se cobra valor fijo de $100
+    // que se suma al total. No depende de IBC ni porcentaje.
+    conceptos.push({
+      concepto: 'CCF',
+      subconcepto: 'CCF interno',
+      base: 100,
+      porcentaje: 100,
+      valor: 100,
+      aCargoEmpleador: modalidad === 'DEPENDIENTE',
+      observaciones: 'Plan sin CCF — cobro interno fijo $100',
+    });
   }
 
   // ---- SENA / ICBF (solo dependiente no exonerado) ----
@@ -555,6 +590,7 @@ export async function persistirLiquidacion(
     forzarTipo?: TipoLiq;
     valorAdminOverride?: number;
     diasCotizadosOverride?: number;
+    aplicaArlObligatoria?: boolean;
   },
 ): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
@@ -625,6 +661,7 @@ export async function persistirLiquidacion(
       forzarTipo: opts.forzarTipo,
       valorAdminOverride: opts.valorAdminOverride,
       diasCotizadosOverride: opts.diasCotizadosOverride,
+      aplicaArlObligatoria: opts.aplicaArlObligatoria,
     },
     tarifas,
     fspRangos,

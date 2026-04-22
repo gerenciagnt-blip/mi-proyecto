@@ -10,6 +10,30 @@ import {
 } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 
+/**
+ * Para cada cotizante de la lista, indica si YA tiene alguna MENSUALIDAD
+ * procesada (en cualquier período). Usado para aplicar la regla interna
+ * de ARL obligatoria en la primera mensualidad.
+ */
+async function cotizantesConMensualidad(
+  cotizanteIds: string[],
+): Promise<Set<string>> {
+  if (cotizanteIds.length === 0) return new Set();
+  const rows = await prisma.comprobante.findMany({
+    where: {
+      cotizanteId: { in: cotizanteIds },
+      tipo: 'MENSUALIDAD',
+      estado: { not: 'ANULADO' },
+      procesadoEn: { not: null },
+    },
+    select: { cotizanteId: true },
+    distinct: ['cotizanteId'],
+  });
+  return new Set(
+    rows.map((r) => r.cotizanteId).filter((x): x is string => x != null),
+  );
+}
+
 // ============ Tipos compartidos ============
 
 export type TipoTransaccion = 'INDIVIDUAL' | 'EMPRESA_CC' | 'ASESOR';
@@ -352,8 +376,17 @@ export async function previsualizarTransaccionAction(
     }),
   ]);
 
+  // Para el flag ARL obligatoria: mapea qué cotizantes ya tienen mensualidad
+  const cotIds = Array.from(
+    new Set(
+      afiliaciones.map((a) => a.cotizanteId).filter((x): x is string => x != null),
+    ),
+  );
+  const conMens = await cotizantesConMensualidad(cotIds);
+
   const rows: PreviewRow[] = [];
   for (const af of afiliaciones) {
+    const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
     const calc = calcularLiquidacion(
       {
         afiliacion: {
@@ -378,6 +411,7 @@ export async function previsualizarTransaccionAction(
         },
         periodo: { anio: periodo.anio, mes: periodo.mes },
         smlv: periodo.smlvSnapshot,
+        aplicaArlObligatoria: esPrimeraMensualidad, // preview sin novedad
       },
       tarifas,
       fspRangos,
@@ -534,13 +568,28 @@ export async function procesarTransaccionAction(
   const empTra = { empleador: 0, trabajador: 0 };
   let tipoDetectado: 'VINCULACION' | 'MENSUALIDAD' = 'MENSUALIDAD';
 
+  // Mapea afiliacion → cotizante para saber si es primera mensualidad
+  const afsMini = await prisma.afiliacion.findMany({
+    where: { id: { in: afIds } },
+    select: { id: true, cotizanteId: true },
+  });
+  const afToCot = new Map(afsMini.map((a) => [a.id, a.cotizanteId]));
+  const cotIdsUnicos = Array.from(new Set(afsMini.map((a) => a.cotizanteId)));
+  const conMens = await cotizantesConMensualidad(cotIdsUnicos);
+
   for (const afId of afIds) {
     try {
+      const cot = afToCot.get(afId);
+      const esPrimeraMensualidad = cot ? !conMens.has(cot) : false;
+      // ARL interna obligatoria si: es primera mensualidad OR hay novedad de retiro
+      const aplicaArlObligatoria =
+        !!input.aplicaNovedadRetiro || esPrimeraMensualidad;
       const r = await persistirLiquidacion(prisma, {
         periodoId: input.periodoId,
         afiliacionId: afId,
         valorAdminOverride: input.valorAdminOverride,
         diasCotizadosOverride: input.diasCotizadosOverride,
+        aplicaArlObligatoria,
       });
       if (r) {
         liqIds.push(r.liquidacionId);
@@ -678,6 +727,7 @@ export async function anularTransaccionAction(
     select: {
       id: true,
       estado: true,
+      tipo: true,
       aplicaNovedadRetiro: true,
       esCierreMasivo: true,
       cotizanteId: true,
@@ -701,9 +751,11 @@ export async function anularTransaccionAction(
       });
     }
 
-    // Si la factura provenía del cierre masivo, reabrir el período
-    // para permitir emitir una factura normal.
-    if (comp.esCierreMasivo) {
+    // Regla general: al anular una MENSUALIDAD, si el período está cerrado
+    // se reabre automáticamente. Esto cubre tanto las facturas del cierre
+    // masivo como cualquier mensualidad normal — al quedar pendiente en
+    // cartera, el período no debería estar cerrado.
+    if (comp.tipo === 'MENSUALIDAD') {
       const periodo = await tx.periodoContable.findUnique({
         where: { id: comp.periodoId },
         select: { estado: true },

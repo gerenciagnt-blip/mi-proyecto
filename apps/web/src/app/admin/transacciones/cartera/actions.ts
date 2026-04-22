@@ -155,6 +155,7 @@ export async function cerrarPeriodoMasivoAction(
           afiliacionId: afId,
           diasCotizadosOverride: 1, // regla del cierre
           valorAdminOverride: 0, // regla del cierre
+          aplicaArlObligatoria: true, // cierre = novedad de retiro
         });
         if (r) {
           liqIds.push(r.liquidacionId);
