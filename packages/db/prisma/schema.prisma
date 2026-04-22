@@ -189,6 +189,7 @@ model User {
   sucursal            Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   empresas            UsuarioEmpresa[]
   comprobantesCreados Comprobante[]    @relation("ComprobantesCreados")
+  planillasCreadas    Planilla[]       @relation("PlanillasCreadas")
 
   @@index([sucursalId])
   @@map("users")
@@ -239,6 +240,7 @@ model Empresa {
 
   accesos      UsuarioEmpresa[]
   afiliaciones Afiliacion[]
+  planillas    Planilla[]
 
   @@index([arlId])
   @@index([departamentoId])
@@ -537,6 +539,7 @@ model Cotizante {
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
   gestionesCartera GestionCartera[]
+  planillas    Planilla[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -726,6 +729,7 @@ model PeriodoContable {
   liquidaciones Liquidacion[]
   comprobantes  Comprobante[]
   gestionesCartera GestionCartera[]
+  planillas     Planilla[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -907,6 +911,7 @@ model Comprobante {
   medioPago       MedioPago?               @relation(fields: [medioPagoId], references: [id], onDelete: SetNull)
   createdBy       User?                    @relation("ComprobantesCreados", fields: [createdById], references: [id], onDelete: SetNull)
   liquidaciones   ComprobanteLiquidacion[]
+  planillas       PlanillaComprobante[]
 
   @@index([periodoId])
   @@index([estado])
@@ -955,4 +960,92 @@ model ComprobanteLiquidacion {
   @@id([comprobanteId, liquidacionId])
   @@index([liquidacionId])
   @@map("comprobante_liquidaciones")
+}
+
+// --- Planos PILA (Fase P1) ---
+
+// Tipo de planilla según resolución 2388/2016 (campo 8 del encabezado).
+// Arrancamos con E (empleados) e I (independientes); ampliar a N/Y/K/otros
+// según aparezcan casos.
+enum TipoPlanilla {
+  E // Planilla empleados (dependientes)
+  I // Planilla independientes
+  Y // Planilla independientes empresa (cooperativas, asociados)
+  N // Planilla correcciones
+  K // Planilla estudiantes
+  A // Planilla cotizantes con novedad de ingreso
+  S // Planilla empleados servicio doméstico
+}
+
+enum EstadoPlanilla {
+  CONSOLIDADO // Recién creada, pendiente de pago
+  PAGADA      // Pago confirmado — se guarda numeroPlanillaExt y fecha
+  ANULADA     // Al anular se libera el vínculo con los comprobantes
+}
+
+// Planilla PILA — un registro agrupa los comprobantes de UN aportante
+// (empresa para dependientes / cotizante para independientes) en un
+// período de aporte. Un aportante puede tener varias planillas si hay
+// desfase por independiente vencido u otro caso.
+model Planilla {
+  id                 String         @id @default(cuid())
+  periodoId          String
+  consecutivo        String         @unique // PLN-000001 (sequence Postgres)
+  tipoPlanilla       TipoPlanilla
+  // Nro. de planilla asignado por el operador PILA al confirmar el pago
+  numeroPlanillaExt  String?
+  // Aportante: exactamente UNO de estos está poblado según tipoPlanilla
+  empresaId          String?        // NOT NULL si tipo = E (dependientes)
+  cotizanteId        String?        // NOT NULL si tipo = I/Y (independiente)
+  // Período de APORTE (puede diferir del contable para indep vencido)
+  periodoAporteAnio  Int
+  periodoAporteMes   Int
+  // Totales snapshot por subsistema
+  totalSalud         Decimal        @db.Decimal(14, 2) @default(0)
+  totalPension       Decimal        @db.Decimal(14, 2) @default(0)
+  totalArl           Decimal        @db.Decimal(14, 2) @default(0)
+  totalCcf           Decimal        @db.Decimal(14, 2) @default(0)
+  totalSena          Decimal        @db.Decimal(14, 2) @default(0)
+  totalIcbf          Decimal        @db.Decimal(14, 2) @default(0)
+  totalFsp           Decimal        @db.Decimal(14, 2) @default(0)
+  totalGeneral       Decimal        @db.Decimal(14, 2) @default(0)
+  cantidadCotizantes Int            @default(0)
+  estado             EstadoPlanilla @default(CONSOLIDADO)
+  generadoEn         DateTime       @default(now())
+  pagadoEn           DateTime?
+  createdById        String?
+  observaciones      String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  periodo      PeriodoContable       @relation(fields: [periodoId], references: [id], onDelete: Restrict)
+  empresa      Empresa?              @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  cotizante    Cotizante?            @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
+  createdBy    User?                 @relation("PlanillasCreadas", fields: [createdById], references: [id], onDelete: SetNull)
+  comprobantes PlanillaComprobante[]
+
+  @@index([periodoId])
+  @@index([estado])
+  @@index([tipoPlanilla])
+  @@index([empresaId])
+  @@index([cotizanteId])
+  @@index([periodoAporteAnio, periodoAporteMes])
+  @@map("planillas")
+}
+
+// Pivote Planilla ↔ Comprobante. `comprobanteId` es @unique porque un
+// comprobante solo puede estar en UNA planilla activa a la vez. Al
+// anular la planilla se borran estas filas (cascade) liberando los
+// comprobantes para re-agrupar.
+model PlanillaComprobante {
+  planillaId    String
+  comprobanteId String   @unique
+  createdAt     DateTime @default(now())
+
+  planilla    Planilla    @relation(fields: [planillaId], references: [id], onDelete: Cascade)
+  comprobante Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Restrict)
+
+  @@id([planillaId, comprobanteId])
+  @@index([comprobanteId])
+  @@map("planillas_comprobantes")
 }

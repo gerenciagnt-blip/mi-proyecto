@@ -67,3 +67,17 @@ export async function nextComprobanteConsecutivo(): Promise<string> {
   const n = Number(rows[0]?.next_val ?? 1);
   return `CMP-${String(n).padStart(6, '0')}`;
 }
+
+/**
+ * Siguiente consecutivo global para una planilla PILA. Formato PLN-000001.
+ * Misma estrategia que los comprobantes — SEQUENCE Postgres.
+ *
+ * Migración: `20260422201000_planilla_consecutivo_seq`.
+ */
+export async function nextPlanillaConsecutivo(): Promise<string> {
+  const rows = await prisma.$queryRaw<
+    { next_val: bigint }[]
+  >`SELECT nextval('planilla_consecutivo_seq') AS next_val`;
+  const n = Number(rows[0]?.next_val ?? 1);
+  return `PLN-${String(n).padStart(6, '0')}`;
+}
