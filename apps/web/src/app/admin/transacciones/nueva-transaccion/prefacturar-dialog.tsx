@@ -8,6 +8,7 @@ import {
   Loader2,
   Receipt,
   Download,
+  UserMinus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -19,6 +20,7 @@ import {
   listarMediosPagoAction,
   type PreviewInput,
   type ProcesarInput,
+  type TipoTransaccion,
 } from './actions';
 
 const copFmt = new Intl.NumberFormat('es-CO', {
@@ -32,25 +34,39 @@ type Props = {
   onClose: () => void;
   onProcesado: () => void;
   context: PreviewInput;
+  tipo: TipoTransaccion;
   totalGeneral: number;
+  totalAdmonInicial: number;
+  destinatarioInfo: { nombre: string; sub?: string } | null;
+  numAfiliaciones: number;
 };
+
+// Valor de forma de pago en el <select>.
+// - "CONSOLIDADO" → sin medio específico
+// - "MEDIO:<id>"  → medio del catálogo con ese id
+type FormaPagoOption = 'CONSOLIDADO' | `MEDIO:${string}`;
 
 export function PrefacturarDialog({
   open,
   onClose,
   onProcesado,
   context,
+  tipo,
   totalGeneral,
+  totalAdmonInicial,
+  destinatarioInfo,
+  numAfiliaciones,
 }: Props) {
-  const [formaPago, setFormaPago] = useState<ProcesarInput['formaPago']>(
-    'POR_CONFIGURACION',
-  );
+  const [formaPagoOpt, setFormaPagoOpt] = useState<FormaPagoOption>('CONSOLIDADO');
   const [numero, setNumero] = useState('');
   const [fechaPago, setFechaPago] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
-  const [medioPagoId, setMedioPagoId] = useState('');
-  const [medios, setMedios] = useState<Array<{ id: string; codigo: string; nombre: string }>>([]);
+  const [valorAdmonStr, setValorAdmonStr] = useState<string>('');
+  const [aplicaNovedadRetiro, setAplicaNovedadRetiro] = useState(false);
+  const [medios, setMedios] = useState<
+    Array<{ id: string; codigo: string; nombre: string }>
+  >([]);
   const [loadingMedios, startLoad] = useTransition();
 
   const [procesando, startProcesar] = useTransition();
@@ -61,7 +77,6 @@ export function PrefacturarDialog({
     comprobanteId: string;
   } | null>(null);
 
-  // Cargar medios de pago al abrir
   useEffect(() => {
     if (!open) return;
     startLoad(async () => {
@@ -70,38 +85,76 @@ export function PrefacturarDialog({
     });
   }, [open]);
 
-  // Reset al abrir/cerrar
   useEffect(() => {
     if (!open) {
       setError(null);
       setExito(null);
+    } else {
+      // Al abrir, precargamos el valor admón del preview
+      setValorAdmonStr(
+        totalAdmonInicial > 0 ? String(Math.round(totalAdmonInicial)) : '',
+      );
+      setAplicaNovedadRetiro(false);
+      setFormaPagoOpt('CONSOLIDADO');
+      setNumero('');
     }
-  }, [open]);
+  }, [open, totalAdmonInicial]);
+
+  // Parseo del override: si el usuario dejó el default o vacío, no mandamos override.
+  // Si cambió el valor, mandamos valorAdminOverride por afiliación.
+  // Como el motor aplica por afiliación, dividimos el total ingresado / n.
+  const overrideNumber = (() => {
+    const raw = valorAdmonStr.trim();
+    if (!raw) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return undefined;
+    // Si coincide con el default (mismo total), no enviamos override
+    if (Math.abs(n - totalAdmonInicial) < 1) return undefined;
+    // Distribuye igualmente entre las afiliaciones
+    return numAfiliaciones > 0 ? n / numAfiliaciones : n;
+  })();
+
+  // Total "preview" con el override aplicado — para feedback visual
+  const totalPreview =
+    overrideNumber != null
+      ? totalGeneral - totalAdmonInicial + overrideNumber * numAfiliaciones
+      : totalGeneral;
 
   const onSubmit = () => {
     setError(null);
     setExito(null);
-    if (formaPago === 'POR_MEDIO_PAGO' && !medioPagoId) {
-      setError('Selecciona un medio de pago');
+
+    // Parsea formaPago + medioPagoId del dropdown unificado
+    let formaPago: ProcesarInput['formaPago'];
+    let medioPagoId: string | undefined;
+    if (formaPagoOpt === 'CONSOLIDADO') {
+      formaPago = 'CONSOLIDADO';
+    } else if (formaPagoOpt.startsWith('MEDIO:')) {
+      formaPago = 'POR_MEDIO_PAGO';
+      medioPagoId = formaPagoOpt.slice('MEDIO:'.length);
+    } else {
+      setError('Selecciona una forma de pago');
       return;
     }
+
     startProcesar(async () => {
       const r = await procesarTransaccionAction({
         ...context,
         formaPago,
+        medioPagoId,
         numeroComprobanteExt: numero.trim() || undefined,
         fechaPago,
-        medioPagoId: formaPago === 'POR_MEDIO_PAGO' ? medioPagoId : undefined,
+        valorAdminOverride: overrideNumber,
+        aplicaNovedadRetiro: tipo === 'INDIVIDUAL' ? aplicaNovedadRetiro : false,
       });
       if (r.error) {
         setError(r.error);
       } else if (r.ok && r.consecutivo && r.comprobanteId) {
         setExito({
           consecutivo: r.consecutivo,
-          total: r.totalGeneral ?? 0,
+          total: r.totalGeneral ?? totalPreview,
           comprobanteId: r.comprobanteId,
         });
-        // Auto-abre el PDF en nueva pestaña
         window.open(`/api/comprobantes/${r.comprobanteId}/pdf`, '_blank');
       }
     });
@@ -153,60 +206,124 @@ export function PrefacturarDialog({
           }}
           className="space-y-4"
         >
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-xs text-slate-500">Total a pre-facturar</p>
-            <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-brand-blue-dark">
-              {copFmt.format(totalGeneral)}
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="formaPago">Forma de pago *</Label>
-            <select
-              id="formaPago"
-              value={formaPago}
-              onChange={(e) => setFormaPago(e.target.value as ProcesarInput['formaPago'])}
-              required
-              className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
-            >
-              <option value="POR_CONFIGURACION">Por configuración</option>
-              <option value="CONSOLIDADO">Consolidado</option>
-              <option value="POR_MEDIO_PAGO">Por medio de pago</option>
-            </select>
-          </div>
-
-          {formaPago === 'POR_MEDIO_PAGO' && (
-            <div>
-              <Label htmlFor="medioPagoId">Medio de pago *</Label>
-              <select
-                id="medioPagoId"
-                value={medioPagoId}
-                onChange={(e) => setMedioPagoId(e.target.value)}
-                required
-                disabled={loadingMedios}
-                className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
-              >
-                <option value="">— Seleccionar —</option>
-                {medios.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.codigo} — {m.nombre}
-                  </option>
-                ))}
-              </select>
-              {loadingMedios && (
-                <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Cargando medios de pago…
-                </p>
-              )}
-              {!loadingMedios && medios.length === 0 && (
-                <p className="mt-1 text-[11px] text-amber-700">
-                  No hay medios de pago en el catálogo. Agrégalos en{' '}
-                  /admin/catalogos/medios-pago.
+          {/* Destinatario — header del modal */}
+          {destinatarioInfo && (
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                {tipo === 'INDIVIDUAL'
+                  ? 'Cotizante'
+                  : tipo === 'EMPRESA_CC'
+                    ? 'Empresa CC'
+                    : 'Asesor'}
+              </p>
+              <p className="mt-0.5 font-medium text-slate-900">
+                {destinatarioInfo.nombre}
+              </p>
+              {destinatarioInfo.sub && (
+                <p className="font-mono text-xs text-slate-500">
+                  {destinatarioInfo.sub}
                 </p>
               )}
             </div>
           )}
+
+          {/* Total */}
+          <div className="rounded-lg border border-brand-blue/20 bg-brand-blue/5 p-3">
+            <p className="text-xs text-slate-500">Total a pre-facturar</p>
+            <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-brand-blue-dark">
+              {copFmt.format(totalPreview)}
+            </p>
+            {overrideNumber != null && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Incluye ajuste de valor administración (original:{' '}
+                {copFmt.format(totalGeneral)})
+              </p>
+            )}
+          </div>
+
+          {/* Valor admón editable */}
+          <div>
+            <Label htmlFor="valorAdmon">
+              Valor administración (ajuste opcional)
+            </Label>
+            <Input
+              id="valorAdmon"
+              type="number"
+              step="1"
+              min="0"
+              value={valorAdmonStr}
+              onChange={(e) => setValorAdmonStr(e.target.value)}
+              placeholder={String(Math.round(totalAdmonInicial))}
+              className="mt-1"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              Sólo afecta esta transacción — no modifica la base de datos.
+              {numAfiliaciones > 1 && (
+                <>
+                  {' '}
+                  Se aplica por afiliación ({numAfiliaciones} afiliaciones).
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* Novedad de retiro — solo individual */}
+          {tipo === 'INDIVIDUAL' && (
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={aplicaNovedadRetiro}
+                onChange={(e) => setAplicaNovedadRetiro(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+              />
+              <div className="flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <UserMinus className="h-3.5 w-3.5 text-red-600" />
+                  Aplicar novedad de retiro
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  Al procesar, el cotizante se inactivará en base de datos. Si la
+                  factura se anula, se reactiva.
+                </p>
+              </div>
+            </label>
+          )}
+
+          {/* Forma de pago — dropdown unificado */}
+          <div>
+            <Label htmlFor="formaPago">Forma de pago *</Label>
+            <select
+              id="formaPago"
+              value={formaPagoOpt}
+              onChange={(e) => setFormaPagoOpt(e.target.value as FormaPagoOption)}
+              required
+              disabled={loadingMedios}
+              className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
+            >
+              <option value="CONSOLIDADO">Consolidado</option>
+              {medios.length > 0 && (
+                <optgroup label="Medios de pago">
+                  {medios.map((m) => (
+                    <option key={m.id} value={`MEDIO:${m.id}`}>
+                      {m.codigo} — {m.nombre}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            {loadingMedios && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Cargando medios de pago…
+              </p>
+            )}
+            {!loadingMedios && medios.length === 0 && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                No hay medios de pago en el catálogo. Agrégalos en{' '}
+                /admin/catalogos/medios-pago.
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>

@@ -849,6 +849,19 @@ model Comprobante {
   emitidoEn            DateTime?
   pagadoEn             DateTime?
 
+  // Override de valor administración en la pre-factura (afecta sólo la
+  // transacción, no el valor guardado en la afiliación). Si es NULL, se
+  // usó el valor default de la afiliación.
+  valorAdminOverride  Decimal? @db.Decimal(12, 2)
+
+  // Marca que al procesar esta factura se inactivó al cotizante (novedad
+  // de retiro). Al anular se reactiva.
+  aplicaNovedadRetiro Boolean  @default(false)
+
+  // Número de planilla PILA asignado cuando se procesa en el módulo de
+  // Planos. Mientras NULL, la transacción se muestra "En proceso".
+  numeroPlanilla      String?
+
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -867,6 +880,7 @@ model Comprobante {
   @@index([asesorComercialId])
   @@index([medioPagoId])
   @@index([procesadoEn])
+  @@index([numeroPlanilla])
   @@map("comprobantes")
 }
 

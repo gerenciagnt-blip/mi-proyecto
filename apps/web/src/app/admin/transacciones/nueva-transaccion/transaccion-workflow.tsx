@@ -76,6 +76,12 @@ export function TransaccionWorkflow({ periodos }: Props) {
   const [cuentaCobroId, setCuentaCobroId] = useState<string>('');
   const [asesorComercialId, setAsesorComercialId] = useState<string>('');
 
+  // Metadatos del destinatario — se muestran en el Pre-facturar modal
+  const [destinatarioInfo, setDestinatarioInfo] = useState<{
+    nombre: string;
+    sub?: string; // ej: "CC 1088002872" o "CCB-001 · NIT 900123456"
+  } | null>(null);
+
   // Key para forzar remount de los sub-componentes (reset visual) después
   // de procesar una transacción con éxito.
   const [resetKey, setResetKey] = useState(0);
@@ -100,6 +106,7 @@ export function TransaccionWorkflow({ periodos }: Props) {
     setCotizanteId('');
     setCuentaCobroId('');
     setAsesorComercialId('');
+    setDestinatarioInfo(null);
     setRows(null);
     setTotales(null);
     setPreviewError(null);
@@ -153,6 +160,7 @@ export function TransaccionWorkflow({ periodos }: Props) {
     setCotizanteId('');
     setCuentaCobroId('');
     setAsesorComercialId('');
+    setDestinatarioInfo(null);
     setRows(null);
     setTotales(null);
     setPreviewError(null);
@@ -245,7 +253,11 @@ export function TransaccionWorkflow({ periodos }: Props) {
         <BuscarCotizante
           key={`cot-${resetKey}`}
           periodoId={periodoId}
-          onCotizanteFound={setCotizanteId}
+          onCotizanteFound={(id, info) => {
+            setCotizanteId(id);
+            if (info) setDestinatarioInfo(info);
+            else setDestinatarioInfo(null);
+          }}
         />
       )}
       {!periodoCerrado && tipo === 'EMPRESA_CC' && (
@@ -253,7 +265,10 @@ export function TransaccionWorkflow({ periodos }: Props) {
           key={`cc-${resetKey}`}
           periodoId={periodoId}
           value={cuentaCobroId}
-          onChange={setCuentaCobroId}
+          onChange={(id, info) => {
+            setCuentaCobroId(id);
+            setDestinatarioInfo(info ?? null);
+          }}
         />
       )}
       {!periodoCerrado && tipo === 'ASESOR' && (
@@ -261,7 +276,10 @@ export function TransaccionWorkflow({ periodos }: Props) {
           key={`as-${resetKey}`}
           periodoId={periodoId}
           value={asesorComercialId}
-          onChange={setAsesorComercialId}
+          onChange={(id, info) => {
+            setAsesorComercialId(id);
+            setDestinatarioInfo(info ?? null);
+          }}
         />
       )}
 
@@ -324,6 +342,10 @@ export function TransaccionWorkflow({ periodos }: Props) {
           onProcesado={onProcesado}
           context={contextParaProcesar}
           totalGeneral={totales.general}
+          totalAdmonInicial={totales.admon}
+          tipo={tipo}
+          destinatarioInfo={destinatarioInfo}
+          numAfiliaciones={rows?.length ?? 1}
         />
       )}
     </div>
@@ -337,7 +359,10 @@ function BuscarCotizante({
   onCotizanteFound,
 }: {
   periodoId: string;
-  onCotizanteFound: (cotizanteId: string) => void;
+  onCotizanteFound: (
+    cotizanteId: string,
+    info?: { nombre: string; sub?: string } | null,
+  ) => void;
 }) {
   const [doc, setDoc] = useState('');
   const [pending, start] = useTransition();
@@ -347,7 +372,7 @@ function BuscarCotizante({
   const buscar = () => {
     setError(null);
     setResult(null);
-    onCotizanteFound('');
+    onCotizanteFound('', null);
     start(async () => {
       const r = await buscarCotizanteAction(doc, periodoId);
       if (r.error) {
@@ -363,7 +388,10 @@ function BuscarCotizante({
         if (activas.length === 0) {
           setError('El cotizante no tiene afiliaciones activas');
         } else {
-          onCotizanteFound(r.found.cotizante.id);
+          onCotizanteFound(r.found.cotizante.id, {
+            nombre: r.found.cotizante.nombreCompleto,
+            sub: `${r.found.cotizante.tipoDocumento} ${r.found.cotizante.numeroDocumento}`,
+          });
         }
       }
     });
@@ -465,7 +493,7 @@ function SeleccionarCC({
 }: {
   periodoId: string;
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, info?: { nombre: string; sub?: string } | null) => void;
 }) {
   const [lista, setLista] = useState<CuentaCobroDisponible[] | null>(null);
   const [filtro, setFiltro] = useState('');
@@ -513,7 +541,12 @@ function SeleccionarCC({
             <button
               key={c.id}
               type="button"
-              onClick={() => onChange(c.id)}
+              onClick={() =>
+                onChange(c.id, {
+                  nombre: c.razonSocial,
+                  sub: `${c.sucursalCodigo} · ${c.codigo}`,
+                })
+              }
               className={cn(
                 'flex w-full items-center justify-between rounded-md border p-2.5 text-left text-xs transition',
                 value === c.id
@@ -548,7 +581,7 @@ function SeleccionarAsesor({
 }: {
   periodoId: string;
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, info?: { nombre: string; sub?: string } | null) => void;
 }) {
   const [lista, setLista] = useState<AsesorDisponible[] | null>(null);
   const [filtro, setFiltro] = useState('');
@@ -592,7 +625,7 @@ function SeleccionarAsesor({
             <button
               key={a.id}
               type="button"
-              onClick={() => onChange(a.id)}
+              onClick={() => onChange(a.id, { nombre: a.nombre, sub: a.codigo })}
               className={cn(
                 'flex w-full items-center justify-between rounded-md border p-2.5 text-left text-xs transition',
                 value === a.id

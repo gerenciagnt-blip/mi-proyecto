@@ -48,6 +48,12 @@ export type CalcInput = {
    * se le había cobrado vinculación).
    */
   forzarTipo?: TipoLiq;
+  /**
+   * Override del valor administración SOLO para esta transacción.
+   * Si se pasa, reemplaza el `afiliacion.valorAdministracion` en el
+   * concepto ADMIN. No persiste cambios en la afiliación.
+   */
+  valorAdminOverride?: number;
   /** Año/mes del período a liquidar. */
   periodo: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
@@ -274,7 +280,10 @@ export function calcularLiquidacion(
   // administración" definido en su afiliación (cobro operativo del
   // aliado). Los conceptos SGSS empiezan a correr en la MENSUALIDAD.
   if (tipo === 'VINCULACION') {
-    const valorAdmin = toNum(afiliacion.valorAdministracion);
+    const valorAdmin =
+      input.valorAdminOverride != null
+        ? input.valorAdminOverride
+        : toNum(afiliacion.valorAdministracion);
     const valorRedondeado = round100Up(valorAdmin);
     const vinc: CalcConcepto = {
       concepto: 'ADMIN',
@@ -442,7 +451,11 @@ export function calcularLiquidacion(
 
   // ---- ADMIN (cobro operativo mensual del aliado) ----
   // En MENSUALIDAD el valor administración también se cobra mes a mes.
-  const valorAdmin = toNum(afiliacion.valorAdministracion);
+  // El override aplica aquí si viene.
+  const valorAdmin =
+    input.valorAdminOverride != null
+      ? input.valorAdminOverride
+      : toNum(afiliacion.valorAdministracion);
   if (valorAdmin > 0) {
     const valorRedondeado = round100Up(valorAdmin);
     conceptos.push({
@@ -526,6 +539,7 @@ export async function persistirLiquidacion(
     afiliacionId: string;
     ibc?: number;
     forzarTipo?: TipoLiq;
+    valorAdminOverride?: number;
   },
 ): Promise<{ liquidacionId: string; calc: CalcResult } | null> {
   const [periodo, afiliacion, tarifas, fspRangos] = await Promise.all([
@@ -594,6 +608,7 @@ export async function persistirLiquidacion(
       ibc: opts.ibc,
       smlv: periodo.smlvSnapshot,
       forzarTipo: opts.forzarTipo,
+      valorAdminOverride: opts.valorAdminOverride,
     },
     tarifas,
     fspRangos,

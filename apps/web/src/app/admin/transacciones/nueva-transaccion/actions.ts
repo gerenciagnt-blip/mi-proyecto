@@ -432,9 +432,15 @@ export async function previsualizarTransaccionAction(
 
 export type ProcesarInput = PreviewInput & {
   numeroComprobanteExt?: string;
-  formaPago: 'POR_CONFIGURACION' | 'CONSOLIDADO' | 'POR_MEDIO_PAGO';
+  formaPago: 'CONSOLIDADO' | 'POR_MEDIO_PAGO';
   fechaPago: string; // yyyy-mm-dd
   medioPagoId?: string;
+  /** Override del valor administración — sólo afecta esta transacción.
+   * Se aplica a cada afiliación liquidada (mismo valor absoluto). */
+  valorAdminOverride?: number;
+  /** Al procesar, inactiva las afiliaciones del cotizante
+   * (sólo INDIVIDUAL). Al anular se revierte. */
+  aplicaNovedadRetiro?: boolean;
 };
 
 export type ProcesarResult = {
@@ -552,6 +558,7 @@ export async function procesarTransaccionAction(
       const r = await persistirLiquidacion(prisma, {
         periodoId: input.periodoId,
         afiliacionId: afId,
+        valorAdminOverride: input.valorAdminOverride,
       });
       if (r) {
         liqIds.push(r.liquidacionId);
@@ -576,38 +583,58 @@ export async function procesarTransaccionAction(
   const ahora = new Date();
   const fechaPago = input.fechaPago ? new Date(input.fechaPago) : ahora;
 
-  const comprobante = await prisma.comprobante.create({
-    data: {
-      periodoId: input.periodoId,
-      tipo: tipoComp,
-      agrupacion,
-      consecutivo,
-      cotizanteId,
-      cuentaCobroId,
-      asesorComercialId,
-      totalSgss: totales.sgss,
-      totalAdmon: totales.admon,
-      totalServicios: totales.servicios,
-      totalEmpleador: empTra.empleador,
-      totalTrabajador: empTra.trabajador,
-      totalGeneral: totales.general,
-      estado: 'EMITIDO',
-      numeroComprobanteExt: input.numeroComprobanteExt?.trim() || null,
-      formaPago: input.formaPago,
-      fechaPago,
-      medioPagoId:
-        input.formaPago === 'POR_MEDIO_PAGO' && input.medioPagoId
-          ? input.medioPagoId
-          : null,
-      procesadoEn: ahora,
-      emitidoEn: ahora,
-      liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
-    },
+  // La novedad de retiro sólo aplica a INDIVIDUAL (un cotizante).
+  const aplicaNovedadRetiro =
+    input.tipo === 'INDIVIDUAL' && !!input.aplicaNovedadRetiro;
+
+  const comprobante = await prisma.$transaction(async (tx) => {
+    const comp = await tx.comprobante.create({
+      data: {
+        periodoId: input.periodoId,
+        tipo: tipoComp,
+        agrupacion,
+        consecutivo,
+        cotizanteId,
+        cuentaCobroId,
+        asesorComercialId,
+        totalSgss: totales.sgss,
+        totalAdmon: totales.admon,
+        totalServicios: totales.servicios,
+        totalEmpleador: empTra.empleador,
+        totalTrabajador: empTra.trabajador,
+        totalGeneral: totales.general,
+        estado: 'EMITIDO',
+        numeroComprobanteExt: input.numeroComprobanteExt?.trim() || null,
+        formaPago: input.formaPago,
+        fechaPago,
+        medioPagoId:
+          input.formaPago === 'POR_MEDIO_PAGO' && input.medioPagoId
+            ? input.medioPagoId
+            : null,
+        procesadoEn: ahora,
+        emitidoEn: ahora,
+        valorAdminOverride:
+          input.valorAdminOverride != null ? input.valorAdminOverride : null,
+        aplicaNovedadRetiro,
+        liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
+      },
+    });
+
+    // Novedad de retiro: inactivar afiliaciones del cotizante + set fechaRetiro
+    if (aplicaNovedadRetiro && cotizanteId) {
+      await tx.afiliacion.updateMany({
+        where: { cotizanteId, estado: 'ACTIVA' },
+        data: { estado: 'INACTIVA', fechaRetiro: ahora },
+      });
+    }
+
+    return comp;
   });
 
   revalidatePath('/admin/transacciones');
   revalidatePath('/admin/transacciones/historial');
   revalidatePath('/admin/transacciones/cartera');
+  revalidatePath('/admin/base-datos');
 
   return {
     ok: true,
@@ -615,6 +642,50 @@ export async function procesarTransaccionAction(
     consecutivo: comprobante.consecutivo,
     totalGeneral: totales.general,
   };
+}
+
+/**
+ * Anula una transacción procesada. Si había aplicado novedad de retiro,
+ * reactiva las afiliaciones del cotizante.
+ */
+export async function anularTransaccionAction(
+  comprobanteId: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin();
+
+  const comp = await prisma.comprobante.findUnique({
+    where: { id: comprobanteId },
+    select: {
+      id: true,
+      estado: true,
+      aplicaNovedadRetiro: true,
+      cotizanteId: true,
+    },
+  });
+  if (!comp) return { error: 'Comprobante no existe' };
+  if (comp.estado === 'ANULADO') return { error: 'Ya está anulado' };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.comprobante.update({
+      where: { id: comprobanteId },
+      data: { estado: 'ANULADO' },
+    });
+
+    // Revertir novedad de retiro: reactivar afiliaciones del cotizante
+    if (comp.aplicaNovedadRetiro && comp.cotizanteId) {
+      await tx.afiliacion.updateMany({
+        where: { cotizanteId: comp.cotizanteId, estado: 'INACTIVA' },
+        data: { estado: 'ACTIVA', fechaRetiro: null },
+      });
+    }
+  });
+
+  revalidatePath('/admin/transacciones');
+  revalidatePath('/admin/transacciones/historial');
+  revalidatePath('/admin/transacciones/cartera');
+  revalidatePath('/admin/base-datos');
+
+  return { ok: true };
 }
 
 export async function listarMediosPagoAction(): Promise<
