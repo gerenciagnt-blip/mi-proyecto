@@ -1,8 +1,16 @@
 import Link from 'next/link';
-import { Wallet, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { Wallet, Search, AlertCircle } from 'lucide-react';
+import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { cn } from '@/lib/utils';
-import { cerrarPeriodoAction, reabrirPeriodoAction } from '../actions';
+import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
+import { Alert } from '@/components/ui/alert';
+import { puedeCerrarPeriodo } from './actions';
+import {
+  ConsultarCotizanteButton,
+  type ConsultaCotizante,
+} from './consultar-dialog';
+import { GestionButton } from './gestion-dialog';
+import { CerrarPeriodoButton } from './cerrar-periodo-button';
 
 export const metadata = { title: 'Cartera de cotizantes — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -28,7 +36,7 @@ const copFmt = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
 });
 
-type SP = { periodoId?: string };
+type SP = { q?: string };
 
 function fullName(c: {
   primerNombre: string;
@@ -41,87 +49,271 @@ function fullName(c: {
     .join(' ');
 }
 
+function shortName(c: { primerNombre: string; primerApellido: string }) {
+  return [c.primerNombre, c.primerApellido].filter(Boolean).join(' ');
+}
+
 export default async function CarteraPage({
   searchParams,
 }: {
   searchParams: Promise<SP>;
 }) {
   const sp = await searchParams;
+  const q = sp.q?.trim() ?? '';
 
-  const periodos = await prisma.periodoContable.findMany({
-    orderBy: [{ anio: 'desc' }, { mes: 'desc' }],
+  // Período vigente = mes en curso
+  const now = new Date();
+  const anio = now.getFullYear();
+  const mes = now.getMonth() + 1;
+  const periodo = await prisma.periodoContable.findUnique({
+    where: { anio_mes: { anio, mes } },
+  });
+
+  if (!periodo) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+            <Wallet className="h-6 w-6 text-brand-blue" />
+            Cartera de cotizantes
+          </h1>
+        </header>
+        <Alert variant="warning">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>
+            No hay período contable del mes en curso. Ve a{' '}
+            <Link href="/admin/transacciones" className="underline">
+              Transacción
+            </Link>{' '}
+            para inicializarlo.
+          </span>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Cotizantes con factura INDIVIDUAL procesada y no anulada en el período
+  const conFactura = await prisma.comprobante.findMany({
+    where: {
+      periodoId: periodo.id,
+      agrupacion: 'INDIVIDUAL',
+      estado: { not: 'ANULADO' },
+      procesadoEn: { not: null },
+    },
+    select: { cotizanteId: true },
+  });
+  const facturadosIds = new Set(
+    conFactura.map((c) => c.cotizanteId).filter((x): x is string => x != null),
+  );
+
+  // Filtro por nombre/documento
+  const whereCot: Prisma.CotizanteWhereInput = {
+    afiliaciones: { some: { estado: 'ACTIVA' } },
+    id: { notIn: Array.from(facturadosIds) },
+  };
+  if (q) {
+    whereCot.OR = [
+      { numeroDocumento: { contains: q, mode: 'insensitive' } },
+      { primerNombre: { contains: q, mode: 'insensitive' } },
+      { segundoNombre: { contains: q, mode: 'insensitive' } },
+      { primerApellido: { contains: q, mode: 'insensitive' } },
+      { segundoApellido: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  // Cargo cotizantes + afiliaciones + todo lo que el motor necesita, en un solo query
+  const cotizantes = await prisma.cotizante.findMany({
+    where: whereCot,
+    orderBy: [{ primerApellido: 'asc' }, { primerNombre: 'asc' }],
     include: {
-      _count: { select: { liquidaciones: true, comprobantes: true } },
+      afiliaciones: {
+        where: { estado: 'ACTIVA' },
+        include: {
+          empresa: {
+            select: {
+              id: true,
+              nombre: true,
+              exoneraLey1607: true,
+              arl: { select: { nombre: true } },
+            },
+          },
+          cuentaCobro: { select: { razonSocial: true } },
+          asesorComercial: { select: { nombre: true } },
+          planSgss: {
+            select: {
+              codigo: true,
+              nombre: true,
+              incluyeEps: true,
+              incluyeAfp: true,
+              incluyeArl: true,
+              incluyeCcf: true,
+            },
+          },
+          eps: { select: { nombre: true } },
+          afp: { select: { nombre: true } },
+          arl: { select: { nombre: true } },
+          ccf: { select: { nombre: true } },
+          serviciosAdicionales: {
+            include: {
+              servicio: {
+                select: { id: true, codigo: true, nombre: true, precio: true },
+              },
+            },
+          },
+        },
+      },
+      gestionesCartera: {
+        where: { periodoId: periodo.id },
+        select: { id: true },
+      },
     },
   });
 
-  const now = new Date();
-  const periodo =
-    (sp.periodoId && periodos.find((p) => p.id === sp.periodoId)) ||
-    periodos.find((p) => p.anio === now.getFullYear() && p.mes === now.getMonth() + 1) ||
-    periodos[0] ||
-    null;
+  // Tarifas + FSP — cargo una sola vez
+  const [tarifas, fspRangos] = await Promise.all([
+    prisma.tarifaSgss.findMany({ where: { active: true } }),
+    prisma.fspRango.findMany({
+      where: { active: true },
+      orderBy: { smlvDesde: 'asc' },
+    }),
+  ]);
 
-  // Comprobantes del período agrupados por estado
-  const comprobantes = periodo
-    ? await prisma.comprobante.findMany({
-        where: { periodoId: periodo.id },
-        include: {
-          cotizante: true,
-          cuentaCobro: { select: { codigo: true, razonSocial: true } },
-          asesorComercial: { select: { codigo: true, nombre: true } },
+  type FilaCartera = {
+    cotizanteId: string;
+    tipoDoc: string;
+    numDoc: string;
+    nombre: string;
+    nombreCompleto: string;
+    empresaPlanilla: string | null;
+    empresaCC: string | null;
+    asesor: string | null;
+    totalGeneral: number;
+    gestionesCount: number;
+    consulta: ConsultaCotizante;
+  };
+
+  const filas: FilaCartera[] = [];
+  let totalGeneralCartera = 0;
+
+  for (const c of cotizantes) {
+    if (c.afiliaciones.length === 0) continue;
+
+    let totalCot = 0;
+    const afilsConsulta: ConsultaCotizante['afiliaciones'] = [];
+
+    // Para los campos de la tabla, tomamos la primera afiliación como "representativa"
+    const primera = c.afiliaciones[0];
+    if (!primera) continue;
+
+    for (const af of c.afiliaciones) {
+      const calc = calcularLiquidacion(
+        {
+          afiliacion: {
+            id: af.id,
+            modalidad: af.modalidad,
+            nivelRiesgo: af.nivelRiesgo,
+            salario: af.salario,
+            valorAdministracion: af.valorAdministracion,
+            fechaIngreso: af.fechaIngreso,
+            empresa: af.empresa,
+            planSgss: af.planSgss,
+            eps: af.eps,
+            afp: af.afp,
+            arl: af.arl,
+            ccf: af.ccf,
+            serviciosAdicionales: af.serviciosAdicionales.map((s) => ({
+              id: s.servicio.id,
+              codigo: s.servicio.codigo,
+              nombre: s.servicio.nombre,
+              precio: s.servicio.precio,
+            })),
+          },
+          periodo: { anio: periodo.anio, mes: periodo.mes },
+          smlv: periodo.smlvSnapshot,
+          forzarTipo: 'MENSUALIDAD', // cartera es siempre mensualidad
         },
-      })
-    : [];
+        tarifas,
+        fspRangos,
+      );
+      if (!calc) continue;
 
-  // Totales globales del período
-  const totales = comprobantes.reduce(
-    (acc, c) => {
-      const total = Number(c.totalGeneral);
-      const pagado = Number(c.totalPagado);
-      acc.emitido += total;
-      acc.cobrado += pagado;
-      if (c.estado !== 'ANULADO') acc.pendiente += total - pagado;
-      return acc;
-    },
-    { emitido: 0, cobrado: 0, pendiente: 0 },
-  );
+      totalCot += calc.totalGeneral;
 
-  // Sólo filas de cobro (excluye reportes por asesor) pendientes
-  const pendientes = comprobantes
-    .filter(
-      (c) =>
-        c.agrupacion !== 'ASESOR_COMERCIAL' &&
-        c.estado !== 'PAGADO' &&
-        c.estado !== 'ANULADO',
-    )
-    .map((c) => {
-      let destinatario = '—';
-      let sub: string | undefined;
-      if (c.agrupacion === 'INDIVIDUAL' && c.cotizante) {
-        destinatario = fullName(c.cotizante);
-        sub = `${c.cotizante.tipoDocumento} ${c.cotizante.numeroDocumento}`;
-      } else if (c.agrupacion === 'EMPRESA_CC' && c.cuentaCobro) {
-        destinatario = c.cuentaCobro.razonSocial;
-        sub = c.cuentaCobro.codigo;
-      }
-      const total = Number(c.totalGeneral);
-      const pagado = Number(c.totalPagado);
-      return {
-        id: c.id,
-        consecutivo: c.consecutivo,
-        tipo: c.tipo,
-        destinatario,
-        sub,
-        total,
-        pagado,
-        saldo: total - pagado,
-        estado: c.estado,
-      };
+      afilsConsulta.push({
+        id: af.id,
+        empresaPlanilla: af.empresa?.nombre ?? null,
+        empresaCC: af.cuentaCobro?.razonSocial ?? null,
+        asesor: af.asesorComercial?.nombre ?? null,
+        modalidad: af.modalidad,
+        nivelRiesgo: af.nivelRiesgo,
+        salario: Number(af.salario),
+        plan: af.planSgss?.nombre ?? null,
+        entidades: {
+          eps: af.eps?.nombre ?? null,
+          afp: af.afp?.nombre ?? null,
+          arl:
+            af.modalidad === 'DEPENDIENTE'
+              ? af.empresa?.arl?.nombre ?? null
+              : af.arl?.nombre ?? null,
+          ccf: af.ccf?.nombre ?? null,
+        },
+        ibc: calc.ibc,
+        dias: calc.diasCotizados,
+        totalSgss: calc.totalSgss,
+        totalAdmon: calc.totalAdmon,
+        totalServicios: calc.totalServicios,
+        totalGeneral: calc.totalGeneral,
+        conceptos: calc.conceptos.map((x) => ({
+          concepto: x.concepto,
+          subconcepto: x.subconcepto ?? null,
+          porcentaje: x.porcentaje,
+          valor: x.valor,
+        })),
+      });
+    }
+
+    if (afilsConsulta.length === 0) continue;
+
+    filas.push({
+      cotizanteId: c.id,
+      tipoDoc: c.tipoDocumento,
+      numDoc: c.numeroDocumento,
+      nombre: shortName(c),
+      nombreCompleto: fullName(c),
+      empresaPlanilla: primera.empresa?.nombre ?? null,
+      empresaCC: primera.cuentaCobro?.razonSocial ?? null,
+      asesor: primera.asesorComercial?.nombre ?? null,
+      totalGeneral: totalCot,
+      gestionesCount: c.gestionesCartera.length,
+      consulta: {
+        cotizante: {
+          tipoDocumento: c.tipoDocumento,
+          numeroDocumento: c.numeroDocumento,
+          nombreCompleto: fullName(c),
+          email: c.email,
+          telefono: c.telefono,
+          celular: c.celular,
+          direccion: c.direccion,
+          ciudad: null, // municipio.nombre — se puede cargar si hace falta
+        },
+        afiliaciones: afilsConsulta,
+        totalGeneral: totalCot,
+      },
     });
 
+    totalGeneralCartera += totalCot;
+  }
+
+  // Cálculo "¿se puede cerrar?"
+  const habilitadoCierre = puedeCerrarPeriodo({ anio: periodo.anio, mes: periodo.mes });
+  const ultimoDia = new Date(periodo.anio, periodo.mes, 0);
+  const diasRestantes = Math.max(
+    0,
+    Math.ceil((ultimoDia.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+
   return (
-    <>
+    <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
@@ -129,212 +321,127 @@ export default async function CarteraPage({
             Cartera de cotizantes
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Saldos pendientes, totales del período y cierre contable.
+            Cotizantes sin factura de mensualidad en el período{' '}
+            <span className="font-mono font-medium">
+              {anio}-{String(mes).padStart(2, '0')}
+            </span>{' '}
+            ({MESES[mes - 1]}). Total estimado:{' '}
+            <strong className="font-mono">
+              {copFmt.format(totalGeneralCartera)}
+            </strong>
           </p>
         </div>
+        {periodo.estado === 'ABIERTO' && (
+          <CerrarPeriodoButton
+            periodoId={periodo.id}
+            periodoLabel={`${anio}-${String(mes).padStart(2, '0')}`}
+            habilitado={habilitadoCierre}
+            diasRestantes={diasRestantes}
+            cotizantesPendientes={filas.length}
+            totalPendiente={totalGeneralCartera}
+          />
+        )}
       </header>
 
-      {!periodo ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-          <p className="text-sm text-slate-500">
-            Aún no hay períodos — abre el primero desde{' '}
-            <Link href="/admin/transacciones" className="underline">
-              Transacción
-            </Link>
-            .
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Selector de período + cierre */}
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 bg-slate-50 px-5 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400">
-                    Período
-                  </span>
-                  {periodos.map((p) => {
-                    const active = p.id === periodo.id;
-                    return (
-                      <Link
-                        key={p.id}
-                        href={`/admin/transacciones/cartera?periodoId=${p.id}`}
-                        className={cn(
-                          'flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition',
-                          active
-                            ? 'bg-brand-blue/10 text-brand-blue-dark'
-                            : 'text-slate-600 hover:bg-slate-100',
-                        )}
-                      >
-                        {p.anio}-{String(p.mes).padStart(2, '0')}
-                        {p.estado === 'CERRADO' && (
-                          <Lock className="h-3 w-3 text-slate-400" />
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-
-                {/* Botón cierre/reapertura — movido desde Transacción */}
-                {periodo.estado === 'ABIERTO' ? (
-                  <form action={cerrarPeriodoAction.bind(null, periodo.id)}>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                    >
-                      <Lock className="h-3.5 w-3.5" />
-                      Cerrar período
-                    </button>
-                  </form>
-                ) : (
-                  <form action={reabrirPeriodoAction.bind(null, periodo.id)}>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      <Unlock className="h-3.5 w-3.5" />
-                      Reabrir período
-                    </button>
-                  </form>
-                )}
-              </div>
-              <p className="mt-2 text-[11px] text-slate-500">
-                {MESES[periodo.mes - 1]} {periodo.anio} ·{' '}
-                {periodo.estado === 'CERRADO' ? (
-                  <span className="text-slate-400">
-                    Cerrado {periodo.cerradoEn?.toLocaleDateString('es-CO')}
-                  </span>
-                ) : (
-                  'Abierto'
-                )}{' '}
-                · {periodo._count.comprobantes} comprobantes
-              </p>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-1 divide-x divide-slate-100 sm:grid-cols-3">
-              <Stat label="Total emitido" value={copFmt.format(totales.emitido)} tone="slate" />
-              <Stat label="Total cobrado" value={copFmt.format(totales.cobrado)} tone="emerald" />
-              <Stat
-                label="Cartera pendiente"
-                value={copFmt.format(totales.pendiente)}
-                tone="amber"
+      {/* Filtros */}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <form
+            method="GET"
+            action="/admin/transacciones/cartera"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <div className="relative flex-1 min-w-[260px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                name="q"
+                defaultValue={q}
+                placeholder="Buscar por número de documento, nombres o apellidos…"
+                className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm placeholder:text-slate-400"
               />
             </div>
-          </section>
-
-          {/* Pendientes */}
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <header className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-3">
-              <h2 className="font-heading text-base font-semibold text-slate-900">
-                Comprobantes con saldo pendiente
-              </h2>
-              <span className="text-xs text-slate-500">
-                {pendientes.length}{' '}
-                {pendientes.length === 1 ? 'registro' : 'registros'}
-              </span>
-            </header>
-
-            {pendientes.length === 0 ? (
-              <p className="p-10 text-center text-sm text-slate-400">
-                {comprobantes.length === 0
-                  ? 'Sin comprobantes generados todavía.'
-                  : 'Toda la cartera del período está al día.'}
-              </p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="px-5 py-2">Consecutivo</th>
-                    <th className="px-5 py-2">Destinatario</th>
-                    <th className="px-5 py-2">Tipo</th>
-                    <th className="px-5 py-2 text-right">Total</th>
-                    <th className="px-5 py-2 text-right">Pagado</th>
-                    <th className="px-5 py-2 text-right">Saldo</th>
-                    <th className="px-5 py-2">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {pendientes.map((p) => (
-                    <tr key={p.id}>
-                      <td className="px-5 py-2.5 font-mono text-xs font-medium">
-                        {p.consecutivo}
-                      </td>
-                      <td className="px-5 py-2.5">
-                        <p className="font-medium">{p.destinatario}</p>
-                        {p.sub && (
-                          <p className="font-mono text-[11px] text-slate-500">{p.sub}</p>
-                        )}
-                      </td>
-                      <td className="px-5 py-2.5 text-xs">
-                        {p.tipo === 'AFILIACION' ? 'Vinculación' : 'Mensualidad'}
-                      </td>
-                      <td className="px-5 py-2.5 text-right font-mono text-xs">
-                        {copFmt.format(p.total)}
-                      </td>
-                      <td className="px-5 py-2.5 text-right font-mono text-xs text-emerald-700">
-                        {copFmt.format(p.pagado)}
-                      </td>
-                      <td className="px-5 py-2.5 text-right font-mono text-sm font-semibold text-amber-700">
-                        {copFmt.format(p.saldo)}
-                      </td>
-                      <td className="px-5 py-2.5">
-                        <span
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                            p.estado === 'BORRADOR'
-                              ? 'bg-slate-100 text-slate-600 ring-slate-200'
-                              : 'bg-sky-50 text-sky-700 ring-sky-200',
-                          )}
-                        >
-                          {p.estado === 'BORRADOR' ? 'Borrador' : 'Emitido'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <button
+              type="submit"
+              className="h-9 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Buscar
+            </button>
+            {q && (
+              <Link
+                href="/admin/transacciones/cartera"
+                className="text-xs text-slate-500 hover:text-slate-900"
+              >
+                Limpiar
+              </Link>
             )}
-          </section>
+            <span className="ml-auto text-xs text-slate-500">
+              {filas.length} {filas.length === 1 ? 'cotizante' : 'cotizantes'}
+            </span>
+          </form>
+        </div>
 
-          {periodo.estado === 'ABIERTO' && totales.pendiente > 0 && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <p>
-                <strong>Atención al cerrar:</strong> el período aún tiene cartera pendiente
-                ({copFmt.format(totales.pendiente)}). Al cerrar se bloquean recálculos pero
-                podrás registrar pagos desde la sección de comprobantes hasta que todo quede
-                en estado Pagado.
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: 'slate' | 'emerald' | 'amber';
-}) {
-  const toneCls = {
-    slate: 'text-slate-900',
-    emerald: 'text-emerald-700',
-    amber: 'text-amber-700',
-  }[tone];
-  return (
-    <div className="p-5">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={cn('mt-1 font-mono text-2xl font-bold tracking-tight', toneCls)}>
-        {value}
-      </p>
+        {filas.length === 0 ? (
+          <p className="p-10 text-center text-sm text-slate-400">
+            {q
+              ? 'Sin resultados con la búsqueda actual.'
+              : 'Toda la cartera del período está al día.'}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Tipo doc</th>
+                  <th className="px-4 py-2">N° documento</th>
+                  <th className="px-4 py-2">Nombre</th>
+                  <th className="px-4 py-2">Empresa planilla</th>
+                  <th className="px-4 py-2">Empresa CC</th>
+                  <th className="px-4 py-2">Asesor</th>
+                  <th className="px-4 py-2 text-right">Total a pagar</th>
+                  <th className="px-4 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filas.map((r) => (
+                  <tr key={r.cotizanteId}>
+                    <td className="px-4 py-2.5 font-mono text-xs">{r.tipoDoc}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{r.numDoc}</td>
+                    <td className="px-4 py-2.5">
+                      <p className="font-medium">{r.nombre}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {r.empresaPlanilla ?? (
+                        <span className="italic text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {r.empresaCC ?? <span className="italic text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {r.asesor ?? <span className="italic text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-brand-blue-dark">
+                      {copFmt.format(r.totalGeneral)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex justify-end gap-1">
+                        <ConsultarCotizanteButton data={r.consulta} />
+                        <GestionButton
+                          cotizanteId={r.cotizanteId}
+                          periodoId={periodo.id}
+                          cotizanteNombre={r.nombreCompleto}
+                          gestionesIniciales={r.gestionesCount}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

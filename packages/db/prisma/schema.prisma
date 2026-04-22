@@ -517,6 +517,7 @@ model Cotizante {
 
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
+  gestionesCartera GestionCartera[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -705,6 +706,7 @@ model PeriodoContable {
 
   liquidaciones Liquidacion[]
   comprobantes  Comprobante[]
+  gestionesCartera GestionCartera[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -882,6 +884,27 @@ model Comprobante {
   @@index([procesadoEn])
   @@index([numeroPlanilla])
   @@map("comprobantes")
+}
+
+// Bitácora de gestión de cartera — registra las acciones del admin
+// para cobrar a un cotizante en un período (llamadas, emails, notas).
+model GestionCartera {
+  id          String   @id @default(cuid())
+  cotizanteId String
+  periodoId   String
+  accion      String // LLAMADA | EMAIL | SMS | VISITA | NOTA | OTRO
+  descripcion String
+  userId      String?
+  userName    String?
+  createdAt   DateTime @default(now())
+
+  cotizante Cotizante       @relation(fields: [cotizanteId], references: [id], onDelete: Cascade)
+  periodo   PeriodoContable @relation(fields: [periodoId], references: [id], onDelete: Cascade)
+
+  @@index([cotizanteId])
+  @@index([periodoId])
+  @@index([cotizanteId, periodoId])
+  @@map("gestiones_cartera")
 }
 
 // Pivote m2m. Una liquidación puede estar en varios comprobantes (p.ej.
