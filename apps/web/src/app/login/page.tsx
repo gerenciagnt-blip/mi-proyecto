@@ -25,25 +25,33 @@ export default async function LoginPage({
       className="relative flex min-h-[100dvh] min-h-screen flex-col overflow-hidden"
       style={{
         background:
-          'linear-gradient(135deg, #F2F6FB 0%, #ECF3EE 50%, #EAF4F0 100%)',
+          'radial-gradient(circle at 20% 30%, rgba(47,128,237,0.15), transparent 40%), radial-gradient(circle at 80% 70%, rgba(39,174,96,0.15), transparent 40%), linear-gradient(180deg, #F4F7FB 0%, #EAF1F9 100%)',
       }}
     >
-      {/* ===== Contenido principal (grid 2 columnas en md+) ===== */}
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center gap-8 px-5 py-8 sm:px-8 sm:py-10 md:flex-row md:gap-4 md:py-14 lg:gap-0 lg:py-16 xl:px-12">
-        {/* --- Izquierda: logo + tagline (ya viene dentro del PNG) --- */}
+      {/* Blobs decorativos (solo ≥sm) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-24 top-1/4 hidden h-72 w-72 rounded-full bg-brand-blue/10 blur-3xl sm:block"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-24 bottom-1/4 hidden h-80 w-80 rounded-full bg-brand-green/10 blur-3xl sm:block"
+      />
+
+      {/* ===== Contenido principal (2 columnas en md+) ===== */}
+      <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center gap-8 px-5 py-8 sm:px-8 sm:py-10 md:flex-row md:gap-4 md:py-14 lg:gap-0 lg:py-16 xl:px-12">
+        {/* --- Izquierda: logo con animación + tamaño responsive --- */}
         <section className="flex w-full flex-1 items-center justify-center md:pr-8 lg:pr-14 xl:pr-20">
-          <div
-            className="animate-fade-in"
-            style={{ filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.08))' }}
-          >
-            <PilaLogo size="lg" />
-          </div>
+          <PilaLogo
+            animated
+            imgClassName="w-56 sm:w-64 md:w-72 lg:w-[340px] xl:w-[420px] 2xl:w-[460px]"
+          />
         </section>
 
         {/* --- Divisor vertical (solo ≥md) --- */}
         <div
           aria-hidden
-          className="hidden h-80 w-px self-center bg-gradient-to-b from-transparent via-slate-300/60 to-transparent md:block lg:h-96"
+          className="hidden h-80 w-px self-center bg-gradient-to-b from-transparent via-slate-300/60 to-transparent md:block lg:h-[26rem]"
         />
 
         {/* --- Derecha: card del formulario --- */}
@@ -72,8 +80,8 @@ export default async function LoginPage({
         </section>
       </div>
 
-      {/* ===== Footer centrado (siempre abajo) ===== */}
-      <footer className="flex flex-col items-center gap-1 pb-5 text-xs text-brand-text-muted sm:pb-7">
+      {/* ===== Footer centrado ===== */}
+      <footer className="relative flex flex-col items-center gap-1 pb-5 text-xs text-brand-text-muted sm:pb-7">
         <div className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5" />
           <span>Acceso seguro y cifrado</span>
