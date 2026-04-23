@@ -5,6 +5,10 @@ import { prisma } from '@pila/db';
 import type { TipoPlanilla } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
+import {
+  planillasParaAfiliacion,
+  banderasSubsistemas,
+} from '@/lib/planos/politicas';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -22,15 +26,20 @@ async function currentUserId(): Promise<string | null> {
  *   - no están anulados
  *   - no están ya enlazados a una planilla activa
  *
- * Agrupa así:
- *   - DEPENDIENTE → 1 planilla tipo E por empresa-planilla + periodoAporte
- *   - INDEPENDIENTE → 1 planilla tipo I por cotizante + periodoAporte
+ * Agrupa aplicando la política `planillasParaAfiliacion()`:
+ *   - ORDINARIO + DEPENDIENTE    → 1 planilla tipo E por empresa + periodoAporte
+ *   - ORDINARIO + INDEPENDIENTE  → 1 planilla tipo I por cotizante + periodoAporte
+ *   - RESOLUCION + EPS+ARL       → 2 planillas (E + K) del mismo cotizante
+ *   - RESOLUCION + solo ARL      → 1 planilla K por cotizante
  *
- * Respeta `periodoAporteAnio/Mes` (clave para el desfase del independiente
- * VENCIDO — factura en mes siguiente pero cotiza por el anterior).
+ * Un mismo comprobante puede enlazarse a 2 planillas (E+K) simultáneamente
+ * gracias a que quitamos el @unique de PlanillaComprobante.comprobanteId.
  *
- * Los comprobantes con modalidades mixtas (muy raro) se procesan por la
- * modalidad de su PRIMERA liquidación.
+ * Totales: se suman TODOS los conceptos (reales e "internos") porque los
+ * CCF/ARL internos sí van al operador PILA (son el mínimo legal cuando
+ * el plan SGSS no incluye ese subsistema). Se filtra además por las
+ * banderas del tipo de planilla: tipo E-resolución solo suma EPS; tipo K
+ * solo suma ARL.
  */
 export async function generarPlanillasAction(
   periodoId: string,
@@ -62,8 +71,17 @@ export async function generarPlanillasAction(
                 select: {
                   id: true,
                   modalidad: true,
+                  regimen: true,
                   empresaId: true,
                   cotizanteId: true,
+                  planSgss: {
+                    select: {
+                      incluyeEps: true,
+                      incluyeAfp: true,
+                      incluyeArl: true,
+                      incluyeCcf: true,
+                    },
+                  },
                 },
               },
               totalGeneral: true,
@@ -103,7 +121,7 @@ export async function generarPlanillasAction(
     cotizanteId: string | null;
     periodoAporteAnio: number;
     periodoAporteMes: number;
-    comprobanteIds: string[];
+    comprobanteIds: Set<string>;
     cotizantesSet: Set<string>;
     totales: Totales;
   };
@@ -135,104 +153,144 @@ export async function generarPlanillasAction(
     const paAnio = primera.periodoAporteAnio ?? periodo.anio;
     const paMes = primera.periodoAporteMes ?? periodo.mes;
 
-    let key: string;
-    let bucketBase: Omit<Bucket, 'comprobanteIds' | 'cotizantesSet' | 'totales'>;
-
-    if (af.modalidad === 'DEPENDIENTE') {
-      if (!af.empresaId) {
-        sinAgrupar.push({
-          comprobanteId: comp.id,
-          motivo: 'dependiente sin empresa-planilla',
-        });
-        continue;
-      }
-      key = `E|${af.empresaId}|${paAnio}-${paMes}`;
-      bucketBase = {
-        tipoPlanilla: 'E',
-        empresaId: af.empresaId,
-        cotizanteId: null,
-        periodoAporteAnio: paAnio,
-        periodoAporteMes: paMes,
-      };
-    } else if (af.modalidad === 'INDEPENDIENTE') {
-      // El cotizante puede venir del comprobante (INDIVIDUAL) o de la
-      // afiliación (cuando es EMPRESA_CC/ASESOR de una persona).
-      const cotId = comp.cotizanteId ?? af.cotizanteId;
-      if (!cotId) {
-        sinAgrupar.push({
-          comprobanteId: comp.id,
-          motivo: 'independiente sin cotizante',
-        });
-        continue;
-      }
-      key = `I|${cotId}|${paAnio}-${paMes}`;
-      bucketBase = {
-        tipoPlanilla: 'I',
-        empresaId: null,
-        cotizanteId: cotId,
-        periodoAporteAnio: paAnio,
-        periodoAporteMes: paMes,
-      };
-    } else {
+    // Determinar qué tipos de planilla genera esta afiliación (política)
+    const tipos = planillasParaAfiliacion({
+      modalidad: af.modalidad,
+      regimen: af.regimen,
+      plan: af.planSgss,
+    });
+    if (tipos.length === 0) {
       sinAgrupar.push({
         comprobanteId: comp.id,
-        motivo: `modalidad desconocida: ${af.modalidad}`,
+        motivo: `modalidad/plan sin tipo de planilla: ${af.modalidad}/${af.regimen}`,
       });
       continue;
     }
 
-    let b = buckets.get(key);
-    if (!b) {
-      b = {
-        ...bucketBase,
-        comprobanteIds: [],
-        cotizantesSet: new Set(),
-        totales: newTotales(),
-      };
-      buckets.set(key, b);
-    }
+    for (const tipo of tipos) {
+      let key: string;
+      let bucketBase: Omit<
+        Bucket,
+        'comprobanteIds' | 'cotizantesSet' | 'totales'
+      >;
 
-    b.comprobanteIds.push(comp.id);
-
-    // Rastrear cotizantes únicos y acumular totales por subsistema
-    for (const cl of comp.liquidaciones) {
-      const liq = cl.liquidacion;
-      if (liq.afiliacion.cotizanteId) {
-        b.cotizantesSet.add(liq.afiliacion.cotizanteId);
+      if (tipo === 'E') {
+        // Tipo E agrupa por empresa (dependientes ordinarios). Para
+        // RESOLUCIÓN el tipo E se genera a nivel cotizante individual
+        // porque el tipo doc se fuerza a PA y no puede mezclarse con
+        // dependientes ordinarios de la misma empresa.
+        if (af.regimen === 'RESOLUCION') {
+          const cotId = comp.cotizanteId ?? af.cotizanteId;
+          if (!cotId) {
+            sinAgrupar.push({
+              comprobanteId: comp.id,
+              motivo: 'resolución E sin cotizante',
+            });
+            continue;
+          }
+          key = `E-RES|${cotId}|${paAnio}-${paMes}`;
+          bucketBase = {
+            tipoPlanilla: 'E',
+            empresaId: null,
+            cotizanteId: cotId,
+            periodoAporteAnio: paAnio,
+            periodoAporteMes: paMes,
+          };
+        } else {
+          if (!af.empresaId) {
+            sinAgrupar.push({
+              comprobanteId: comp.id,
+              motivo: 'dependiente sin empresa-planilla',
+            });
+            continue;
+          }
+          key = `E|${af.empresaId}|${paAnio}-${paMes}`;
+          bucketBase = {
+            tipoPlanilla: 'E',
+            empresaId: af.empresaId,
+            cotizanteId: null,
+            periodoAporteAnio: paAnio,
+            periodoAporteMes: paMes,
+          };
+        }
+      } else if (tipo === 'I' || tipo === 'K') {
+        const cotId = comp.cotizanteId ?? af.cotizanteId;
+        if (!cotId) {
+          sinAgrupar.push({
+            comprobanteId: comp.id,
+            motivo: `${tipo} sin cotizante`,
+          });
+          continue;
+        }
+        key = `${tipo}|${cotId}|${paAnio}-${paMes}`;
+        bucketBase = {
+          tipoPlanilla: tipo,
+          empresaId: null,
+          cotizanteId: cotId,
+          periodoAporteAnio: paAnio,
+          periodoAporteMes: paMes,
+        };
+      } else {
+        sinAgrupar.push({
+          comprobanteId: comp.id,
+          motivo: `tipo de planilla no soportado aún: ${tipo}`,
+        });
+        continue;
       }
-      for (const con of liq.conceptos) {
-        // Ignorar conceptos internos (CCF $100, ARL 1 día): NO van al
-        // operador PILA, son ingreso del aliado. Se identifican por
-        // "interno" en el subconcepto.
-        const interno =
-          con.subconcepto?.toLowerCase().includes('interno') ?? false;
-        if (interno) continue;
-        const v = Number(con.valor);
-        switch (con.concepto) {
-          case 'EPS':
-            b.totales.salud += v;
-            break;
-          case 'AFP':
-            b.totales.pension += v;
-            break;
-          case 'ARL':
-            b.totales.arl += v;
-            break;
-          case 'CCF':
-            b.totales.ccf += v;
-            break;
-          case 'SENA':
-            b.totales.sena += v;
-            break;
-          case 'ICBF':
-            b.totales.icbf += v;
-            break;
-          case 'FSP':
-            b.totales.fsp += v;
-            break;
-          // ADMIN / SERVICIO / otros: NO van a la planilla PILA
-          default:
-            break;
+
+      let b = buckets.get(key);
+      if (!b) {
+        b = {
+          ...bucketBase,
+          comprobanteIds: new Set(),
+          cotizantesSet: new Set(),
+          totales: newTotales(),
+        };
+        buckets.set(key, b);
+      }
+
+      b.comprobanteIds.add(comp.id);
+
+      // Banderas para saber qué subsistemas suma este tipo de planilla
+      const banderas = banderasSubsistemas({
+        tipoPlanilla: tipo,
+        regimen: af.regimen,
+      });
+
+      // Rastrear cotizantes únicos y acumular totales (incluyendo internos)
+      for (const cl of comp.liquidaciones) {
+        const liq = cl.liquidacion;
+        if (liq.afiliacion.cotizanteId) {
+          b.cotizantesSet.add(liq.afiliacion.cotizanteId);
+        }
+        for (const con of liq.conceptos) {
+          const v = Number(con.valor);
+          switch (con.concepto) {
+            case 'EPS':
+              if (banderas.aplicaEps) b.totales.salud += v;
+              break;
+            case 'AFP':
+              if (banderas.aplicaAfp) b.totales.pension += v;
+              break;
+            case 'ARL':
+              if (banderas.aplicaArl) b.totales.arl += v;
+              break;
+            case 'CCF':
+              if (banderas.aplicaCcf) b.totales.ccf += v;
+              break;
+            case 'SENA':
+              if (banderas.aplicaSenaIcbf) b.totales.sena += v;
+              break;
+            case 'ICBF':
+              if (banderas.aplicaSenaIcbf) b.totales.icbf += v;
+              break;
+            case 'FSP':
+              if (banderas.aplicaAfp) b.totales.fsp += v;
+              break;
+            // ADMIN / SERVICIO / otros: NO van al operador PILA
+            default:
+              break;
+          }
         }
       }
     }
@@ -283,7 +341,9 @@ export async function generarPlanillasAction(
           cantidadCotizantes: b.cotizantesSet.size,
           createdById: userId,
           comprobantes: {
-            create: b.comprobanteIds.map((cid) => ({ comprobanteId: cid })),
+            create: Array.from(b.comprobanteIds).map((cid) => ({
+              comprobanteId: cid,
+            })),
           },
         },
       });

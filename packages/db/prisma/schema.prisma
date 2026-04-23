@@ -1033,13 +1033,14 @@ model Planilla {
   @@map("planillas")
 }
 
-// Pivote Planilla ↔ Comprobante. `comprobanteId` es @unique porque un
-// comprobante solo puede estar en UNA planilla activa a la vez. Al
-// anular la planilla se borran estas filas (cascade) liberando los
-// comprobantes para re-agrupar.
+// Pivote Planilla ↔ Comprobante. Un comprobante puede estar en varias
+// planillas (p.ej. una afiliación de RESOLUCIÓN con plan EPS+ARL genera
+// dos planillas — tipo E y tipo K — que referencian al mismo comprobante).
+// La PK compuesta @@id evita duplicados dentro de la misma planilla.
+// Al anular la planilla se borran estas filas (cascade).
 model PlanillaComprobante {
   planillaId    String
-  comprobanteId String   @unique
+  comprobanteId String
   createdAt     DateTime @default(now())
 
   planilla    Planilla    @relation(fields: [planillaId], references: [id], onDelete: Cascade)

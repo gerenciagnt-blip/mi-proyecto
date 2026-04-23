@@ -1,4 +1,4 @@
-import type { Prisma, TipoPlanilla } from '@pila/db';
+import type { Prisma, TipoPlanilla, Regimen } from '@pila/db';
 import { calcularDV } from '@/lib/nit';
 import {
   padNum,
@@ -18,13 +18,21 @@ import {
   claseRiesgoPila,
   exoneraLey1607Pila,
 } from './codigos';
+import {
+  banderasSubsistemas,
+  identificacionForzada,
+  aplicaOmisionPension,
+} from './politicas';
 
 /**
  * Genera el archivo plano PILA según resolución 2388/2016:
  *   - 1 línea registro tipo 01 (encabezado, 359 bytes)
  *   - N líneas registro tipo 02 (cotizantes, 676 + 17 padding = 693 bytes)
  *
- * La función es pura. El caller (route handler) prepara los datos.
+ * Aplica políticas por tipo de planilla (E/I/K, régimen ORDINARIO vs
+ * RESOLUCION) y reglas transversales (omisión pensión por subtipo,
+ * exoneración Ley 1607, IBC CCF simbólico $1 si plan no incluye CCF,
+ * split de línea por ING/RET en plan sin ARL con días ≥ 2).
  */
 
 export const ENCABEZADO_LEN = 359;
@@ -85,7 +93,14 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
                         };
                         tipoCotizante: { select: { codigo: true } };
                         subtipo: { select: { codigo: true } };
-                        planSgss: { select: { incluyeCcf: true } };
+                        planSgss: {
+                          select: {
+                            incluyeEps: true;
+                            incluyeAfp: true;
+                            incluyeArl: true;
+                            incluyeCcf: true;
+                          };
+                        };
                         actividadEconomica: { select: { codigoCiiu: true } };
                         eps: { select: { codigo: true } };
                         afp: { select: { codigo: true } };
@@ -117,12 +132,9 @@ function primero(
   return c ? { porcentaje: c.porcentaje, valor: c.valor } : null;
 }
 
-/** Prorratea un valor mensual por días cotizados sobre base 30. */
-function prorratear(valor: number, diasCotizados: number): number {
-  if (diasCotizados <= 0) return 0;
-  if (diasCotizados >= 30) return valor;
-  return (valor / 30) * diasCotizados;
-}
+/** Tarifa ARL Nivel I según Decreto 1607: 0.522%. Usada cuando el plan
+ * no incluye ARL y corresponde emitir 1 día para ING/RET. */
+const TARIFA_ARL_NIVEL_I = 0.522;
 
 // ============ Encabezado (registro tipo 01) ============
 
@@ -131,7 +143,6 @@ export function construirEncabezado(
   totalEmpleados: number,
   totalNomina: number,
 ): string {
-  // Aportante: razón social, tipo doc, número, DV
   let razonSocial: string;
   let tipoDocAportante: string;
   let numeroDocAportante: string;
@@ -145,8 +156,6 @@ export function construirEncabezado(
     dvAportante = planilla.empresa.dv ?? '0';
     codArl = planilla.empresa.arl?.codigo ?? '';
   } else if (planilla.cotizante) {
-    // Independiente: aportante es la persona natural. DV calculado en base
-    // al número de documento (algoritmo DIAN).
     const c = planilla.cotizante;
     razonSocial = [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
       .filter(Boolean)
@@ -154,7 +163,6 @@ export function construirEncabezado(
     tipoDocAportante = tipoDocAportantePila(c.tipoDocumento);
     numeroDocAportante = c.numeroDocumento;
     dvAportante = calcularDV(c.numeroDocumento) ?? '0';
-    // ARL del independiente: de la primera liquidación
     const primeraLiq = planilla.comprobantes[0]?.comprobante.liquidaciones[0]?.liquidacion;
     codArl = primeraLiq?.afiliacion.arl?.codigo ?? '';
   } else {
@@ -163,15 +171,12 @@ export function construirEncabezado(
     );
   }
 
-  // Forma de presentación:
-  //   - Tipo E (empleados) → "S" (sucursal)
-  //   - Tipo I (independientes) → "U" (pago único)
-  const formaPresentacion = planilla.tipoPlanilla === 'E' ? 'S' : 'U';
+  // Forma presentación: E/K → "S" (sucursal) · I → "U" (pago único)
+  const formaPresentacion =
+    planilla.tipoPlanilla === 'E' || planilla.tipoPlanilla === 'K'
+      ? 'S'
+      : 'U';
 
-  // Código y nombre de sucursal: solo para forma "S". Toma de la sucursal
-  // del usuario (Dueño Aliado) que generó la planilla. Si el creador es
-  // ADMIN (sin sucursal), busca en el primer comprobante → cuenta de
-  // cobro → sucursal.
   let codSucursal = '';
   let nombreSucursal = '';
   if (formaPresentacion === 'S') {
@@ -180,7 +185,6 @@ export function construirEncabezado(
       codSucursal = userSucursal.codigo;
       nombreSucursal = userSucursal.nombre;
     } else {
-      // Fallback: sucursal de la primera cuenta de cobro encontrada
       for (const cp of planilla.comprobantes) {
         const s = cp.comprobante.cuentaCobro?.sucursal;
         if (s) {
@@ -192,7 +196,6 @@ export function construirEncabezado(
     }
   }
 
-  // Períodos: otros = periodoAporte; salud = otros+1 para E/A/Y, mismo para I/N
   const periodoOtros = padPeriodo(
     planilla.periodoAporteAnio,
     planilla.periodoAporteMes,
@@ -205,64 +208,68 @@ export function construirEncabezado(
       : { anio: planilla.periodoAporteAnio, mes: planilla.periodoAporteMes };
   const periodoSalud = padPeriodo(saludAnio, saludMes);
 
-  // Tipo aportante: E → "01" (empleador), I → "02" (independiente)
+  // Tipo aportante: E → "01" (empleador), I/K → "02" (independiente /
+  // persona natural). En resolución el E también es persona natural pero
+  // el formato del operador suele pedir "01" igualmente porque hay tipo
+  // doc PA y eso lo identifica como especial.
   const tipoAportante = planilla.tipoPlanilla === 'E' ? '01' : '02';
 
   const parts: string[] = [];
   parts.push('01'); // 1 · Tipo registro
-  parts.push('1'); // 2 · Modalidad (Electrónica)
+  parts.push('1'); // 2 · Modalidad
   parts.push(padNum(1, 4)); // 3 · Secuencia
-  parts.push(padAlpha(razonSocial, 200)); // 4 · Razón social
-  parts.push(padAlpha(tipoDocAportante, 2)); // 5 · Tipo doc
-  parts.push(padAlpha(numeroDocAportante, 16)); // 6 · Num doc
-  parts.push(padNum(Number(dvAportante) || 0, 1)); // 7 · DV
-  parts.push(padAlpha(planilla.tipoPlanilla, 1)); // 8 · Tipo planilla
-  parts.push(blank(10)); // 9 · N° planilla asociada (solo para N)
-  parts.push(blank(10)); // 10 · Fecha pago asociada (solo para N)
-  parts.push(formaPresentacion); // 11 · Forma presentación
-  parts.push(padAlpha(codSucursal, 10)); // 12 · Cód sucursal
-  parts.push(padAlpha(nombreSucursal, 40)); // 13 · Nombre sucursal
-  parts.push(padAlpha(codArl, 6)); // 14 · Cód ARL
-  parts.push(periodoOtros); // 15 · Período otros
-  parts.push(periodoSalud); // 16 · Período salud
-  parts.push(padNum(0, 10)); // 17 · N° radicación (lo asigna operador)
-  parts.push(blank(10)); // 18 · Fecha pago (lo asigna operador)
-  parts.push(padNum(totalEmpleados, 5)); // 19 · Total empleados
-  parts.push(padMoney(totalNomina, 12)); // 20 · Valor total nómina
-  parts.push(tipoAportante); // 21 · Tipo aportante
-  parts.push('00'); // 22 · Cód operador (lo rellena el operador)
+  parts.push(padAlpha(razonSocial, 200)); // 4
+  parts.push(padAlpha(tipoDocAportante, 2)); // 5
+  parts.push(padAlpha(numeroDocAportante, 16)); // 6
+  parts.push(padNum(Number(dvAportante) || 0, 1)); // 7
+  parts.push(padAlpha(planilla.tipoPlanilla, 1)); // 8
+  parts.push(blank(10)); // 9
+  parts.push(blank(10)); // 10
+  parts.push(formaPresentacion); // 11
+  parts.push(padAlpha(codSucursal, 10)); // 12
+  parts.push(padAlpha(nombreSucursal, 40)); // 13
+  parts.push(padAlpha(codArl, 6)); // 14
+  parts.push(periodoOtros); // 15
+  parts.push(periodoSalud); // 16
+  parts.push(padNum(0, 10)); // 17
+  parts.push(blank(10)); // 18
+  parts.push(padNum(totalEmpleados, 5)); // 19
+  parts.push(padMoney(totalNomina, 12)); // 20
+  parts.push(tipoAportante); // 21
+  parts.push('00'); // 22
 
-  const linea = parts.join('');
-  return assertLength(linea, ENCABEZADO_LEN, 'encabezado');
+  return assertLength(parts.join(''), ENCABEZADO_LEN, 'encabezado');
 }
 
 // ============ Línea cotizante (registro tipo 02) ============
 
 export type DatosCotizante = {
-  secuencia: number; // 1..N
+  secuencia: number;
 
-  // Identificación del cotizante
+  // Identificación
   tipoDoc: string;
   numeroDoc: string;
   primerNombre: string;
   segundoNombre: string | null;
   primerApellido: string;
   segundoApellido: string | null;
-
-  // Ubicación laboral (DIVIPOLA)
   codDepto: string;
   codMuni: string;
 
-  // Tipo cotizante desde catálogo (resolución 2388 códigos 01-56)
+  // Tipo cotizante desde catálogo
   tipoCotizanteCodigo: string;
   subtipoCodigo: string;
 
   // Afiliación
   modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
+  regimen: Regimen | null;
   nivelRiesgo: 'I' | 'II' | 'III' | 'IV' | 'V' | null;
   empresaExonera: boolean;
   fechaIngreso: Date;
   fechaRetiro: Date | null;
+  planIncluyeEps: boolean;
+  planIncluyeAfp: boolean;
+  planIncluyeArl: boolean;
   planIncluyeCcf: boolean;
 
   // Entidades
@@ -275,12 +282,12 @@ export type DatosCotizante = {
   diasCotizados: number;
   salario: number;
   tipoLiquidacion: 'VINCULACION' | 'MENSUALIDAD';
-  esPrimeraMensualidad: boolean; // calculado por el orquestador (query previo)
+  esPrimeraMensualidad: boolean;
 
   // Novedades del comprobante
   aplicaRetiroComp: boolean;
 
-  // Tarifas y valores por subsistema (tal como vienen en la BD: 12.5 = 12.5%)
+  // Tarifas y valores por subsistema
   tarifaPension: number;
   tarifaSalud: number;
   tarifaArl: number;
@@ -296,34 +303,57 @@ export type DatosCotizante = {
   valorFsp: number;
   valorSubsistencia: number;
 
-  // Actividad económica (CIIU o código interno) para el padding operador
   actividadEconomicaCodigo: string;
-
-  // Contexto
   smlv: number;
   tipoPlanilla: TipoPlanilla;
+
+  // Split ARL: cuando esta línea es la 2ª (resto del mes sin ARL) se
+  // marca campo 25 IGE con X y se omiten los valores ARL.
+  campo25Ige: boolean;
+  // Sobrescribe el flag de ING (para que la 2ª línea del split no lo
+  // muestre aunque el cotizante tenga ING). Default: null → se aplica
+  // la regla estándar.
+  ingOverride: boolean | null;
+  retOverride: boolean | null;
 };
 
 export function construirCotizante(d: DatosCotizante): string {
-  // IBC prorrateado por días (campos 42-45)
+  // Banderas + overrides según tipo de planilla y régimen
+  const banderas = banderasSubsistemas({
+    tipoPlanilla: d.tipoPlanilla,
+    regimen: d.regimen,
+  });
+  const overrides = identificacionForzada({
+    tipoPlanilla: d.tipoPlanilla,
+    regimen: d.regimen,
+  });
+
+  // Tipo doc, tipo cotizante y subtipo (posible override por política)
+  const tipoDoc = overrides.tipoDocOverride ?? d.tipoDoc;
+  const tipoCot = overrides.tipoCotizanteOverride ?? d.tipoCotizanteCodigo;
+  const subtipo = overrides.subtipoOverride ?? d.subtipoCodigo;
+
+  // Omisión de pensión por subtipo (solo aplica en tipos E/I ordinarios)
+  const omisionPension =
+    d.regimen !== 'RESOLUCION' && aplicaOmisionPension(d.subtipoCodigo);
+
+  // IBC prorrateado por días
   const ibcDia = d.salario / 30;
-  const ibcBase = Math.trunc(ibcDia * d.diasCotizados); // entero sin centavos
+  const ibcBase = Math.trunc(ibcDia * d.diasCotizados);
 
-  // IBC CCF: si el plan NO incluye CCF, el IBC va en 1 (valor simbólico
-  // para cumplir el formato sin generar cotización real).
-  const ibcCcf = d.planIncluyeCcf ? ibcBase : 1;
+  // Fallback para el día de salario exacto cuando días=0 (split línea 2
+  // con 0 días ARL pero el resto queda en 0 lógicamente): sigue usando
+  // base 30. Para líneas con días > 0 funciona normal.
 
-  // Ingreso: X solo si es primera MENSUALIDAD del cotizante (no aplica
-  // a VINCULACION). Se calcula desde query previo.
+  // Novedades ING/RET. Si vienen overrides (split), respetarlos.
   const aplicaIngreso =
-    d.tipoLiquidacion === 'MENSUALIDAD' && d.esPrimeraMensualidad;
+    d.ingOverride ??
+    (d.tipoLiquidacion === 'MENSUALIDAD' && d.esPrimeraMensualidad);
+  const aplicaRetiro = d.retOverride ?? d.aplicaRetiroComp;
   const ing = aplicaIngreso ? 'X' : ' ';
-
-  // Retiro: X solo si el comprobante tiene la novedad marcada
-  const aplicaRetiro = d.aplicaRetiroComp;
   const ret = aplicaRetiro ? 'X' : ' ';
 
-  // Exoneración Ley 1607 — basada en IBC salud (ibcBase)
+  // Exoneración Ley 1607
   const exonera = exoneraLey1607Pila({
     modalidad: d.modalidad,
     empresaExonera: d.empresaExonera,
@@ -331,36 +361,77 @@ export function construirCotizante(d: DatosCotizante): string {
     smlv: d.smlv,
   });
 
-  // Si exonera: SENA e ICBF en 0 (patrón 76=S → 66/67/68/69 = 0)
-  const tarifaSenaEfectiva = exonera === 'S' ? 0 : d.tarifaSena;
-  const valorSenaEfectivo = exonera === 'S' ? 0 : d.valorSena;
-  const tarifaIcbfEfectiva = exonera === 'S' ? 0 : d.tarifaIcbf;
-  const valorIcbfEfectivo = exonera === 'S' ? 0 : d.valorIcbf;
+  // ---- Resolver valores efectivos por subsistema ----
 
-  const totalPension = d.valorPension; // 47+48+49 (no hay voluntarios)
+  // Pensión: cero si no aplica al plano, si omisionPension, o si plan no
+  // incluye AFP (resolución)
+  const pensionActiva = banderas.aplicaAfp && !omisionPension;
+  const codAfpEf = pensionActiva ? d.codAfp : '';
+  const diasPension = pensionActiva ? d.diasCotizados : 0;
+  const ibcPension = pensionActiva ? ibcBase : 0;
+  const tarifaPensionEf = pensionActiva ? d.tarifaPension : 0;
+  const valorPensionEf = pensionActiva ? d.valorPension : 0;
+  const valorFspEf = pensionActiva ? d.valorFsp : 0;
+  const valorSubsistenciaEf = pensionActiva ? d.valorSubsistencia : 0;
 
-  // Salario integral: "F" para tipo E, blanco para tipo I
+  // Salud
+  const saludActiva = banderas.aplicaEps;
+  const codEpsEf = saludActiva ? d.codEps : '';
+  const diasSalud = saludActiva ? d.diasCotizados : 0;
+  const ibcSalud = saludActiva ? ibcBase : 0;
+  const tarifaSaludEf = saludActiva ? d.tarifaSalud : 0;
+  const valorSaludEf = saludActiva ? d.valorSalud : 0;
+
+  // ARL
+  const arlActiva = banderas.aplicaArl;
+  const codArlEf = arlActiva ? d.codArl : '';
+  const diasArl = arlActiva ? d.diasCotizados : 0;
+  const ibcArl = arlActiva ? ibcBase : 0;
+  const tarifaArlEf = arlActiva ? d.tarifaArl : 0;
+  const valorArlEf = arlActiva ? d.valorArl : 0;
+
+  // CCF
+  const ccfActiva = banderas.aplicaCcf;
+  const codCcfEf = ccfActiva ? d.codCcf : '';
+  const diasCcf = ccfActiva ? d.diasCotizados : 0;
+  // IBC CCF: si plan sin CCF → $1 simbólico (regla de negocio)
+  const ibcCcf = ccfActiva ? (d.planIncluyeCcf ? ibcBase : 1) : 0;
+  const tarifaCcfEf = ccfActiva ? d.tarifaCcf : 0;
+  const valorCcfEf = ccfActiva ? d.valorCcf : 0;
+
+  // SENA e ICBF: 0 si plan K o E-resolución; 0 además si exonera Ley 1607
+  const parafiscalesActivos = banderas.aplicaSenaIcbf && exonera !== 'S';
+  const tarifaSenaEf = parafiscalesActivos ? d.tarifaSena : 0;
+  const valorSenaEf = parafiscalesActivos ? d.valorSena : 0;
+  const tarifaIcbfEf = parafiscalesActivos ? d.tarifaIcbf : 0;
+  const valorIcbfEf = parafiscalesActivos ? d.valorIcbf : 0;
+
+  // Total cotización pensión (47+48+49)
+  const totalPension = valorPensionEf;
+
+  // Salario integral: "F" para E, blanco para I/K
   const salarioIntegral = d.tipoPlanilla === 'E' ? 'F' : ' ';
 
-  // Horas laboradas = días × 8 (factor día de 8 horas)
+  // Horas laboradas = días × 8
   const horas = d.diasCotizados * 8;
 
+  // ---- Construcción de la línea ----
   const parts: string[] = [];
-  parts.push('02'); // 1 · Tipo registro
-  parts.push(padNum(d.secuencia, 5)); // 2 · Secuencia
-  parts.push(padAlpha(d.tipoDoc, 2)); // 3 · Tipo doc
-  parts.push(padAlpha(d.numeroDoc, 16)); // 4 · Num doc
-  parts.push(padAlpha(d.tipoCotizanteCodigo, 2)); // 5 · Tipo cotizante (BD)
-  parts.push(padAlpha(d.subtipoCodigo, 2)); // 6 · Subtipo (BD)
-  parts.push(' '); // 7 · Extranjero no obligado
-  parts.push(' '); // 8 · Colombiano exterior
-  parts.push(padAlpha(d.codDepto, 2)); // 9 · Cód depto
-  parts.push(padAlpha(d.codMuni, 3)); // 10 · Cód muni
+  parts.push('02'); // 1
+  parts.push(padNum(d.secuencia, 5)); // 2
+  parts.push(padAlpha(tipoDoc, 2)); // 3
+  parts.push(padAlpha(d.numeroDoc, 16)); // 4
+  parts.push(padAlpha(tipoCot, 2)); // 5
+  parts.push(padAlpha(subtipo, 2)); // 6
+  parts.push(' '); // 7
+  parts.push(' '); // 8
+  parts.push(padAlpha(d.codDepto, 2)); // 9
+  parts.push(padAlpha(d.codMuni, 3)); // 10
   parts.push(padAlpha(d.primerApellido, 20)); // 11
   parts.push(padAlpha(d.segundoApellido, 30)); // 12
   parts.push(padAlpha(d.primerNombre, 20)); // 13
   parts.push(padAlpha(d.segundoNombre, 30)); // 14
-  parts.push(ing); // 15 · ING (primera mensualidad)
+  parts.push(ing); // 15 · ING
   parts.push(ret); // 16 · RET
   parts.push(' '); // 17 · TDE
   parts.push(' '); // 18 · TAE
@@ -370,91 +441,87 @@ export function construirCotizante(d: DatosCotizante): string {
   parts.push(' '); // 22 · Correcciones
   parts.push(' '); // 23 · VST
   parts.push(' '); // 24 · SLN
-  parts.push(' '); // 25 · IGE
+  parts.push(d.campo25Ige ? 'X' : ' '); // 25 · IGE (marcado en split línea 2)
   parts.push(' '); // 26 · LMA
   parts.push(' '); // 27 · VAC-LR
   parts.push(' '); // 28 · AVP
   parts.push(' '); // 29 · VCT
-  parts.push(padNum(0, 2)); // 30 · IRL días
-  parts.push(padAlpha(d.codAfp, 6)); // 31 · Cód AFP
-  parts.push(blank(6)); // 32 · Cód AFP destino
-  parts.push(padAlpha(d.codEps, 6)); // 33 · Cód EPS
-  parts.push(blank(6)); // 34 · Cód EPS destino
-  parts.push(padAlpha(d.codCcf, 6)); // 35 · Cód CCF
-  parts.push(padNum(d.diasCotizados, 2)); // 36 · Días pensión
-  parts.push(padNum(d.diasCotizados, 2)); // 37 · Días salud
-  parts.push(padNum(d.diasCotizados, 2)); // 38 · Días ARL
-  parts.push(padNum(d.diasCotizados, 2)); // 39 · Días CCF
-  parts.push(padMoney(d.salario, 9)); // 40 · Salario (exacto, trunc)
-  parts.push(salarioIntegral); // 41 · Salario integral (F para E)
-  parts.push(padMoney(ibcBase, 9)); // 42 · IBC pensión (proporcional)
-  parts.push(padMoney(ibcBase, 9)); // 43 · IBC salud
-  parts.push(padMoney(ibcBase, 9)); // 44 · IBC ARL
-  parts.push(padMoney(ibcCcf, 9)); // 45 · IBC CCF (1 si plan sin CCF)
-  parts.push(padTarifa(d.tarifaPension, 7)); // 46 · Tarifa pensión
-  parts.push(padMoney(d.valorPension, 9)); // 47 · Cot oblig pensión
-  parts.push(padMoney(0, 9)); // 48 · Aporte voluntario afiliado
-  parts.push(padMoney(0, 9)); // 49 · Aporte voluntario aportante
-  parts.push(padMoney(totalPension, 9)); // 50 · Total cot pensión
-  parts.push(padMoney(d.valorFsp, 9)); // 51 · FSP solidaridad
-  parts.push(padMoney(d.valorSubsistencia, 9)); // 52 · FSP subsistencia
-  parts.push(padMoney(0, 9)); // 53 · Val no retenido
-  parts.push(padTarifa(d.tarifaSalud, 7)); // 54 · Tarifa salud
-  parts.push(padMoney(d.valorSalud, 9)); // 55 · Cot oblig salud
-  parts.push(padMoney(0, 9)); // 56 · Valor UPC adicional
-  parts.push(blank(15)); // 57 · N° aut incap
-  parts.push(padMoney(0, 9)); // 58 · Val incap
-  parts.push(blank(15)); // 59 · N° aut licencia
-  parts.push(padMoney(0, 9)); // 60 · Val licencia
-  parts.push(padTarifa(d.tarifaArl, 9)); // 61 · Tarifa ARL
-  parts.push(padAlpha('0000000', 9)); // 62 · Centro trabajo
-  parts.push(padMoney(d.valorArl, 9)); // 63 · Cot ARL
-  parts.push(padTarifa(d.tarifaCcf, 7)); // 64 · Tarifa CCF
-  parts.push(padMoney(d.valorCcf, 9)); // 65 · Val CCF
-  parts.push(padTarifa(tarifaSenaEfectiva, 7)); // 66 · Tarifa SENA (0 si exonera)
-  parts.push(padMoney(valorSenaEfectivo, 9)); // 67 · Val SENA (0 si exonera)
-  parts.push(padTarifa(tarifaIcbfEfectiva, 7)); // 68 · Tarifa ICBF (0 si exonera)
-  parts.push(padMoney(valorIcbfEfectivo, 9)); // 69 · Val ICBF (0 si exonera)
-  parts.push(padTarifa(0, 7)); // 70 · Tarifa ESAP
-  parts.push(padMoney(0, 9)); // 71 · Val ESAP
-  parts.push(padTarifa(0, 7)); // 72 · Tarifa MEN
-  parts.push(padMoney(0, 9)); // 73 · Val MEN
-  parts.push(blank(2)); // 74 · Tipo doc cot principal
-  parts.push(blank(16)); // 75 · Num doc cot principal
-  parts.push(exonera); // 76 · Exonera Ley 1607
-  parts.push(padAlpha(d.codArl, 6)); // 77 · Cód ARL
-  parts.push(claseRiesgoPila(d.nivelRiesgo)); // 78 · Clase riesgo
-  parts.push(' '); // 79 · Ind tarifa especial pensión
-  parts.push(aplicaIngreso ? padDate(d.fechaIngreso) : blank(10)); // 80 · Fecha ingreso
-  parts.push(aplicaRetiro ? padDate(d.fechaRetiro) : blank(10)); // 81 · Fecha retiro
-  parts.push(blank(10)); // 82 · F inicio VSP
-  parts.push(blank(10)); // 83 · F inicio SLN
-  parts.push(blank(10)); // 84 · F fin SLN
-  parts.push(blank(10)); // 85 · F inicio IGE
-  parts.push(blank(10)); // 86 · F fin IGE
-  parts.push(blank(10)); // 87 · F inicio LMA
-  parts.push(blank(10)); // 88 · F fin LMA
-  parts.push(blank(10)); // 89 · F inicio VAC-LR
-  parts.push(blank(10)); // 90 · F fin VAC-LR
-  parts.push(blank(10)); // 91 · F inicio VCT
-  parts.push(blank(10)); // 92 · F fin VCT
-  parts.push(blank(10)); // 93 · F inicio IRL
-  parts.push(blank(10)); // 94 · F fin IRL
-  parts.push(padMoney(ibcBase, 9)); // 95 · IBC otros parafiscales
-  parts.push(padNum(horas, 3)); // 96 · N° horas laboradas (días × 8)
+  parts.push(padNum(0, 2)); // 30
+  parts.push(padAlpha(codAfpEf, 6)); // 31
+  parts.push(blank(6)); // 32
+  parts.push(padAlpha(codEpsEf, 6)); // 33
+  parts.push(blank(6)); // 34
+  parts.push(padAlpha(codCcfEf, 6)); // 35
+  parts.push(padNum(diasPension, 2)); // 36
+  parts.push(padNum(diasSalud, 2)); // 37
+  parts.push(padNum(diasArl, 2)); // 38
+  parts.push(padNum(diasCcf, 2)); // 39
+  parts.push(padMoney(d.salario, 9)); // 40
+  parts.push(salarioIntegral); // 41
+  parts.push(padMoney(ibcPension, 9)); // 42
+  parts.push(padMoney(ibcSalud, 9)); // 43
+  parts.push(padMoney(ibcArl, 9)); // 44
+  parts.push(padMoney(ibcCcf, 9)); // 45
+  parts.push(padTarifa(tarifaPensionEf, 7)); // 46
+  parts.push(padMoney(valorPensionEf, 9)); // 47
+  parts.push(padMoney(0, 9)); // 48
+  parts.push(padMoney(0, 9)); // 49
+  parts.push(padMoney(totalPension, 9)); // 50
+  parts.push(padMoney(valorFspEf, 9)); // 51
+  parts.push(padMoney(valorSubsistenciaEf, 9)); // 52
+  parts.push(padMoney(0, 9)); // 53
+  parts.push(padTarifa(tarifaSaludEf, 7)); // 54
+  parts.push(padMoney(valorSaludEf, 9)); // 55
+  parts.push(padMoney(0, 9)); // 56
+  parts.push(blank(15)); // 57
+  parts.push(padMoney(0, 9)); // 58
+  parts.push(blank(15)); // 59
+  parts.push(padMoney(0, 9)); // 60
+  parts.push(padTarifa(tarifaArlEf, 9)); // 61
+  parts.push(padAlpha('0000000', 9)); // 62
+  parts.push(padMoney(valorArlEf, 9)); // 63
+  parts.push(padTarifa(tarifaCcfEf, 7)); // 64
+  parts.push(padMoney(valorCcfEf, 9)); // 65
+  parts.push(padTarifa(tarifaSenaEf, 7)); // 66
+  parts.push(padMoney(valorSenaEf, 9)); // 67
+  parts.push(padTarifa(tarifaIcbfEf, 7)); // 68
+  parts.push(padMoney(valorIcbfEf, 9)); // 69
+  parts.push(padTarifa(0, 7)); // 70
+  parts.push(padMoney(0, 9)); // 71
+  parts.push(padTarifa(0, 7)); // 72
+  parts.push(padMoney(0, 9)); // 73
+  parts.push(blank(2)); // 74
+  parts.push(blank(16)); // 75
+  parts.push(saludActiva ? exonera : 'N'); // 76 · Solo aplica en planos con EPS
+  parts.push(padAlpha(codArlEf, 6)); // 77
+  parts.push(claseRiesgoPila(arlActiva ? d.nivelRiesgo : null)); // 78
+  parts.push(' '); // 79
+  parts.push(aplicaIngreso ? padDate(d.fechaIngreso) : blank(10)); // 80
+  parts.push(aplicaRetiro ? padDate(d.fechaRetiro) : blank(10)); // 81
+  parts.push(blank(10)); // 82
+  parts.push(blank(10)); // 83
+  parts.push(blank(10)); // 84
+  parts.push(blank(10)); // 85
+  parts.push(blank(10)); // 86
+  parts.push(blank(10)); // 87
+  parts.push(blank(10)); // 88
+  parts.push(blank(10)); // 89
+  parts.push(blank(10)); // 90
+  parts.push(blank(10)); // 91
+  parts.push(blank(10)); // 92
+  parts.push(blank(10)); // 93
+  parts.push(blank(10)); // 94
+  parts.push(padMoney(ibcSalud || ibcBase, 9)); // 95 · IBC otros parafiscales
+  parts.push(padNum(horas, 3)); // 96
 
-  // Padding operador (17 bytes): actividad económica (CIIU) justificada a
-  // la derecha con espacios a la izquierda — así luce como el plano
-  // ejemplo del operador. Si la afiliación no tiene actividad asignada,
-  // el código ya viene como "0" desde el orquestador.
+  // Padding operador (17): CIIU justificado a derecha, "0" si no hay
   const actividad = (d.actividadEconomicaCodigo || '0').trim() || '0';
   const padding = actividad
     .padStart(PADDING_OPERADOR_LEN, ' ')
     .slice(-PADDING_OPERADOR_LEN);
   parts.push(padding);
 
-  const linea = parts.join('');
-  return assertLength(linea, LINEA_LEN, `cotizante #${d.secuencia}`);
+  return assertLength(parts.join(''), LINEA_LEN, `cotizante #${d.secuencia}`);
 }
 
 // ============ Orquestador ============
@@ -465,6 +532,12 @@ export type GeneracionPlano = {
   totalNomina: number;
   filename: string;
 };
+
+/** Prorratea un valor monetario por proporción de días. */
+function prorratearValor(valor: number, diasParte: number, diasTotal: number): number {
+  if (diasTotal <= 0) return 0;
+  return Math.trunc((valor * diasParte) / diasTotal);
+}
 
 export function generarPlano(
   planilla: PlanillaConDatos,
@@ -479,7 +552,6 @@ export function generarPlano(
     key: string;
     datos: DatosCotizante;
   };
-
   const items: Item[] = [];
 
   for (const cp of planilla.comprobantes) {
@@ -491,27 +563,36 @@ export function generarPlano(
       const af = liq.afiliacion;
       const c = af.cotizante;
 
-      // Conceptos: excluimos los "internos" (no van al operador PILA)
-      const conceptos = liq.conceptos
-        .filter((x) => !x.subconcepto?.toLowerCase().includes('interno'))
-        .map((x) => ({
-          concepto: x.concepto,
-          porcentaje: Number(x.porcentaje),
-          valor: Number(x.valor),
-        }));
+      // Conceptos: se incluyen TODOS (reales e internos). Los CCF/ARL
+      // internos son el mínimo legal que sí va al operador.
+      const conceptos = liq.conceptos.map((x) => ({
+        concepto: x.concepto,
+        porcentaje: Number(x.porcentaje),
+        valor: Number(x.valor),
+      }));
 
-      const eps = primero(conceptos, 'EPS');
-      const afp = primero(conceptos, 'AFP');
-      const arl = primero(conceptos, 'ARL');
-      const ccf = primero(conceptos, 'CCF');
-      const sena = primero(conceptos, 'SENA');
-      const icbf = primero(conceptos, 'ICBF');
+      // Para cada subsistema, sumamos TODOS los conceptos de ese tipo
+      // (real + interno si hay). En la práctica normalmente hay solo uno.
+      const sumConcepto = (key: string) => {
+        const matches = conceptos.filter((x) => x.concepto === key);
+        if (matches.length === 0) return null;
+        return {
+          porcentaje: matches[0]!.porcentaje, // tarifa del primero
+          valor: matches.reduce((s, m) => s + m.valor, 0),
+        };
+      };
+
+      const eps = sumConcepto('EPS');
+      const afp = sumConcepto('AFP');
+      const arl = sumConcepto('ARL');
+      const ccf = sumConcepto('CCF');
+      const sena = sumConcepto('SENA');
+      const icbf = sumConcepto('ICBF');
       const fsp = primero(conceptos, 'FSP');
 
       totalNomina += Number(liq.ibc);
       cotizantesUnicos.add(c.id);
 
-      // Ubicación, ARL y actividad según modalidad
       const esDep = af.modalidad === 'DEPENDIENTE';
       const empresa = af.empresa;
       const codDepto = esDep
@@ -524,15 +605,11 @@ export function generarPlano(
         ? empresa?.arl?.codigo ?? af.arl?.codigo ?? ''
         : af.arl?.codigo ?? '';
 
-      // Actividad económica: se toma SIEMPRE de la afiliación del
-      // cotizante (tanto dependientes como independientes). Si la
-      // afiliación no la tiene asignada, el campo se rellena con "0".
       const actividadEconomica = af.actividadEconomica?.codigoCiiu ?? '0';
-
       const esPrimeraMensualidad = !cotizantesConMensualidadPrevia.has(c.id);
 
-      const datos: DatosCotizante = {
-        secuencia: 0,
+      // Base común para las líneas
+      const baseDatos: Omit<DatosCotizante, 'secuencia' | 'diasCotizados' | 'valorPension' | 'valorSalud' | 'valorArl' | 'valorCcf' | 'valorSena' | 'valorIcbf' | 'valorFsp' | 'valorSubsistencia' | 'campo25Ige' | 'ingOverride' | 'retOverride' | 'tarifaArl'> = {
         tipoDoc: tipoDocPila(c.tipoDocumento),
         numeroDoc: c.numeroDocumento,
         primerNombre: c.primerNombre,
@@ -544,44 +621,157 @@ export function generarPlano(
         tipoCotizanteCodigo: af.tipoCotizante?.codigo ?? '01',
         subtipoCodigo: af.subtipo?.codigo ?? '00',
         modalidad: af.modalidad,
+        regimen: af.regimen,
         nivelRiesgo: af.nivelRiesgo,
         empresaExonera: empresa?.exoneraLey1607 ?? false,
         fechaIngreso: new Date(af.fechaIngreso),
         fechaRetiro: af.fechaRetiro ? new Date(af.fechaRetiro) : null,
+        planIncluyeEps: af.planSgss?.incluyeEps ?? true,
+        planIncluyeAfp: af.planSgss?.incluyeAfp ?? true,
+        planIncluyeArl: af.planSgss?.incluyeArl ?? true,
         planIncluyeCcf: af.planSgss?.incluyeCcf ?? true,
         codAfp: af.afp?.codigo ?? '',
         codEps: af.eps?.codigo ?? '',
         codArl,
         codCcf: af.ccf?.codigo ?? '',
-        diasCotizados: liq.diasCotizados,
         salario: Number(af.salario),
         tipoLiquidacion: liq.tipo,
         esPrimeraMensualidad,
         aplicaRetiroComp,
         tarifaPension: afp?.porcentaje ?? 0,
         tarifaSalud: eps?.porcentaje ?? 0,
-        tarifaArl: arl?.porcentaje ?? 0,
         tarifaCcf: ccf?.porcentaje ?? 0,
         tarifaSena: sena?.porcentaje ?? 0,
         tarifaIcbf: icbf?.porcentaje ?? 0,
-        valorPension: afp?.valor ?? 0,
-        valorSalud: eps?.valor ?? 0,
-        valorArl: arl?.valor ?? 0,
-        valorCcf: ccf?.valor ?? 0,
-        valorSena: sena?.valor ?? 0,
-        valorIcbf: icbf?.valor ?? 0,
-        valorFsp: fsp?.valor ?? 0,
-        valorSubsistencia: 0,
         actividadEconomicaCodigo: actividadEconomica,
         smlv: Number(planilla.periodo.smlvSnapshot),
         tipoPlanilla: planilla.tipoPlanilla,
       };
 
-      items.push({
-        cotizanteId: c.id,
-        key: `${c.primerApellido}|${c.primerNombre}|${c.numeroDocumento}`,
-        datos,
-      });
+      // ---- Detección de SPLIT ARL ----
+      // Condiciones:
+      //   - Planilla tipo E/I (no aplica a K, que solo tiene ARL)
+      //   - Régimen ORDINARIO (resolución tiene sus propias reglas)
+      //   - Plan NO incluye ARL
+      //   - Hay novedad de Ingreso o Retiro
+      //   - días cotizados ≥ 2
+      const aplicaIngresoNorm =
+        liq.tipo === 'MENSUALIDAD' && esPrimeraMensualidad;
+      const aplicaRetiroNorm = aplicaRetiroComp;
+      const tipoNoEsK = planilla.tipoPlanilla !== 'K';
+      const esOrdinario = af.regimen !== 'RESOLUCION';
+      const planSinArl = !(af.planSgss?.incluyeArl ?? true);
+      const tieneNovedad = aplicaIngresoNorm || aplicaRetiroNorm;
+      const splitAplica =
+        tipoNoEsK &&
+        esOrdinario &&
+        planSinArl &&
+        tieneNovedad &&
+        liq.diasCotizados >= 2;
+
+      if (splitAplica) {
+        // ---- Línea 1: 1 día con ING/RET + ARL Nivel I ----
+        const diasL1 = 1;
+        const diasTotal = liq.diasCotizados;
+        const diasL2 = diasTotal - diasL1;
+
+        // Prorratear valores temporales (línea 1 = 1/N, línea 2 = (N-1)/N)
+        // Garantiza suma exacta: L2 = total - L1
+        const prorL1 = {
+          pension: prorratearValor(afp?.valor ?? 0, diasL1, diasTotal),
+          salud: prorratearValor(eps?.valor ?? 0, diasL1, diasTotal),
+          ccf: prorratearValor(ccf?.valor ?? 0, diasL1, diasTotal),
+          sena: prorratearValor(sena?.valor ?? 0, diasL1, diasTotal),
+          icbf: prorratearValor(icbf?.valor ?? 0, diasL1, diasTotal),
+          fsp: prorratearValor(fsp?.valor ?? 0, diasL1, diasTotal),
+        };
+        const prorL2 = {
+          pension: (afp?.valor ?? 0) - prorL1.pension,
+          salud: (eps?.valor ?? 0) - prorL1.salud,
+          ccf: (ccf?.valor ?? 0) - prorL1.ccf,
+          sena: (sena?.valor ?? 0) - prorL1.sena,
+          icbf: (icbf?.valor ?? 0) - prorL1.icbf,
+          fsp: (fsp?.valor ?? 0) - prorL1.fsp,
+        };
+
+        // Valor ARL línea 1: con tarifa Nivel I 1 día sobre IBC del día
+        const ibcDia1 = Math.trunc(Number(af.salario) / 30);
+        const valorArlL1 = Math.ceil(
+          (ibcDia1 * (TARIFA_ARL_NIVEL_I / 100)) / 100,
+        ) * 100; // redondeo round100Up
+
+        const datos1: DatosCotizante = {
+          ...baseDatos,
+          secuencia: 0,
+          diasCotizados: diasL1,
+          tarifaArl: TARIFA_ARL_NIVEL_I,
+          valorPension: prorL1.pension,
+          valorSalud: prorL1.salud,
+          valorArl: valorArlL1,
+          valorCcf: prorL1.ccf,
+          valorSena: prorL1.sena,
+          valorIcbf: prorL1.icbf,
+          valorFsp: prorL1.fsp,
+          valorSubsistencia: 0,
+          campo25Ige: false,
+          ingOverride: aplicaIngresoNorm,
+          retOverride: aplicaRetiroNorm,
+        };
+
+        const datos2: DatosCotizante = {
+          ...baseDatos,
+          secuencia: 0,
+          diasCotizados: diasL2,
+          tarifaArl: 0,
+          valorPension: prorL2.pension,
+          valorSalud: prorL2.salud,
+          valorArl: 0, // sin ARL en línea 2
+          valorCcf: prorL2.ccf,
+          valorSena: prorL2.sena,
+          valorIcbf: prorL2.icbf,
+          valorFsp: prorL2.fsp,
+          valorSubsistencia: 0,
+          campo25Ige: true, // marca IGE
+          ingOverride: false, // no repetir ING/RET en la 2ª línea
+          retOverride: false,
+        };
+
+        items.push({
+          cotizanteId: c.id,
+          key: `${c.primerApellido}|${c.primerNombre}|${c.numeroDocumento}|1`,
+          datos: datos1,
+        });
+        items.push({
+          cotizanteId: c.id,
+          key: `${c.primerApellido}|${c.primerNombre}|${c.numeroDocumento}|2`,
+          datos: datos2,
+        });
+      } else {
+        // ---- Línea única normal ----
+        const datos: DatosCotizante = {
+          ...baseDatos,
+          secuencia: 0,
+          diasCotizados: liq.diasCotizados,
+          tarifaArl: arl?.porcentaje ?? 0,
+          valorPension: afp?.valor ?? 0,
+          valorSalud: eps?.valor ?? 0,
+          valorArl: arl?.valor ?? 0,
+          valorCcf: ccf?.valor ?? 0,
+          valorSena: sena?.valor ?? 0,
+          valorIcbf: icbf?.valor ?? 0,
+          valorFsp: fsp?.valor ?? 0,
+          valorSubsistencia: 0,
+          campo25Ige: false,
+          ingOverride: null,
+          retOverride: null,
+        };
+
+        items.push({
+          cotizanteId: c.id,
+          key: `${c.primerApellido}|${c.primerNombre}|${c.numeroDocumento}|0`,
+          datos,
+        });
+      }
     }
   }
 
@@ -599,7 +789,6 @@ export function generarPlano(
 
   const contenido = [encabezado, ...lineasCot].join('\r\n') + '\r\n';
 
-  // Nombre del archivo
   const aportante =
     planilla.empresa?.nombre ??
     (planilla.cotizante
@@ -610,7 +799,7 @@ export function generarPlano(
     .replace(/[^A-Z0-9_\-]/g, '')
     .slice(0, 40);
   const periodo = padPeriodo(planilla.periodoAporteAnio, planilla.periodoAporteMes);
-  const filename = `${planilla.consecutivo}_${slug}_${periodo}.txt`;
+  const filename = `${planilla.consecutivo}_${planilla.tipoPlanilla}_${slug}_${periodo}.txt`;
 
   return {
     contenido,
