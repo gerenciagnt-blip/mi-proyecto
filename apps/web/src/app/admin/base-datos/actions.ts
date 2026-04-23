@@ -7,6 +7,29 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
+import { dispararSoporteAfiliacion } from '@/lib/soporte-af/dispatch';
+import type { AfiliacionSnapshot } from '@/lib/soporte-af/disparos';
+
+/** Normaliza un registro de Afiliacion/payload a la forma esperada por el detector de disparos. */
+function toSoporteAfSnapshot(src: {
+  estado: string;
+  fechaIngreso: Date | string;
+  empresaId: string | null;
+  nivelRiesgo: string;
+  planSgssId: string | null;
+}): AfiliacionSnapshot {
+  const fechaIso =
+    src.fechaIngreso instanceof Date
+      ? src.fechaIngreso.toISOString().slice(0, 10)
+      : String(src.fechaIngreso).slice(0, 10);
+  return {
+    estado: (src.estado === 'ACTIVA' ? 'ACTIVA' : 'INACTIVA'),
+    fechaIngreso: fechaIso,
+    empresaId: src.empresaId ?? null,
+    nivelRiesgo: src.nivelRiesgo,
+    planSgssId: src.planSgssId ?? null,
+  };
+}
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -394,6 +417,21 @@ export async function createAfiliacionAction(
       descripcion: `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
       cambios: { despues: normalized },
     });
+
+    // Soporte · Afiliaciones — dispatch automático si queda ACTIVA.
+    const autor = await currentUser();
+    await dispararSoporteAfiliacion({
+      afiliacionId,
+      antes: null,
+      despues: toSoporteAfSnapshot({
+        estado: afParsed.data.estado,
+        fechaIngreso: afParsed.data.fechaIngreso,
+        empresaId: normalized.empresaId ?? null,
+        nivelRiesgo: normalized.nivelRiesgo,
+        planSgssId: normalized.planSgssId ?? null,
+      }),
+      autorUserId: autor.id,
+    });
   } catch (e) {
     return {
       error:
@@ -544,6 +582,27 @@ export async function updateAfiliacionAction(
       descripcion: 'Afiliación actualizada',
       cambios: { antes: existing, despues: afParsed.data },
     });
+
+    // Soporte · Afiliaciones — dispatch si la edición cumple condiciones.
+    const autor = await currentUser();
+    await dispararSoporteAfiliacion({
+      afiliacionId,
+      antes: toSoporteAfSnapshot({
+        estado: existing.estado,
+        fechaIngreso: existing.fechaIngreso,
+        empresaId: existing.empresaId ?? null,
+        nivelRiesgo: existing.nivelRiesgo,
+        planSgssId: existing.planSgssId ?? null,
+      }),
+      despues: toSoporteAfSnapshot({
+        estado: afParsed.data.estado,
+        fechaIngreso: afParsed.data.fechaIngreso,
+        empresaId: normalized.empresaId ?? null,
+        nivelRiesgo: normalized.nivelRiesgo,
+        planSgssId: normalized.planSgssId ?? null,
+      }),
+      autorUserId: autor.id,
+    });
   } catch {
     return { error: 'Error al actualizar' };
   }
@@ -585,6 +644,34 @@ export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
     descripcion: `Estado cambiado de ${a.estado} a ${nuevoEstado}`,
     cambios: { antes: { estado: a.estado }, despues: { estado: nuevoEstado } },
   });
+
+  // Soporte · Afiliaciones — si el toggle deja ACTIVA, dispara REACTIVACION.
+  if (nuevoEstado === 'ACTIVA') {
+    const full = await prisma.afiliacion.findUnique({
+      where: { id: afiliacionId },
+      select: {
+        fechaIngreso: true,
+        empresaId: true,
+        nivelRiesgo: true,
+        planSgssId: true,
+      },
+    });
+    if (full) {
+      const autor = await currentUser();
+      const base = {
+        fechaIngreso: full.fechaIngreso,
+        empresaId: full.empresaId,
+        nivelRiesgo: full.nivelRiesgo,
+        planSgssId: full.planSgssId,
+      };
+      await dispararSoporteAfiliacion({
+        afiliacionId,
+        antes: toSoporteAfSnapshot({ ...base, estado: 'INACTIVA' }),
+        despues: toSoporteAfSnapshot({ ...base, estado: 'ACTIVA' }),
+        autorUserId: autor.id,
+      });
+    }
+  }
 
   revalidatePath('/admin/base-datos');
 }

@@ -183,6 +183,7 @@ model Sucursal {
   planillas          Planilla[]
   carterasAsignadas  CarteraDetallado[]
   incapacidades      Incapacidad[]
+  soportesAfiliacion SoporteAfiliacion[]
 
   @@map("sucursales")
 }
@@ -216,6 +217,10 @@ model User {
   carterasGestiones   CarteraGestion[]     @relation("CarterasGestionesUser")
   incapacidadesCreadas    Incapacidad[]        @relation("IncapacidadesCreadas")
   incapacidadesGestiones  IncapacidadGestion[] @relation("IncapacidadGestionesUser")
+  soportesAfCreados       SoporteAfiliacion[]       @relation("SoporteAfCreator")
+  soportesAfGestionados   SoporteAfiliacion[]       @relation("SoporteAfGestor")
+  soportesAfGestionesUser SoporteAfGestion[]        @relation("SoporteAfGestionUser")
+  soportesAfDocsUser      SoporteAfDocumento[]      @relation("SoporteAfDocUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -611,6 +616,7 @@ model Cotizante {
   planillas    Planilla[]
   carterasDetallado CarteraDetallado[]
   incapacidades Incapacidad[]
+  soportesAfiliacion SoporteAfiliacion[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -669,6 +675,7 @@ model Afiliacion {
 
   serviciosAdicionales AfiliacionServicio[]
   liquidaciones        Liquidacion[]
+  soportes             SoporteAfiliacion[]
 
   @@index([cotizanteId])
   @@index([empresaId])
@@ -802,6 +809,7 @@ model PeriodoContable {
   comprobantes  Comprobante[]
   gestionesCartera GestionCartera[]
   planillas     Planilla[]
+  soportesAfiliacion SoporteAfiliacion[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -1431,4 +1439,139 @@ model IncapacidadGestion {
   @@index([incapacidadId])
   @@index([userId])
   @@map("incapacidad_gestion")
+}
+
+// =========================================================================
+// Soporte · Afiliaciones — bandeja de solicitudes que genera el aliado
+// cuando crea / reactiva / modifica una afiliación ACTIVA. El patrón sigue
+// el módulo Incapacidades (documentos con retención 120d + bitácora de
+// gestiones). Los disparos son automáticos desde actions.ts de base-datos.
+// =========================================================================
+
+/**
+ * Evento que generó la solicitud. Una solicitud puede contener varios
+ * disparos simultáneos (ej. una edición que cambia empresa + plan SGSS).
+ */
+enum SoporteAfTipoDisparo {
+  NUEVA                  // creación de afiliación ACTIVA
+  REACTIVACION           // INACTIVA → ACTIVA
+  CAMBIO_FECHA_INGRESO
+  CAMBIO_EMPRESA
+  CAMBIO_NIVEL_ARL
+  CAMBIO_PLAN_SGSS
+}
+
+/** Estados del flujo de atención de soporte. */
+enum SoporteAfEstado {
+  EN_PROCESO    // default al recibirse del aliado
+  PROCESADA     // soporte validó y cerró
+  RECHAZADA     // soporte rechazó definitivamente
+  NOVEDAD       // soporte marcó "requiere ajuste del aliado"
+}
+
+/** Quién ejecutó la gestión / subida de documento. */
+enum SoporteAfAccionadaPor {
+  SOPORTE
+  ALIADO
+}
+
+/**
+ * Solicitud radicada automáticamente cuando un aliado crea/edita una
+ * afiliación que queda en estado ACTIVA. Guarda snapshots antes/después
+ * para que soporte vea qué cambió, y un consecutivo global SOP-AF-000001.
+ */
+model SoporteAfiliacion {
+  id                String   @id @default(cuid())
+  consecutivo       String   @unique                 // SOP-AF-000001
+  fechaRadicacion   DateTime @default(now())         // recibido + hora
+
+  afiliacionId      String
+  cotizanteId       String
+  sucursalId        String                            // desnormalizado para filtro rápido
+  createdById       String?                           // aliado dueño que disparó
+
+  disparos          SoporteAfTipoDisparo[]
+  snapshotAntes     Json?
+  snapshotDespues   Json?
+
+  // Snapshots ligeros para la tabla (evitan joins pesados)
+  modalidadSnap     Modalidad
+  planNombreSnap    String?
+  regimenSnap       Regimen?
+
+  estado                 SoporteAfEstado @default(EN_PROCESO)
+  estadoObservaciones    String?
+  gestionadoPorId        String?
+  gestionadoEn           DateTime?
+
+  periodoId              String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  afiliacion    Afiliacion       @relation(fields: [afiliacionId], references: [id], onDelete: Restrict)
+  cotizante     Cotizante        @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
+  sucursal      Sucursal         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  createdBy     User?            @relation("SoporteAfCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  gestionadoPor User?            @relation("SoporteAfGestor",  fields: [gestionadoPorId], references: [id], onDelete: SetNull)
+  periodo       PeriodoContable? @relation(fields: [periodoId], references: [id], onDelete: SetNull)
+
+  documentos    SoporteAfDocumento[]
+  gestiones     SoporteAfGestion[]
+
+  @@index([sucursalId, estado])
+  @@index([periodoId])
+  @@index([createdById])
+  @@index([afiliacionId])
+  @@index([cotizanteId])
+  @@index([fechaRadicacion])
+  @@map("soporte_afiliacion")
+}
+
+/**
+ * Documento adjunto a una solicitud (subido por el aliado al radicar o
+ * por soporte al gestionar). Misma política de retención 120d que
+ * incapacidades: se elimina el archivo pero el registro queda como
+ * evidencia.
+ */
+model SoporteAfDocumento {
+  id                    String                @id @default(cuid())
+  soporteAfId           String
+  accionadaPor          SoporteAfAccionadaPor
+  descripcion           String?                          // etiqueta libre opcional
+  archivoPath           String                           // relativo a UPLOADS_DIR
+  archivoHash           String                           // sha-256 hex
+  archivoMime           String
+  archivoSize           Int
+  archivoNombreOriginal String
+  eliminado             Boolean  @default(false)
+  eliminadoEn           DateTime?
+  userId                String?                          // quien subió
+  createdAt             DateTime @default(now())
+
+  soporteAf SoporteAfiliacion @relation(fields: [soporteAfId], references: [id], onDelete: Cascade)
+  user      User?             @relation("SoporteAfDocUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([soporteAfId])
+  @@index([eliminado])
+  @@map("soporte_afiliacion_documentos")
+}
+
+/** Bitácora de gestiones (aliado o soporte) sobre una solicitud. */
+model SoporteAfGestion {
+  id             String                @id @default(cuid())
+  soporteAfId    String
+  accionadaPor   SoporteAfAccionadaPor
+  nuevoEstado    SoporteAfEstado?
+  descripcion    String
+  userId         String?
+  userName       String?
+  createdAt      DateTime @default(now())
+
+  soporteAf SoporteAfiliacion @relation(fields: [soporteAfId], references: [id], onDelete: Cascade)
+  user      User?             @relation("SoporteAfGestionUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([soporteAfId])
+  @@index([userId])
+  @@map("soporte_afiliacion_gestion")
 }
