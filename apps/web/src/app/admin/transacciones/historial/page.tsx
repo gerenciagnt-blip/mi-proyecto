@@ -3,6 +3,7 @@ import { History, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { HistorialRow, type HistorialRowData } from './historial-row';
 
 export const metadata = { title: 'Historial de transacciones — Sistema PILA' };
@@ -79,30 +80,55 @@ export default async function HistorialPage({
       ? sp.agrupacion
       : undefined;
 
+  // Scope por sucursal — un comprobante pertenece a la sucursal del
+  // cotizante (INDIVIDUAL), cuentaCobro (EMPRESA_CC) o asesor (ASESOR_COMERCIAL).
+  // SUCURSAL: OR entre los 3 (los otros son null y no matchean). STAFF: sin filtro.
+  const scope = await getUserScope();
+  const scopeOR: Prisma.ComprobanteWhereInput[] =
+    scope?.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
+  const textOR: Prisma.ComprobanteWhereInput[] = q
+    ? [
+        { consecutivo: { contains: q, mode: 'insensitive' } },
+        { numeroComprobanteExt: { contains: q, mode: 'insensitive' } },
+        { numeroPlanilla: { contains: q, mode: 'insensitive' } },
+        {
+          cotizante: {
+            OR: [
+              { numeroDocumento: { contains: q, mode: 'insensitive' } },
+              { primerNombre: { contains: q, mode: 'insensitive' } },
+              { primerApellido: { contains: q, mode: 'insensitive' } },
+            ],
+          },
+        },
+        { cuentaCobro: { razonSocial: { contains: q, mode: 'insensitive' } } },
+        { asesorComercial: { nombre: { contains: q, mode: 'insensitive' } } },
+      ]
+    : [];
+
+  // Si ambos grupos están presentes, se combinan con AND para que se
+  // cumplan los dos a la vez (scope + búsqueda de texto).
+  const AND: Prisma.ComprobanteWhereInput[] = [];
+  if (scopeOR.length > 0) AND.push({ OR: scopeOR });
+  if (textOR.length > 0) AND.push({ OR: textOR });
+
   const where: Prisma.ComprobanteWhereInput = {
     procesadoEn: { not: null },
+    ...(AND.length > 0 ? { AND } : {}),
   };
   if (sp.periodoId) where.periodoId = sp.periodoId;
   if (tipoFilter) where.tipo = tipoFilter;
   if (agrupacionFilter) where.agrupacion = agrupacionFilter;
-  if (q) {
-    where.OR = [
-      { consecutivo: { contains: q, mode: 'insensitive' } },
-      { numeroComprobanteExt: { contains: q, mode: 'insensitive' } },
-      { numeroPlanilla: { contains: q, mode: 'insensitive' } },
-      {
-        cotizante: {
-          OR: [
-            { numeroDocumento: { contains: q, mode: 'insensitive' } },
-            { primerNombre: { contains: q, mode: 'insensitive' } },
-            { primerApellido: { contains: q, mode: 'insensitive' } },
-          ],
-        },
-      },
-      { cuentaCobro: { razonSocial: { contains: q, mode: 'insensitive' } } },
-      { asesorComercial: { nombre: { contains: q, mode: 'insensitive' } } },
-    ];
-  }
 
   const [total, comprobantes] = await Promise.all([
     prisma.comprobante.count({ where }),

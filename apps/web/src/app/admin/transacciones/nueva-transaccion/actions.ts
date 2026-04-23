@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { auth } from '@/auth';
 import {
   calcularLiquidacion,
@@ -81,8 +82,13 @@ export async function buscarCotizanteAction(
   const doc = numeroDocumento.trim().toUpperCase();
   if (!doc) return { found: null, error: 'Ingresa un número de documento' };
 
+  // Scope: un aliado sólo encuentra cotizantes de su sucursal.
+  const scope = await getUserScope();
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+
   const cotizante = await prisma.cotizante.findFirst({
-    where: { numeroDocumento: doc },
+    where: { numeroDocumento: doc, ...cotizanteScope },
     include: {
       afiliaciones: {
         include: { empresa: { select: { nombre: true } } },
@@ -167,6 +173,11 @@ export async function listarCuentasCobroAction(
 ): Promise<CuentaCobroDisponible[]> {
   await requireAdmin();
 
+  // Scope: aliado sólo ve SUS cuentas de cobro.
+  const scope = await getUserScope();
+  const ccScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+
   let excluirIds = new Set<string>();
   if (soloSinMovimiento) {
     const conMovimiento = await prisma.comprobante.findMany({
@@ -183,6 +194,7 @@ export async function listarCuentasCobroAction(
       active: true,
       id: { notIn: Array.from(excluirIds) },
       afiliaciones: { some: { estado: 'ACTIVA' } },
+      ...ccScope,
     },
     include: {
       sucursal: { select: { codigo: true } },
@@ -213,6 +225,13 @@ export async function listarAsesoresAction(
 ): Promise<AsesorDisponible[]> {
   await requireAdmin();
 
+  // Scope: aliado ve sus asesores + los globales (null).
+  const scope = await getUserScope();
+  const asesorScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }] }
+      : {};
+
   let excluirIds = new Set<string>();
   if (soloSinMovimiento) {
     const conMovimiento = await prisma.comprobante.findMany({
@@ -235,6 +254,7 @@ export async function listarAsesoresAction(
       active: true,
       id: { notIn: Array.from(excluirIds) },
       afiliaciones: { some: { estado: 'ACTIVA' } },
+      ...asesorScope,
     },
     include: {
       _count: { select: { afiliaciones: { where: { estado: 'ACTIVA' } } } },
@@ -317,11 +337,28 @@ export async function previsualizarTransaccionAction(
   });
   if (!periodo) return { error: 'Período no existe' };
 
+  // Scope: un aliado sólo previsualiza sobre recursos de su sucursal.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  const afScopeCotizante =
+    scope.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   // Recopila las afiliaciones a liquidar
   let afIds: string[] = [];
   switch (input.tipo) {
     case 'INDIVIDUAL': {
       if (!input.cotizanteId) return { error: 'Selecciona un cotizante' };
+      if (scope.tipo === 'SUCURSAL') {
+        const cot = await prisma.cotizante.findUnique({
+          where: { id: input.cotizanteId },
+          select: { sucursalId: true },
+        });
+        if (!cot || cot.sucursalId !== scope.sucursalId) {
+          return { error: 'No tienes permiso sobre este cotizante' };
+        }
+      }
       const afs = await prisma.afiliacion.findMany({
         where: { cotizanteId: input.cotizanteId, estado: 'ACTIVA' },
         select: { id: true },
@@ -331,8 +368,21 @@ export async function previsualizarTransaccionAction(
     }
     case 'EMPRESA_CC': {
       if (!input.cuentaCobroId) return { error: 'Selecciona una empresa CC' };
+      if (scope.tipo === 'SUCURSAL') {
+        const cc = await prisma.cuentaCobro.findUnique({
+          where: { id: input.cuentaCobroId },
+          select: { sucursalId: true },
+        });
+        if (!cc || cc.sucursalId !== scope.sucursalId) {
+          return { error: 'No tienes permiso sobre esta cuenta de cobro' };
+        }
+      }
       const afs = await prisma.afiliacion.findMany({
-        where: { cuentaCobroId: input.cuentaCobroId, estado: 'ACTIVA' },
+        where: {
+          cuentaCobroId: input.cuentaCobroId,
+          estado: 'ACTIVA',
+          ...afScopeCotizante,
+        },
         select: { id: true },
       });
       afIds = afs.map((a) => a.id);
@@ -340,8 +390,25 @@ export async function previsualizarTransaccionAction(
     }
     case 'ASESOR': {
       if (!input.asesorComercialId) return { error: 'Selecciona un asesor' };
+      if (scope.tipo === 'SUCURSAL') {
+        const asesor = await prisma.asesorComercial.findUnique({
+          where: { id: input.asesorComercialId },
+          select: { sucursalId: true },
+        });
+        if (
+          !asesor ||
+          (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)
+        ) {
+          return { error: 'No tienes permiso sobre este asesor' };
+        }
+      }
+      // Para un asesor global, filtrar liquidaciones por cotizantes de mi sucursal.
       const afs = await prisma.afiliacion.findMany({
-        where: { asesorComercialId: input.asesorComercialId, estado: 'ACTIVA' },
+        where: {
+          asesorComercialId: input.asesorComercialId,
+          estado: 'ACTIVA',
+          ...afScopeCotizante,
+        },
         select: { id: true },
       });
       afIds = afs.map((a) => a.id);
@@ -576,9 +643,26 @@ export async function procesarTransaccionAction(
   let cuentaCobroId: string | null = null;
   let asesorComercialId: string | null = null;
 
+  // Scope: un aliado sólo puede procesar transacciones sobre sus recursos.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  const afScopeCotizante =
+    scope.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   switch (input.tipo) {
     case 'INDIVIDUAL': {
       if (!input.cotizanteId) return { error: 'Selecciona un cotizante' };
+      if (scope.tipo === 'SUCURSAL') {
+        const cot = await prisma.cotizante.findUnique({
+          where: { id: input.cotizanteId },
+          select: { sucursalId: true },
+        });
+        if (!cot || cot.sucursalId !== scope.sucursalId) {
+          return { error: 'No tienes permiso sobre este cotizante' };
+        }
+      }
       const afs = await prisma.afiliacion.findMany({
         where: { cotizanteId: input.cotizanteId, estado: 'ACTIVA' },
         select: { id: true },
@@ -593,8 +677,21 @@ export async function procesarTransaccionAction(
     }
     case 'EMPRESA_CC': {
       if (!input.cuentaCobroId) return { error: 'Selecciona una empresa CC' };
+      if (scope.tipo === 'SUCURSAL') {
+        const cc = await prisma.cuentaCobro.findUnique({
+          where: { id: input.cuentaCobroId },
+          select: { sucursalId: true },
+        });
+        if (!cc || cc.sucursalId !== scope.sucursalId) {
+          return { error: 'No tienes permiso sobre esta cuenta de cobro' };
+        }
+      }
       const afs = await prisma.afiliacion.findMany({
-        where: { cuentaCobroId: input.cuentaCobroId, estado: 'ACTIVA' },
+        where: {
+          cuentaCobroId: input.cuentaCobroId,
+          estado: 'ACTIVA',
+          ...afScopeCotizante,
+        },
         select: { id: true },
       });
       if (afs.length === 0) {
@@ -607,8 +704,24 @@ export async function procesarTransaccionAction(
     }
     case 'ASESOR': {
       if (!input.asesorComercialId) return { error: 'Selecciona un asesor' };
+      if (scope.tipo === 'SUCURSAL') {
+        const asesor = await prisma.asesorComercial.findUnique({
+          where: { id: input.asesorComercialId },
+          select: { sucursalId: true },
+        });
+        if (
+          !asesor ||
+          (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)
+        ) {
+          return { error: 'No tienes permiso sobre este asesor' };
+        }
+      }
       const afs = await prisma.afiliacion.findMany({
-        where: { asesorComercialId: input.asesorComercialId, estado: 'ACTIVA' },
+        where: {
+          asesorComercialId: input.asesorComercialId,
+          estado: 'ACTIVA',
+          ...afScopeCotizante,
+        },
         select: { id: true },
       });
       if (afs.length === 0) {
@@ -833,6 +946,9 @@ export async function anularTransaccionAction(
       esCierreMasivo: true,
       cotizanteId: true,
       periodoId: true,
+      cotizante: { select: { sucursalId: true } },
+      cuentaCobro: { select: { sucursalId: true } },
+      asesorComercial: { select: { sucursalId: true } },
       // Planillas activas (no anuladas) que referencian este comprobante.
       // La lógica: si hay al menos UNA planilla en CONSOLIDADO, se bloquea
       // provisionalmente — hay que anular la planilla primero en
@@ -850,6 +966,20 @@ export async function anularTransaccionAction(
   });
   if (!comp) return { error: 'Comprobante no existe' };
   if (comp.estado === 'ANULADO') return { error: 'Ya está anulado' };
+
+  // Scope: un aliado sólo anula comprobantes de su sucursal.
+  const scopeAnular = await getUserScope();
+  if (!scopeAnular) return { error: 'Sesión inválida' };
+  if (scopeAnular.tipo === 'SUCURSAL') {
+    const mia = scopeAnular.sucursalId;
+    const permitido =
+      (comp.cotizante && comp.cotizante.sucursalId === mia) ||
+      (comp.cuentaCobro && comp.cuentaCobro.sucursalId === mia) ||
+      (comp.asesorComercial &&
+        (comp.asesorComercial.sucursalId === null ||
+          comp.asesorComercial.sucursalId === mia));
+    if (!permitido) return { error: 'No tienes permiso sobre este comprobante' };
+  }
 
   // Bloqueo por planilla pagada (definitivo)
   const pagada = comp.planillas.find((p) => p.planilla.estado === 'PAGADA');
@@ -915,8 +1045,16 @@ export async function listarMediosPagoAction(): Promise<
   Array<{ id: string; codigo: string; nombre: string }>
 > {
   await requireAdmin();
+
+  // Scope: aliado ve medios de su sucursal + globales; STAFF ve todos.
+  const scope = await getUserScope();
+  const medioScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }] }
+      : {};
+
   const medios = await prisma.medioPago.findMany({
-    where: { active: true },
+    where: { active: true, ...medioScope },
     orderBy: { codigo: 'asc' },
     select: { id: true, codigo: true, nombre: true },
   });

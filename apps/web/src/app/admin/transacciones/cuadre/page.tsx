@@ -10,8 +10,10 @@ import {
   Ban,
   Download,
 } from 'lucide-react';
+import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import {
   formatCOP,
   hoyIso,
@@ -81,12 +83,28 @@ export default async function CuadreCajaPage({
   hasta.setUTCDate(hasta.getUTCDate() + 1);
   const diaUnico = desdeIso === hastaIso;
 
+  // Scope: SUCURSAL sólo ve su caja; STAFF ve todo.
+  const scope = await getUserScope();
+  const scopeOR: Prisma.ComprobanteWhereInput[] =
+    scope?.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
   // Nota: fechaPago es la fecha en la que el dinero entró a caja.
   // Usamos fechaPago para cuadrar. procesadoEn sirve como orden secundario.
   const comprobantes = await prisma.comprobante.findMany({
     where: {
       fechaPago: { gte: desde, lt: hasta },
       procesadoEn: { not: null },
+      ...(scopeOR.length > 0 ? { OR: scopeOR } : {}),
     },
     orderBy: { procesadoEn: 'desc' },
     include: {

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
+import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { fullName, hoyIso } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -32,10 +34,26 @@ export async function GET(req: Request) {
   const hasta = new Date(Date.UTC(yHa!, mHa! - 1, dHa!, 0, 0, 0));
   hasta.setUTCDate(hasta.getUTCDate() + 1);
 
+  // Scope: aliado ve sólo su caja; STAFF ve todo.
+  const scope = await getUserScope();
+  const scopeOR: Prisma.ComprobanteWhereInput[] =
+    scope?.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
   const comprobantes = await prisma.comprobante.findMany({
     where: {
       fechaPago: { gte: desde, lt: hasta },
       procesadoEn: { not: null },
+      ...(scopeOR.length > 0 ? { OR: scopeOR } : {}),
     },
     orderBy: [{ fechaPago: 'asc' }, { procesadoEn: 'asc' }],
     include: {

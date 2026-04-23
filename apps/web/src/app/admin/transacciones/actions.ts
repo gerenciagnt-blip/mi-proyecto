@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 
@@ -80,18 +81,34 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
   if (!periodo) return { error: 'Período no existe' };
   if (periodo.estado === 'CERRADO') return { error: 'Período cerrado — reabrir primero' };
 
+  // Scope: si es SUCURSAL, sólo liquida sus propias afiliaciones.
+  const scope = await getUserScope();
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   // Wipe liquidaciones BORRADOR (y sus comprobantes BORRADOR que las
   // referencien) para regenerar limpio. Cascade de liquidacion borra sus
-  // conceptos; comprobantes BORRADOR se borran aparte.
+  // conceptos; comprobantes BORRADOR se borran aparte. Respeta scope:
+  // un aliado sólo barre SUS borradores, no los de otras sucursales.
+  const borradorAfScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { afiliacion: { cotizante: { sucursalId: scope.sucursalId } } }
+      : {};
   await prisma.comprobante.deleteMany({
-    where: { periodoId, estado: 'BORRADOR' },
+    where: {
+      periodoId,
+      estado: 'BORRADOR',
+      ...(scope?.tipo === 'SUCURSAL' ? cotizanteScope : {}),
+    },
   });
   await prisma.liquidacion.deleteMany({
-    where: { periodoId, estado: 'BORRADOR' },
+    where: { periodoId, estado: 'BORRADOR', ...borradorAfScope },
   });
 
   const afiliacionesActivas = await prisma.afiliacion.findMany({
-    where: { estado: 'ACTIVA' },
+    where: { estado: 'ACTIVA', ...cotizanteScope },
     select: { id: true },
   });
 
@@ -155,10 +172,25 @@ export async function recalcularLiquidacionAction(liquidacionId: string) {
   await requireAdmin();
   const liq = await prisma.liquidacion.findUnique({
     where: { id: liquidacionId },
-    select: { periodoId: true, afiliacionId: true, estado: true },
+    select: {
+      periodoId: true,
+      afiliacionId: true,
+      estado: true,
+      afiliacion: { select: { cotizante: { select: { sucursalId: true } } } },
+    },
   });
   if (!liq) return;
   if (liq.estado === 'PAGADA') return;
+
+  // Scope: SUCURSAL sólo recalcula SUS liquidaciones.
+  const scope = await getUserScope();
+  if (!scope) return;
+  if (
+    scope.tipo === 'SUCURSAL' &&
+    liq.afiliacion.cotizante.sucursalId !== scope.sucursalId
+  ) {
+    return;
+  }
 
   // Elimina la fila actual (cascade borra sus conceptos) para que el
   // motor cree limpia con el tipo correcto.
@@ -180,6 +212,18 @@ export async function marcarRevisadaAction(
   revisada: boolean,
 ) {
   await requireAdmin();
+
+  // Scope: SUCURSAL sólo revisa SUS liquidaciones.
+  const scope = await getUserScope();
+  if (!scope) return;
+  if (scope.tipo === 'SUCURSAL') {
+    const liq = await prisma.liquidacion.findUnique({
+      where: { id: liquidacionId },
+      select: { afiliacion: { select: { cotizante: { select: { sucursalId: true } } } } },
+    });
+    if (!liq || liq.afiliacion.cotizante.sucursalId !== scope.sucursalId) return;
+  }
+
   await prisma.liquidacion.update({
     where: { id: liquidacionId },
     data: { estado: revisada ? 'REVISADA' : 'BORRADOR' },
@@ -210,8 +254,19 @@ export async function generarComprobantesPeriodoAction(
   if (!periodo) return { error: 'Período no existe' };
   if (periodo.estado === 'CERRADO') return { error: 'Período cerrado — reabrir primero' };
 
+  // Scope: aliado solo procesa SUS liquidaciones.
+  const scope = await getUserScope();
+  const afScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { afiliacion: { cotizante: { sucursalId: scope.sucursalId } } }
+      : {};
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   const liquidaciones = await prisma.liquidacion.findMany({
-    where: { periodoId },
+    where: { periodoId, ...afScope },
     include: {
       afiliacion: {
         select: {
@@ -227,10 +282,14 @@ export async function generarComprobantesPeriodoAction(
     return { error: 'No hay liquidaciones — corre "Liquidar período" primero' };
   }
 
-  // Borra comprobantes del período que estén en BORRADOR (se regeneran).
-  // Los EMITIDOS/PAGADOS se respetan.
+  // Borra comprobantes BORRADOR del período (se regeneran). Respeta scope:
+  // un aliado sólo borra los suyos. Los EMITIDOS/PAGADOS se respetan.
   await prisma.comprobante.deleteMany({
-    where: { periodoId, estado: 'BORRADOR' },
+    where: {
+      periodoId,
+      estado: 'BORRADOR',
+      ...(scope?.tipo === 'SUCURSAL' ? cotizanteScope : {}),
+    },
   });
 
   let creados = 0;
@@ -364,8 +423,42 @@ export async function generarComprobantesPeriodoAction(
   return { ok: true, mensaje: `${creados} comprobante${creados === 1 ? '' : 's'} generado${creados === 1 ? '' : 's'}` };
 }
 
+/**
+ * Valida que un comprobante pertenece a la sucursal del usuario — si el
+ * usuario es STAFF, siempre retorna true. Para SUCURSAL: el comprobante
+ * debe estar amarrado (vía cotizante, cuentaCobro o asesor) a su sucursal.
+ */
+async function comprobanteAccesibleEnScope(comprobanteId: string): Promise<boolean> {
+  const scope = await getUserScope();
+  if (!scope) return false;
+  if (scope.tipo === 'STAFF') return true;
+
+  const c = await prisma.comprobante.findUnique({
+    where: { id: comprobanteId },
+    select: {
+      cotizante: { select: { sucursalId: true } },
+      cuentaCobro: { select: { sucursalId: true } },
+      asesorComercial: { select: { sucursalId: true } },
+    },
+  });
+  if (!c) return false;
+  // Un comprobante tiene UNO de los tres enlaces seteado; se respeta el
+  // scope si el que está seteado pertenece a la sucursal, o si es un
+  // asesor global (sucursalId null).
+  if (c.cotizante) return c.cotizante.sucursalId === scope.sucursalId;
+  if (c.cuentaCobro) return c.cuentaCobro.sucursalId === scope.sucursalId;
+  if (c.asesorComercial) {
+    return (
+      c.asesorComercial.sucursalId === null ||
+      c.asesorComercial.sucursalId === scope.sucursalId
+    );
+  }
+  return false;
+}
+
 export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
   await requireAdmin();
+  if (!(await comprobanteAccesibleEnScope(comprobanteId))) return;
   const c = await prisma.comprobante.findUnique({ where: { id: comprobanteId } });
   if (!c) return;
   const next = c.estado === 'BORRADOR' ? 'EMITIDO' : 'BORRADOR';
@@ -380,6 +473,7 @@ export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
 
 export async function anularComprobanteAction(comprobanteId: string) {
   await requireAdmin();
+  if (!(await comprobanteAccesibleEnScope(comprobanteId))) return;
   await prisma.comprobante.update({
     where: { id: comprobanteId },
     data: { estado: 'ANULADO' },

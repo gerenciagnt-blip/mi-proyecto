@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import {
   debeFacturarseEnPeriodo,
@@ -45,6 +46,15 @@ export async function GET() {
     );
   }
 
+  // Scope: un aliado sólo descarga su cartera.
+  const scope = await getUserScope();
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const comprobanteCotizanteScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   // Cotizantes ya facturados (mensualidad procesada y no anulada)
   const conFactura = await prisma.comprobante.findMany({
     where: {
@@ -53,6 +63,7 @@ export async function GET() {
       tipo: 'MENSUALIDAD',
       estado: { not: 'ANULADO' },
       procesadoEn: { not: null },
+      ...comprobanteCotizanteScope,
     },
     select: { cotizanteId: true },
   });
@@ -60,10 +71,11 @@ export async function GET() {
     conFactura.map((c) => c.cotizanteId).filter((x): x is string => x != null),
   );
 
-  // Pendientes = activos que NO están en facturados
+  // Pendientes = activos que NO están en facturados + scope por sucursal
   const whereCot: Prisma.CotizanteWhereInput = {
     afiliaciones: { some: { estado: 'ACTIVA' } },
     id: { notIn: Array.from(facturadosIds) },
+    ...cotizanteScope,
   };
   const cotizantes = await prisma.cotizante.findMany({
     where: whereCot,

@@ -11,6 +11,7 @@ import type { PeriodoContable, SmlvConfig } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import {
   TransaccionWorkflow,
   type PeriodoOpt,
@@ -71,6 +72,17 @@ function periodosHabilitados(): Array<{ anio: number; mes: number }> {
  *   - planillasPagadas: estado PAGADA.
  */
 async function kpisDelPeriodo(periodoId: string) {
+  // Scope: SUCURSAL ve KPI de su sucursal; STAFF (ADMIN/SOPORTE) ve todo.
+  const scope = await getUserScope();
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const planillaScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const comprobanteCotizanteScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   const [
     comprobantesActivos,
     cotizantesActivos,
@@ -84,14 +96,15 @@ async function kpisDelPeriodo(periodoId: string) {
         procesadoEn: { not: null },
         tipo: 'MENSUALIDAD',
         agrupacion: 'INDIVIDUAL',
+        ...comprobanteCotizanteScope,
       },
       select: { cotizanteId: true },
     }),
     prisma.cotizante.count({
-      where: { afiliaciones: { some: { estado: 'ACTIVA' } } },
+      where: { afiliaciones: { some: { estado: 'ACTIVA' } }, ...cotizanteScope },
     }),
-    prisma.planilla.count({ where: { periodoId, estado: 'CONSOLIDADO' } }),
-    prisma.planilla.count({ where: { periodoId, estado: 'PAGADA' } }),
+    prisma.planilla.count({ where: { periodoId, estado: 'CONSOLIDADO', ...planillaScope } }),
+    prisma.planilla.count({ where: { periodoId, estado: 'PAGADA', ...planillaScope } }),
   ]);
 
   const facturados = new Set(

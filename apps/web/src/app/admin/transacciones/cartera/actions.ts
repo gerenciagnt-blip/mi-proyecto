@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAdmin, requireStaff } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 import {
@@ -35,6 +36,19 @@ export async function registrarGestionAction(
   const desc = descripcion.trim();
   if (!desc) return { error: 'La descripción no puede estar vacía' };
 
+  // Scope: un aliado sólo gestiona a cotizantes de su sucursal.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  if (scope.tipo === 'SUCURSAL') {
+    const cot = await prisma.cotizante.findUnique({
+      where: { id: cotizanteId },
+      select: { sucursalId: true },
+    });
+    if (!cot || cot.sucursalId !== scope.sucursalId) {
+      return { error: 'No tienes permiso sobre este cotizante' };
+    }
+  }
+
   const u = await currentUser();
 
   await prisma.gestionCartera.create({
@@ -57,6 +71,18 @@ export async function listarGestionesAction(
   periodoId: string,
 ) {
   await requireAdmin();
+
+  // Scope: un aliado no puede listar gestiones de cotizantes de otra sucursal.
+  const scope = await getUserScope();
+  if (!scope) return [];
+  if (scope.tipo === 'SUCURSAL') {
+    const cot = await prisma.cotizante.findUnique({
+      where: { id: cotizanteId },
+      select: { sucursalId: true },
+    });
+    if (!cot || cot.sucursalId !== scope.sucursalId) return [];
+  }
+
   return prisma.gestionCartera.findMany({
     where: { cotizanteId, periodoId },
     orderBy: { createdAt: 'desc' },
@@ -86,7 +112,9 @@ export async function listarGestionesAction(
 export async function cerrarPeriodoMasivoAction(
   periodoId: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  // El cierre masivo marca el período como CERRADO (global) y afecta
+  // afiliaciones cross-sucursal. Sólo ADMIN/SOPORTE pueden ejecutarlo.
+  await requireStaff();
   const u = await currentUser();
   const userId = u.id;
 

@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import {
   formatCOP,
   fullName,
@@ -81,6 +82,15 @@ export default async function CarteraPage({
     );
   }
 
+  // Scope: SUCURSAL ve sólo sus cotizantes; STAFF ve todo.
+  const scope = await getUserScope();
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const comprobanteCotizanteScope =
+    scope?.tipo === 'SUCURSAL'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+
   // Cotizantes con MENSUALIDAD procesada y no anulada en el período.
   // Las vinculaciones/afiliaciones NO cuentan — un cotizante puede tener
   // su afiliación pagada y aún así aparecer en cartera por la mensualidad.
@@ -91,6 +101,7 @@ export default async function CarteraPage({
       tipo: 'MENSUALIDAD',
       estado: { not: 'ANULADO' },
       procesadoEn: { not: null },
+      ...comprobanteCotizanteScope,
     },
     select: { cotizanteId: true },
   });
@@ -98,10 +109,11 @@ export default async function CarteraPage({
     conFactura.map((c) => c.cotizanteId).filter((x): x is string => x != null),
   );
 
-  // Filtro por nombre/documento
+  // Filtro por nombre/documento + scope por sucursal
   const whereCot: Prisma.CotizanteWhereInput = {
     afiliaciones: { some: { estado: 'ACTIVA' } },
     id: { notIn: Array.from(facturadosIds) },
+    ...cotizanteScope,
   };
   if (q) {
     whereCot.OR = [
@@ -173,6 +185,8 @@ export default async function CarteraPage({
   // Cotizantes que YA tienen alguna mensualidad procesada en cualquier
   // período — para decidir si aplica la regla interna de ARL obligatoria.
   const cotIdsCartera = cotizantes.map((c) => c.id);
+  // Nota: el filtro por `cotizanteId: { in: cotIdsCartera }` ya limita a
+  // cotizantes de la sucursal (whereCot ya los filtró arriba).
   const conMens =
     cotIdsCartera.length > 0
       ? await prisma.comprobante.findMany({
