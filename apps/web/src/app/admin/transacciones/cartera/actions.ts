@@ -139,30 +139,6 @@ export async function cerrarPeriodoMasivoAction(
     },
   });
 
-  // Cotizantes con alguna MENSUALIDAD procesada previamente (en cualquier
-  // período, incluyendo el actual si ya hay alguna). Se usa para decidir
-  // si una afiliación-dependiente está en "primera mensualidad" — regla
-  // que cambia el periodoAporte al mes anterior.
-  const pendIds = cotizantesPendientes.map((c) => c.id);
-  const cotsConMensualidadPrevia =
-    pendIds.length > 0
-      ? await prisma.comprobante.findMany({
-          where: {
-            cotizanteId: { in: pendIds },
-            tipo: 'MENSUALIDAD',
-            estado: { not: 'ANULADO' },
-            procesadoEn: { not: null },
-          },
-          select: { cotizanteId: true },
-          distinct: ['cotizanteId'],
-        })
-      : [];
-  const conMens = new Set(
-    cotsConMensualidadPrevia
-      .map((r) => r.cotizanteId)
-      .filter((x): x is string => x != null),
-  );
-
   const ahora = new Date();
   let procesados = 0;
   let errores = 0;
@@ -198,7 +174,6 @@ export async function cerrarPeriodoMasivoAction(
       const empTra = { empleador: 0, trabajador: 0 };
       let tipoDetectado: 'VINCULACION' | 'MENSUALIDAD' = 'MENSUALIDAD';
 
-      const esPrimeraMensualidadCot = !conMens.has(c.id);
       for (const afId of afIds) {
         const af = afsMap.get(afId)!;
         const opciones = opcionesFacturacion(
@@ -208,7 +183,6 @@ export async function cerrarPeriodoMasivoAction(
             fechaIngreso: af.fechaIngreso,
           },
           { anio: periodo.anio, mes: periodo.mes },
-          esPrimeraMensualidadCot,
         );
         const r = await persistirLiquidacion(prisma, {
           periodoId,

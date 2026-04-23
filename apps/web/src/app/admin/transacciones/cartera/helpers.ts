@@ -60,42 +60,51 @@ export function debeFacturarseEnPeriodo(
 /**
  * Opciones de facturación para una afiliación elegible en el período.
  *
- * Devuelve los overrides que el caller debe pasar al motor:
- *   - `forzarTipo: MENSUALIDAD` cuando es indep VIGENTE y fecha ingreso
- *     cae dentro del período (el motor auto daría VINCULACION, pero
- *     queremos emitir mensualidad proporcional).
- *   - `periodoAporte` (año + mes) cuando el aporte SGSS corresponde a un
- *     mes distinto del período contable:
- *       - indep VENCIDO: mes anterior al período contable.
- *       - DEPENDIENTE + primera mensualidad: mes de afiliación (que es
- *         el mes inmediatamente anterior al contable, porque la primera
- *         mensualidad del dependiente siempre cae el mes siguiente a la
- *         afiliación).
+ * Devuelve los overrides que el caller debe pasar al motor.
  *
- * Si el período de aporte coincide con el período contable, no se
- * devuelve — el caller persiste NULL.
+ * REGLAS DEL NEGOCIO
+ *
+ * Dependiente:
+ *   - Opera SIEMPRE en modo vencido: los aportes del mes N se pagan en
+ *     el mes N+1. Por tanto `periodoAporte = periodoContable - 1` en
+ *     todas las mensualidades (no sólo la primera).
+ *   - En la primera mensualidad, la fecha de ingreso cae mid-mes del
+ *     período de aporte → el motor liquida días proporcionales
+ *     automáticamente (usa periodoReferencia = periodoAporte).
+ *   - Desde la 2ª mensualidad en adelante, la fecha de ingreso ya es
+ *     anterior al período de aporte → 30 días completos.
+ *
+ * Independiente:
+ *   - `periodoAporte = periodoContable` siempre (campos 15 y 16 del
+ *     plano PILA son el mismo mes para tipo I).
+ *   - El mecanismo VIGENTE / VENCIDO sólo cambia cuándo aparece en
+ *     cartera (mismo mes de afiliación vs mes siguiente) — no introduce
+ *     desfase entre contable y aporte.
+ *   - VIGENTE + fecha de ingreso en el mes del período → forzar
+ *     MENSUALIDAD proporcional (sin esta forza, el motor auto-daría
+ *     VINCULACION).
  */
 export function opcionesFacturacion(
   af: AfiliacionMinFact,
   periodo: { anio: number; mes: number },
-  /**
-   * Si es la primera mensualidad del cotizante (no tiene otras mensualidades
-   * procesadas previamente). Se usa para decidir el desfase del dependiente.
-   * Default false para callers que no tengan la info.
-   */
-  esPrimeraMensualidad: boolean = false,
 ): {
   forzarTipo?: 'MENSUALIDAD';
   periodoAporteAnio?: number;
   periodoAporteMes?: number;
 } {
   const fechaIng = toUtcDateOnly(af.fechaIngreso);
-  const firstDay = new Date(Date.UTC(periodo.anio, periodo.mes - 1, 1));
   const mismoMes =
     fechaIng.getUTCFullYear() === periodo.anio &&
     fechaIng.getUTCMonth() + 1 === periodo.mes;
 
-  // Indep VIGENTE + fecha dentro del mes → forzar MENSUALIDAD proporcional
+  // DEPENDIENTE: modo vencido permanente (aporte = mes anterior al contable)
+  if (af.modalidad === 'DEPENDIENTE') {
+    const prev = prevPeriodo(periodo);
+    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
+  }
+
+  // INDEPENDIENTE VIGENTE + fecha dentro del mes → forzar MENSUALIDAD
+  // proporcional (el motor auto daría VINCULACION si no).
   if (
     af.modalidad === 'INDEPENDIENTE' &&
     af.formaPago === 'VIGENTE' &&
@@ -104,31 +113,9 @@ export function opcionesFacturacion(
     return { forzarTipo: 'MENSUALIDAD' };
   }
 
-  // Indep VENCIDO que se factura en un período POSTERIOR al de afiliación:
-  // el aporte SGSS corresponde al mes anterior al período contable.
-  if (
-    af.modalidad === 'INDEPENDIENTE' &&
-    (af.formaPago === 'VENCIDO' || af.formaPago === null) &&
-    fechaIng.getTime() < firstDay.getTime()
-  ) {
-    const prev = prevPeriodo(periodo);
-    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
-  }
-
-  // DEPENDIENTE + primera mensualidad: el aporte corresponde al mes
-  // anterior al contable (el mes de afiliación). El motor usará ese
-  // mes para decidir días proporcionales si la fecha de ingreso cae
-  // mid-mes (ej. afilió 15/03, primera mensualidad en abril → 16 días
-  // del aporte de marzo).
-  if (
-    af.modalidad === 'DEPENDIENTE' &&
-    esPrimeraMensualidad &&
-    fechaIng.getTime() < firstDay.getTime()
-  ) {
-    const prev = prevPeriodo(periodo);
-    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
-  }
-
+  // INDEPENDIENTE (ambos VIGENTE y VENCIDO fuera del caso arriba): no hay
+  // desfase entre contable y aporte — ambos iguales al período que se
+  // está facturando.
   return {};
 }
 

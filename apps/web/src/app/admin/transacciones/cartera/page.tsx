@@ -243,7 +243,6 @@ export default async function CarteraPage({
           fechaIngreso: af.fechaIngreso,
         },
         { anio: periodo.anio, mes: periodo.mes },
-        esPrimeraMens,
       );
 
       const calc = calcularLiquidacion(

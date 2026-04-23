@@ -424,7 +424,6 @@ export async function previsualizarTransaccionAction(
         fechaIngreso: af.fechaIngreso,
       },
       { anio: periodo.anio, mes: periodo.mes },
-      esPrimeraMensualidad,
     );
 
     const calc = calcularLiquidacion(
@@ -667,7 +666,6 @@ export async function procesarTransaccionAction(
           fechaIngreso: af.fechaIngreso,
         },
         { anio: periodo.anio, mes: periodo.mes },
-        esPrimeraMensualidad,
       );
 
       // ARL interna obligatoria si: es primera mensualidad OR hay novedad de retiro

@@ -189,7 +189,6 @@ export async function GET() {
           fechaIngreso: af.fechaIngreso,
         },
         { anio: periodo.anio, mes: periodo.mes },
-        esPrimeraMens,
       );
       const calc = calcularLiquidacion(
         {
