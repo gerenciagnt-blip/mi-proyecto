@@ -3,6 +3,11 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
+import {
+  getUserScope,
+  scopeWhereOpt,
+  scopeWhereViaCotizante,
+} from '@/lib/sucursal-scope';
 import { NuevaAfiliacionButton } from './afiliacion-dialog';
 import { AfiliacionesTable, type AfiliacionRow } from './afiliaciones-table';
 
@@ -44,19 +49,32 @@ export default async function BaseDatosPage({
       : undefined;
   const q = sp.q?.trim() ?? '';
 
+  // Scope por sucursal: SUCURSAL sólo ve afiliaciones cuyo cotizante
+  // pertenece a su sucursal; STAFF (ADMIN/SOPORTE) ve todo.
+  const scope = await getUserScope();
+  const scopeOpt = await scopeWhereOpt();
+  const cotizanteScopeSolo =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cuentaCobroScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+
   const whereAfiliaciones: Prisma.AfiliacionWhereInput = {};
   if (estadoFilter) whereAfiliaciones.estado = estadoFilter;
   if (modalidadFilter) whereAfiliaciones.modalidad = modalidadFilter;
+
+  // Siempre componer el filtro por cotizante (scope + búsqueda de texto).
+  const cotizanteFilters: Prisma.CotizanteWhereInput = { ...cotizanteScopeSolo };
   if (q) {
-    whereAfiliaciones.cotizante = {
-      OR: [
-        { numeroDocumento: { contains: q, mode: 'insensitive' } },
-        { primerNombre: { contains: q, mode: 'insensitive' } },
-        { segundoNombre: { contains: q, mode: 'insensitive' } },
-        { primerApellido: { contains: q, mode: 'insensitive' } },
-        { segundoApellido: { contains: q, mode: 'insensitive' } },
-      ],
-    };
+    cotizanteFilters.OR = [
+      { numeroDocumento: { contains: q, mode: 'insensitive' } },
+      { primerNombre: { contains: q, mode: 'insensitive' } },
+      { segundoNombre: { contains: q, mode: 'insensitive' } },
+      { primerApellido: { contains: q, mode: 'insensitive' } },
+      { segundoApellido: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+  if (Object.keys(cotizanteFilters).length > 0) {
+    whereAfiliaciones.cotizante = cotizanteFilters;
   }
 
   const [
@@ -87,9 +105,23 @@ export default async function BaseDatosPage({
         serviciosAdicionales: { select: { servicioAdicionalId: true } },
       },
     }),
-    prisma.afiliacion.count({ where: { estado: 'ACTIVA' } }),
-    prisma.afiliacion.count({ where: { estado: 'INACTIVA' } }),
-    prisma.cotizante.count(),
+    prisma.afiliacion.count({
+      where: {
+        estado: 'ACTIVA',
+        ...(Object.keys(cotizanteScopeSolo).length > 0
+          ? { cotizante: cotizanteScopeSolo }
+          : {}),
+      },
+    }),
+    prisma.afiliacion.count({
+      where: {
+        estado: 'INACTIVA',
+        ...(Object.keys(cotizanteScopeSolo).length > 0
+          ? { cotizante: cotizanteScopeSolo }
+          : {}),
+      },
+    }),
+    prisma.cotizante.count({ where: cotizanteScopeSolo }),
     prisma.empresa.findMany({
       where: { active: true },
       orderBy: { nombre: 'asc' },
@@ -126,17 +158,17 @@ export default async function BaseDatosPage({
       select: { id: true, tipo: true, codigo: true, nombre: true },
     }),
     prisma.cuentaCobro.findMany({
-      where: { active: true },
+      where: { active: true, ...cuentaCobroScope },
       orderBy: [{ sucursal: { codigo: 'asc' } }, { codigo: 'asc' }],
       select: { id: true, codigo: true, razonSocial: true, sucursalId: true },
     }),
     prisma.asesorComercial.findMany({
-      where: { active: true },
+      where: { active: true, ...scopeOpt },
       orderBy: { nombre: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),
     prisma.servicioAdicional.findMany({
-      where: { active: true },
+      where: { active: true, ...scopeOpt },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true, precio: true },
     }),

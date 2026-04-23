@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
 
@@ -292,20 +293,64 @@ export async function createAfiliacionAction(
   const validationError = await validateAfiliacion(normalized, plan);
   if (validationError) return { error: validationError };
 
+  // ----- Scope: resolver sucursalId del cotizante -----
+  // SUCURSAL (aliado): se toma automáticamente del scope.
+  // STAFF (ADMIN/SOPORTE): se hereda de la cuenta de cobro elegida
+  //   (siempre tiene sucursalId NOT NULL). Si no hay cuenta de cobro
+  //   en el form, se deja null (legado — staff puede reasignar luego).
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+
+  let sucursalIdCotizante: string | null;
+  if (scope.tipo === 'SUCURSAL') {
+    sucursalIdCotizante = scope.sucursalId;
+    // Validar que la cuenta de cobro elegida (si la hay) pertenece a mi sucursal.
+    if (afParsed.data.cuentaCobroId) {
+      const cc = await prisma.cuentaCobro.findUnique({
+        where: { id: afParsed.data.cuentaCobroId },
+        select: { sucursalId: true },
+      });
+      if (!cc || cc.sucursalId !== scope.sucursalId) {
+        return { error: 'La cuenta de cobro no pertenece a tu sucursal' };
+      }
+    }
+  } else {
+    // STAFF — heredar de la cuenta de cobro si hay.
+    if (afParsed.data.cuentaCobroId) {
+      const cc = await prisma.cuentaCobro.findUnique({
+        where: { id: afParsed.data.cuentaCobroId },
+        select: { sucursalId: true },
+      });
+      sucursalIdCotizante = cc?.sucursalId ?? null;
+    } else {
+      sucursalIdCotizante = null;
+    }
+  }
+
   const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
 
   try {
     const afiliacionId = await prisma.$transaction(async (tx) => {
-      const cotizante = await tx.cotizante.upsert({
+      // Buscar cotizante existente en la misma sucursal (la unique ahora es
+      // compuesta [sucursalId, tipoDocumento, numeroDocumento]). Si existe,
+      // actualizar datos demográficos; si no, crear uno nuevo amarrado a
+      // la sucursal resuelta arriba.
+      const existing = await tx.cotizante.findFirst({
         where: {
-          tipoDocumento_numeroDocumento: {
-            tipoDocumento: cotParsed.data.tipoDocumento,
-            numeroDocumento: cotParsed.data.numeroDocumento,
-          },
+          sucursalId: sucursalIdCotizante,
+          tipoDocumento: cotParsed.data.tipoDocumento,
+          numeroDocumento: cotParsed.data.numeroDocumento,
         },
-        create: cotParsed.data,
-        update: cotParsed.data,
+        select: { id: true },
       });
+      const cotizante = existing
+        ? await tx.cotizante.update({
+            where: { id: existing.id },
+            data: cotParsed.data,
+          })
+        : await tx.cotizante.create({
+            data: { ...cotParsed.data, sucursalId: sucursalIdCotizante },
+          });
 
       const af = await tx.afiliacion.create({
         data: {
@@ -378,9 +423,35 @@ export async function updateAfiliacionAction(
 
   const existing = await prisma.afiliacion.findUnique({
     where: { id: afiliacionId },
-    include: { serviciosAdicionales: { select: { servicioAdicionalId: true } } },
+    include: {
+      serviciosAdicionales: { select: { servicioAdicionalId: true } },
+      cotizante: { select: { sucursalId: true } },
+    },
   });
   if (!existing) return { error: 'Afiliación no encontrada' };
+
+  // Scope: un usuario SUCURSAL sólo puede editar afiliaciones cuyo cotizante
+  // pertenece a su sucursal. STAFF puede editar cualquiera.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  if (
+    scope.tipo === 'SUCURSAL' &&
+    existing.cotizante.sucursalId !== scope.sucursalId
+  ) {
+    return { error: 'No tienes permiso sobre esta afiliación' };
+  }
+  if (
+    scope.tipo === 'SUCURSAL' &&
+    afParsed.data.cuentaCobroId
+  ) {
+    const cc = await prisma.cuentaCobro.findUnique({
+      where: { id: afParsed.data.cuentaCobroId },
+      select: { sucursalId: true },
+    });
+    if (!cc || cc.sucursalId !== scope.sucursalId) {
+      return { error: 'La cuenta de cobro no pertenece a tu sucursal' };
+    }
+  }
 
   // Bloqueo: si el cotizante tiene algún comprobante activo en una
   // planilla CONSOLIDADO o PAGADA, la afiliación no se puede modificar
@@ -485,8 +556,18 @@ export async function updateAfiliacionAction(
 
 export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
   await requireAdmin();
-  const a = await prisma.afiliacion.findUnique({ where: { id: afiliacionId } });
+  const a = await prisma.afiliacion.findUnique({
+    where: { id: afiliacionId },
+    include: { cotizante: { select: { sucursalId: true } } },
+  });
   if (!a) return;
+
+  // Scope: SUCURSAL sólo sobre sus cotizantes.
+  const scope = await getUserScope();
+  if (!scope) return;
+  if (scope.tipo === 'SUCURSAL' && a.cotizante.sucursalId !== scope.sucursalId) {
+    return;
+  }
 
   const nuevoEstado = a.estado === 'ACTIVA' ? 'INACTIVA' : 'ACTIVA';
   await prisma.afiliacion.update({
