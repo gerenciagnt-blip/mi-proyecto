@@ -135,7 +135,6 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
 
   revalidatePath('/admin/transacciones');
   revalidatePath('/admin/transacciones/cartera');
-  revalidatePath('/admin/transacciones/comprobantes');
   const skippedMsg = skipped > 0 ? ` · ${skipped} sin iniciar` : '';
   const errMsg = errores > 0 ? ` · ${errores} con error` : '';
   return {
@@ -362,7 +361,6 @@ export async function generarComprobantesPeriodoAction(
   }
 
   revalidatePath('/admin/transacciones');
-  revalidatePath('/admin/transacciones/comprobantes');
   return { ok: true, mensaje: `${creados} comprobante${creados === 1 ? '' : 's'} generado${creados === 1 ? '' : 's'}` };
 }
 
@@ -378,7 +376,6 @@ export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
       emitidoEn: next === 'EMITIDO' ? new Date() : null,
     },
   });
-  revalidatePath('/admin/transacciones/comprobantes');
 }
 
 export async function anularComprobanteAction(comprobanteId: string) {
@@ -387,5 +384,4 @@ export async function anularComprobanteAction(comprobanteId: string) {
     where: { id: comprobanteId },
     data: { estado: 'ANULADO' },
   });
-  revalidatePath('/admin/transacciones/comprobantes');
 }

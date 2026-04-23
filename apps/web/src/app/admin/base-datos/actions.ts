@@ -382,6 +382,39 @@ export async function updateAfiliacionAction(
   });
   if (!existing) return { error: 'Afiliación no encontrada' };
 
+  // Bloqueo: si el cotizante tiene algún comprobante activo en una
+  // planilla CONSOLIDADO o PAGADA, la afiliación no se puede modificar
+  // porque alteraría datos que ya se reportaron al operador PILA.
+  const planillasActivas = await prisma.planillaComprobante.findMany({
+    where: {
+      comprobante: {
+        cotizanteId: existing.cotizanteId,
+        estado: { not: 'ANULADO' },
+      },
+      planilla: { estado: { in: ['CONSOLIDADO', 'PAGADA'] } },
+    },
+    select: {
+      planilla: {
+        select: {
+          consecutivo: true,
+          estado: true,
+          numeroPlanillaExt: true,
+        },
+      },
+    },
+    take: 1,
+  });
+  const planillaBloq = planillasActivas[0]?.planilla;
+  if (planillaBloq) {
+    const ref =
+      planillaBloq.estado === 'PAGADA' && planillaBloq.numeroPlanillaExt
+        ? `planilla ${planillaBloq.numeroPlanillaExt} (pagada)`
+        : `planilla ${planillaBloq.consecutivo} (${planillaBloq.estado === 'PAGADA' ? 'pagada' : 'guardada'})`;
+    return {
+      error: `No se puede modificar la afiliación: el cotizante tiene un comprobante en ${ref}. Anula la planilla en Planos antes de editar.`,
+    };
+  }
+
   // (3) Cascada: limpiar IDs de entidades que no aplican al plan
   const { normalized, plan } = await prepararPayload(afParsed.data);
 

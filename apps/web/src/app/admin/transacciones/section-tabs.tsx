@@ -23,9 +23,7 @@ const TABS: Tab[] = [
     href: '/admin/transacciones/historial',
     label: 'Historial',
     icon: History,
-    match: (p) =>
-      p.startsWith('/admin/transacciones/historial') ||
-      p.startsWith('/admin/transacciones/comprobantes'),
+    match: (p) => p.startsWith('/admin/transacciones/historial'),
   },
   {
     href: '/admin/transacciones/cartera',

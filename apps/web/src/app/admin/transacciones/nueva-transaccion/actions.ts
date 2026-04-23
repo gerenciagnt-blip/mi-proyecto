@@ -805,10 +805,43 @@ export async function anularTransaccionAction(
       esCierreMasivo: true,
       cotizanteId: true,
       periodoId: true,
+      // Planillas activas (no anuladas) que referencian este comprobante.
+      // La lógica: si hay al menos UNA planilla en CONSOLIDADO, se bloquea
+      // provisionalmente — hay que anular la planilla primero en
+      // /admin/planos, lo que libera este comprobante. Si hay UNA PAGADA,
+      // se bloquea definitivamente.
+      planillas: {
+        where: { planilla: { estado: { not: 'ANULADA' } } },
+        select: {
+          planilla: {
+            select: { consecutivo: true, estado: true, numeroPlanillaExt: true },
+          },
+        },
+      },
     },
   });
   if (!comp) return { error: 'Comprobante no existe' };
   if (comp.estado === 'ANULADO') return { error: 'Ya está anulado' };
+
+  // Bloqueo por planilla pagada (definitivo)
+  const pagada = comp.planillas.find((p) => p.planilla.estado === 'PAGADA');
+  if (pagada) {
+    const num =
+      pagada.planilla.numeroPlanillaExt ?? pagada.planilla.consecutivo;
+    return {
+      error: `No se puede anular: el comprobante ya fue pagado al operador PILA en la planilla ${num}.`,
+    };
+  }
+
+  // Bloqueo por planilla guardada (provisional — se desbloquea al anular la planilla)
+  const guardada = comp.planillas.find(
+    (p) => p.planilla.estado === 'CONSOLIDADO',
+  );
+  if (guardada) {
+    return {
+      error: `Bloqueado: el comprobante está en la planilla ${guardada.planilla.consecutivo} (Guardada). Anula la planilla en Planos → Guardado antes de anular la transacción.`,
+    };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.comprobante.update({
