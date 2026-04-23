@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Wallet, Search, AlertCircle } from 'lucide-react';
+import { Wallet, Search, AlertCircle, Download } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
@@ -385,16 +385,27 @@ export default async function CarteraPage({
             </strong>
           </p>
         </div>
-        {periodoEstado === 'ABIERTO' && (
-          <CerrarPeriodoButton
-            periodoId={periodo.id}
-            periodoLabel={`${anio}-${String(mes).padStart(2, '0')}`}
-            habilitado={habilitadoCierre}
-            diasRestantes={diasRestantes}
-            cotizantesPendientes={filas.length}
-            totalPendiente={totalGeneralCartera}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {filas.length > 0 && (
+            <a
+              href="/api/transacciones/cartera/excel"
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-green px-4 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-green-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green focus-visible:ring-offset-2"
+            >
+              <Download className="h-4 w-4" />
+              Descargar Excel
+            </a>
+          )}
+          {periodoEstado === 'ABIERTO' && (
+            <CerrarPeriodoButton
+              periodoId={periodo.id}
+              periodoLabel={`${anio}-${String(mes).padStart(2, '0')}`}
+              habilitado={habilitadoCierre}
+              diasRestantes={diasRestantes}
+              cotizantesPendientes={filas.length}
+              totalPendiente={totalGeneralCartera}
+            />
+          )}
+        </div>
       </header>
 
       {/* Filtros */}

@@ -261,6 +261,16 @@ export type PreviewRow = {
   };
   empresaNombre: string | null;
   modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE';
+  /** Régimen de la afiliación (null para independientes). */
+  regimen: 'ORDINARIO' | 'RESOLUCION' | null;
+  /** Flags del plan SGSS (null si la afiliación no tiene plan asignado). */
+  plan: {
+    nombre: string;
+    incluyeEps: boolean;
+    incluyeAfp: boolean;
+    incluyeArl: boolean;
+    incluyeCcf: boolean;
+  } | null;
   tipo: 'VINCULACION' | 'MENSUALIDAD';
   ibc: number;
   diasCotizados: number;
@@ -360,6 +370,7 @@ export async function previsualizarTransaccionAction(
         },
         planSgss: {
           select: {
+            nombre: true,
             incluyeEps: true,
             incluyeAfp: true,
             incluyeArl: true,
@@ -465,6 +476,16 @@ export async function previsualizarTransaccionAction(
       },
       empresaNombre: af.empresa?.nombre ?? null,
       modalidad: af.modalidad,
+      regimen: af.regimen,
+      plan: af.planSgss
+        ? {
+            nombre: af.planSgss.nombre ?? '',
+            incluyeEps: af.planSgss.incluyeEps,
+            incluyeAfp: af.planSgss.incluyeAfp,
+            incluyeArl: af.planSgss.incluyeArl,
+            incluyeCcf: af.planSgss.incluyeCcf,
+          }
+        : null,
       tipo: calc.tipo,
       ibc: calc.ibc,
       diasCotizados: calc.diasCotizados,

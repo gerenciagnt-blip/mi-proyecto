@@ -38,12 +38,26 @@ type Props = {
   totalAdmonInicial: number;
   destinatarioInfo: { nombre: string; sub?: string } | null;
   numAfiliaciones: number;
+  /** Tipos de planilla PILA que se generarán al procesar (derivado de
+   * modalidad + régimen + plan de cada afiliación). Un cotizante de
+   * Resolución EPS+ARL produce 2 tipos (E + K). */
+  tiposPlanilla: string[];
 };
 
 // El dropdown de forma de pago lista únicamente los medios configurados
 // en el catálogo (efectivo, transferencia, etc.). El usuario selecciona
 // directamente uno; internamente siempre se guarda como POR_MEDIO_PAGO
 // + el medioPagoId elegido.
+
+const TIPO_PLANILLA_LABEL: Record<string, string> = {
+  E: 'Empleados',
+  I: 'Independientes',
+  Y: 'Indep. empresa',
+  K: 'Solo ARL',
+  N: 'Correcciones',
+  A: 'Novedad ingreso',
+  S: 'Servicio dom.',
+};
 
 export function PrefacturarDialog({
   open,
@@ -55,6 +69,7 @@ export function PrefacturarDialog({
   totalAdmonInicial,
   destinatarioInfo,
   numAfiliaciones,
+  tiposPlanilla,
 }: Props) {
   const [medioPagoId, setMedioPagoId] = useState<string>('');
   const [numero, setNumero] = useState('');
@@ -243,6 +258,42 @@ export function PrefacturarDialog({
               </p>
             )}
           </div>
+
+          {/* Aviso de planillas PILA que se generarán — útil cuando es
+              más de una (ej. Resolución EPS+ARL = E+K). */}
+          {tiposPlanilla.length > 0 && (
+            <div
+              className={`rounded-lg border p-3 text-xs ${
+                tiposPlanilla.length > 1
+                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              <p className="font-medium">
+                {tiposPlanilla.length === 1
+                  ? 'Planilla PILA que se generará'
+                  : `Se generarán ${tiposPlanilla.length} planillas PILA`}
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {tiposPlanilla.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 font-medium ring-1 ring-inset ring-slate-200"
+                  >
+                    <span className="font-mono font-bold">{t}</span>
+                    <span className="text-slate-500">·</span>
+                    <span>{TIPO_PLANILLA_LABEL[t] ?? t}</span>
+                  </span>
+                ))}
+              </div>
+              {tiposPlanilla.length > 1 && (
+                <p className="mt-1.5 text-[11px]">
+                  El mismo comprobante se enlazará a ambas planillas en
+                  Planos → Consolidado.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Valor admón editable */}
           <div>

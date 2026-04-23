@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useMemo, useTransition } from 'react';
 import {
   Search,
   User,
@@ -28,6 +28,7 @@ import {
   type PreviewRow,
   type PreviewInput,
 } from './actions';
+import { planillasParaAfiliacion } from '@/lib/planos/politicas';
 import { PreviewTable } from './preview-table';
 import { PrefacturarDialog } from './prefacturar-dialog';
 
@@ -96,6 +97,23 @@ export function TransaccionWorkflow({ periodos }: Props) {
   } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, startPreview] = useTransition();
+
+  // Tipos de planilla que se van a generar al procesar — calculado a
+  // partir de las rows del preview. Para Resolución EPS+ARL serán 2
+  // tipos (E + K), para otros casos normalmente 1.
+  const tiposPlanilla = useMemo(() => {
+    if (!rows || rows.length === 0) return [];
+    const set = new Set<string>();
+    for (const r of rows) {
+      const tipos = planillasParaAfiliacion({
+        modalidad: r.modalidad,
+        regimen: r.regimen,
+        plan: r.plan,
+      });
+      for (const t of tipos) set.add(t);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
 
   // Pre-facturar
   const [prefactOpen, setPrefactOpen] = useState(false);
@@ -350,6 +368,7 @@ export function TransaccionWorkflow({ periodos }: Props) {
           tipo={tipo}
           destinatarioInfo={destinatarioInfo}
           numAfiliaciones={rows?.length ?? 1}
+          tiposPlanilla={tiposPlanilla}
         />
       )}
     </div>
