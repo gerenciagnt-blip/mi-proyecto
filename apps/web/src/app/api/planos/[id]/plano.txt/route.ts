@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { generarPlano } from '@/lib/planos/generar';
 
@@ -20,7 +20,7 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  await requireAdmin();
+  await requireAuth();
   const { id } = await params;
 
   const planilla = await prisma.planilla.findUnique({

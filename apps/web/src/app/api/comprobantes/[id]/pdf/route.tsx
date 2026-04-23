@@ -1,7 +1,7 @@
 import { renderToBuffer } from '@react-pdf/renderer';
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { ComprobantePdf, type ComprobantePdfData } from '@/lib/pdf/comprobante-pdf';
 
@@ -45,7 +45,7 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  await requireAdmin();
+  await requireAuth();
   const { id } = await params;
 
   const comp = await prisma.comprobante.findUnique({

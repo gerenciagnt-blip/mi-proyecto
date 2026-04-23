@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { uploadsRoot } from '@/lib/cartera/storage';
 
@@ -19,7 +19,7 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string; docId: string }> },
 ) {
-  await requireAdmin();
+  await requireAuth();
   const { id, docId } = await params;
 
   const doc = await prisma.incapacidadDocumento.findUnique({
