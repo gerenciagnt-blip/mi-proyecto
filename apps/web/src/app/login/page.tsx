@@ -43,7 +43,6 @@ export default async function LoginPage({
         {/* --- Izquierda: logo con animación + tamaño responsive --- */}
         <section className="flex w-full flex-1 items-center justify-center md:pr-8 lg:pr-14 xl:pr-20">
           <PilaLogo
-            animated
             imgClassName="w-56 sm:w-64 md:w-72 lg:w-[340px] xl:w-[420px] 2xl:w-[460px]"
           />
         </section>

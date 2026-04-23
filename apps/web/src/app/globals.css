@@ -25,25 +25,10 @@ h6 {
   outline-offset: 2px;
 }
 
-/* ============================================================
-   Animación del logo PILA — flotación suave + rotación de tono
-   Se aplica con la clase utilitaria `.logo-animated` (ver PilaLogo).
-   Respeta prefers-reduced-motion para accesibilidad.
-   ============================================================ */
-@keyframes logoFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-8px); }
-}
-@keyframes logoHue {
-  0%, 100% { filter: hue-rotate(0deg) drop-shadow(0 8px 22px rgba(0,0,0,0.09)); }
-  50%      { filter: hue-rotate(15deg) drop-shadow(0 14px 28px rgba(0,0,0,0.13)); }
-}
-.logo-animated {
-  animation:
-    logoFloat 4s ease-in-out infinite,
-    logoHue 6s ease-in-out infinite;
-  will-change: transform, filter;
-}
+/* El placeholder `.logo-animated` queda sin animación por ahora.
+   Cuando se defina el efecto final (circuito recorriendo la S) se llena
+   aquí. Se mantiene la clase para no romper usos existentes. */
+.logo-animated { /* intencionalmente vacío */ }
 @media (prefers-reduced-motion: reduce) {
   .logo-animated { animation: none; }
 }
