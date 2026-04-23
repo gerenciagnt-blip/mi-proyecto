@@ -126,6 +126,21 @@ export default async function HistorialPage({
             },
           },
         },
+        // Planillas activas que contienen este comprobante (para mostrar
+        // en el modal Consultar: tipo E/K, estado guardada/pagada, consec).
+        planillas: {
+          where: { planilla: { estado: { not: 'ANULADA' } } },
+          select: {
+            planilla: {
+              select: {
+                consecutivo: true,
+                tipoPlanilla: true,
+                estado: true,
+                numeroPlanillaExt: true,
+              },
+            },
+          },
+        },
       },
     }),
   ]);
@@ -227,6 +242,12 @@ export default async function HistorialPage({
         c.valorAdminOverride == null ? null : Number(c.valorAdminOverride),
       estadoDerivado,
       conceptos,
+      planillas: c.planillas.map((cp) => ({
+        consecutivo: cp.planilla.consecutivo,
+        tipoPlanilla: cp.planilla.tipoPlanilla,
+        estado: cp.planilla.estado,
+        numeroPlanillaExt: cp.planilla.numeroPlanillaExt,
+      })),
     };
   });
 

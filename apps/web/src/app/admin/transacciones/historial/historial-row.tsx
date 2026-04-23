@@ -57,6 +57,14 @@ export type HistorialRowData = {
     porcentaje: number;
     valor: number;
   }>;
+  /** Planillas activas (no anuladas) que contienen este comprobante.
+   * Un comprobante de Resolución EPS+ARL puede estar en 2 planillas (E+K). */
+  planillas: Array<{
+    consecutivo: string;
+    tipoPlanilla: 'E' | 'I' | 'Y' | 'K' | 'N' | 'A' | 'S';
+    estado: 'CONSOLIDADO' | 'PAGADA' | 'ANULADA';
+    numeroPlanillaExt: string | null;
+  }>;
 };
 
 export function HistorialRow({ row }: { row: HistorialRowData }) {
@@ -278,7 +286,34 @@ function ConsultarDialog({
             )}
             <Info label="Fecha de pago" value={row.fechaPago ?? '—'} />
             <Info label="Procesado" value={row.procesadoEn ?? '—'} />
-            <Info label="N° planilla" value={row.numeroPlanilla ?? '—'} mono />
+            <Info label="N° planilla (operador)" value={row.numeroPlanilla ?? '—'} mono />
+            {row.planillas.length > 0 && (
+              <Info
+                label={row.planillas.length === 1 ? 'Planilla' : 'Planillas'}
+                value={
+                  <div className="flex flex-wrap gap-1">
+                    {row.planillas.map((p) => (
+                      <span
+                        key={p.consecutivo}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          p.estado === 'PAGADA'
+                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                            : 'bg-amber-50 text-amber-700 ring-amber-200',
+                        )}
+                        title={`${p.consecutivo} · ${p.estado === 'PAGADA' ? 'Pagada' : 'Guardada'}`}
+                      >
+                        <span className="font-mono font-bold">{p.tipoPlanilla}</span>
+                        <span>·</span>
+                        <span className="font-mono">{p.consecutivo}</span>
+                        <span>·</span>
+                        <span>{p.estado === 'PAGADA' ? 'Pagada' : 'Guardada'}</span>
+                      </span>
+                    ))}
+                  </div>
+                }
+              />
+            )}
             {row.periodoAporteLabel && (
               <Info
                 label="Período aporte PILA"
@@ -362,22 +397,27 @@ function Info({
   highlight,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   mono?: boolean;
   highlight?: 'amber';
 }) {
+  const isText = typeof value === 'string' || typeof value === 'number';
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wider text-slate-500">{label}</p>
-      <p
-        className={cn(
-          'mt-0.5 font-medium',
-          mono && 'font-mono',
-          highlight === 'amber' && 'text-amber-700',
-        )}
-      >
-        {value}
-      </p>
+      {isText ? (
+        <p
+          className={cn(
+            'mt-0.5 font-medium',
+            mono && 'font-mono',
+            highlight === 'amber' && 'text-amber-700',
+          )}
+        >
+          {value}
+        </p>
+      ) : (
+        <div className="mt-0.5">{value}</div>
+      )}
     </div>
   );
 }
