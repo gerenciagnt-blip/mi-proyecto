@@ -51,7 +51,7 @@ const ErrorPage: NextPage<ErrorPageProps> = ({ statusCode }) => {
           {subtitulo}
         </p>
         <a
-          href="/dashboard"
+          href="/admin"
           style={{
             display: 'inline-block',
             marginTop: '1.5rem',
@@ -64,7 +64,7 @@ const ErrorPage: NextPage<ErrorPageProps> = ({ statusCode }) => {
             textDecoration: 'none',
           }}
         >
-          Volver al dashboard
+          Volver al panel
         </a>
       </div>
     </main>

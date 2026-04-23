@@ -10,10 +10,10 @@ export default function NotFound() {
           La ruta que buscas no existe.
         </p>
         <Link
-          href="/dashboard"
+          href="/admin"
           className="mt-6 inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
         >
-          ← Volver al dashboard
+          ← Volver al panel
         </Link>
       </div>
     </main>

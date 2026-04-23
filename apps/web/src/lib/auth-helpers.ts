@@ -10,7 +10,9 @@ export async function requireAuth() {
 
 export async function requireRole(...allowed: Role[]) {
   const session = await requireAuth();
-  if (!allowed.includes(session.user.role)) redirect('/dashboard');
+  // Redirect a `/admin` (landing) cuando el rol no tiene acceso — el
+  // panel filtra por rol y muestra lo que sí puede ver.
+  if (!allowed.includes(session.user.role)) redirect('/admin');
   return session;
 }
 

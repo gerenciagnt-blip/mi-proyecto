@@ -22,11 +22,12 @@ import {
   Sparkles,
   FileSignature,
   ChevronRight,
-  ArrowLeft,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
 import { cn } from '@/lib/utils';
+import { logoutAction } from '@/app/dashboard/actions';
 
 /** Conjuntos de roles (para dejar intención clara en la matriz). */
 const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
@@ -228,15 +229,15 @@ export function AdminNav({ role }: { role: Role }) {
         ))}
       </div>
 
-      <div className="border-t border-slate-100 pt-3">
-        <Link
-          href="/dashboard"
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+      <form action={logoutAction} className="border-t border-slate-100 pt-3">
+        <button
+          type="submit"
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
         >
-          <ArrowLeft className="h-4 w-4 shrink-0 text-slate-400" />
-          <span>Salir del panel</span>
-        </Link>
-      </div>
+          <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
+          <span>Cerrar sesión</span>
+        </button>
+      </form>
     </nav>
   );
 }
