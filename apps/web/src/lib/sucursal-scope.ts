@@ -108,3 +108,33 @@ export async function validarSucursalIdAsignable(
   }
   return null;
 }
+
+/**
+ * Variante específica para recursos indirectamente scoped vía Cotizante:
+ * afiliaciones, comprobantes, gestiones de cartera, liquidaciones.
+ *
+ *   - STAFF → {}
+ *   - SUCURSAL → { cotizante: { sucursalId: mi sucursal } }
+ *
+ * Úsalo en queries tipo:
+ *   const scope = await scopeWhereViaCotizante();
+ *   const afs = await prisma.afiliacion.findMany({
+ *     where: { estado: 'ACTIVA', ...scope },
+ *   });
+ */
+export async function scopeWhereViaCotizante(): Promise<{
+  cotizante?: { sucursalId: string };
+}> {
+  const s = await getUserScope();
+  if (!s || s.tipo === 'STAFF') return {};
+  return { cotizante: { sucursalId: s.sucursalId } };
+}
+
+/**
+ * Scope directo para recursos con `sucursalId` propio (Cotizante, Planilla).
+ * Alias conveniente de scopeWhere() con tipado explícito.
+ */
+export async function scopeWhereDirect(): Promise<{ sucursalId?: string }> {
+  return scopeWhere();
+}
+

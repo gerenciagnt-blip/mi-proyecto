@@ -179,6 +179,8 @@ model Sucursal {
   mediosPago         MedioPago[]
   asesoresComerciales AsesorComercial[]
   serviciosAdicionales ServicioAdicional[]
+  cotizantes         Cotizante[]
+  planillas          Planilla[]
 
   @@map("sucursales")
 }
@@ -564,6 +566,13 @@ model Subtipo {
 
 model Cotizante {
   id                 String        @id @default(cuid())
+  /**
+   * Sucursal dueña del registro (multi-tenant). Cada sucursal maneja sus
+   * propios cotizantes — la misma persona puede existir como dos registros
+   * en sucursales distintas. sucursalId=null se reserva para cotizantes
+   * legados sin asignar (staff los puede migrar desde la UI).
+   */
+  sucursalId         String?
   tipoDocumento      TipoDocumento
   numeroDocumento    String
   fechaExpedicionDoc DateTime?
@@ -582,6 +591,7 @@ model Cotizante {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
+  sucursal     Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
   gestionesCartera GestionCartera[]
@@ -589,7 +599,8 @@ model Cotizante {
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
-  @@unique([tipoDocumento, numeroDocumento])
+  @@unique([sucursalId, tipoDocumento, numeroDocumento])
+  @@index([sucursalId])
   @@index([primerApellido, primerNombre])
   @@index([municipioId])
   @@index([departamentoId])
@@ -1036,6 +1047,13 @@ enum EstadoPlanilla {
 model Planilla {
   id                 String         @id @default(cuid())
   periodoId          String
+  /**
+   * Sucursal que genera la planilla (multi-tenant). Cuando una empresa
+   * planilla global tiene cotizantes de múltiples aliados, se genera una
+   * planilla tipo E por sucursal. Para planillas tipo I, coincide con
+   * `cotizante.sucursalId`.
+   */
+  sucursalId         String?
   consecutivo        String         @unique // PLN-000001 (sequence Postgres)
   tipoPlanilla       TipoPlanilla
   // Nro. de planilla asignado por el operador PILA al confirmar el pago
@@ -1065,12 +1083,14 @@ model Planilla {
   updatedAt          DateTime       @updatedAt
 
   periodo      PeriodoContable       @relation(fields: [periodoId], references: [id], onDelete: Restrict)
+  sucursal     Sucursal?             @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   empresa      Empresa?              @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   cotizante    Cotizante?            @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
   createdBy    User?                 @relation("PlanillasCreadas", fields: [createdById], references: [id], onDelete: SetNull)
   comprobantes PlanillaComprobante[]
 
   @@index([periodoId])
+  @@index([sucursalId])
   @@index([estado])
   @@index([tipoPlanilla])
   @@index([empresaId])
