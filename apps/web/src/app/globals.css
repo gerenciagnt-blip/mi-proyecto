@@ -26,58 +26,87 @@ h6 {
 }
 
 /* ============================================================
-   Logo animado — efecto "circuito recorriendo la S"
+   Logo animado — COMBO: circuito visible + glow pulsante
    Aplica sobre el SVG inline (PilaLogoInline con animated=true).
-   Anima:
-     - .cls-4  → 88 paths blancos (líneas de circuito internas)
-                 se convierten temporalmente a stroke y se "dibujan"
-                 con stroke-dasharray/offset en olas staggered
-     - .cls-5  → nodos cian (circles) que pulsan opacidad + radio
-   Respeta prefers-reduced-motion.
+
+   Capa 1 (fondo): glow pulsante del logo entero tipo "heartbeat"
+                   — drop-shadow cian + azul de la marca que crece/decrece.
+   Capa 2 (mid):   88 paths .cls-4 trazados con stroke cian eléctrico
+                   (stroke-dasharray 40 → 0 → -40) en 3 olas staggered.
+   Capa 3 (top):   nodos .cls-5 pulsan opacidad + scale.
+
+   Respeta prefers-reduced-motion para accesibilidad.
    ============================================================ */
-@keyframes circuitDraw {
-  0%   { stroke-dashoffset: 40;  opacity: 0.35; }
-  40%  { stroke-dashoffset: 0;   opacity: 1; }
-  60%  { stroke-dashoffset: 0;   opacity: 1; }
-  100% { stroke-dashoffset: -40; opacity: 0.35; }
+
+/* --- Capa 1: glow del logo completo --- */
+@keyframes logoGlow {
+  0%, 100% {
+    filter:
+      drop-shadow(0 0 0 rgba(49, 223, 222, 0))
+      drop-shadow(0 6px 18px rgba(0, 0, 0, 0.10));
+  }
+  50% {
+    filter:
+      drop-shadow(0 0 24px rgba(49, 223, 222, 0.55))
+      drop-shadow(0 0 48px rgba(47, 128, 237, 0.28))
+      drop-shadow(0 10px 22px rgba(0, 0, 0, 0.12));
+  }
 }
 
+/* --- Capa 2: trazo de circuito --- */
+@keyframes circuitDraw {
+  0%   { stroke-dashoffset: 40;  opacity: 0.15; }
+  40%  { stroke-dashoffset: 0;   opacity: 1; }
+  60%  { stroke-dashoffset: 0;   opacity: 1; }
+  100% { stroke-dashoffset: -40; opacity: 0.15; }
+}
+
+/* --- Capa 3: pulso de nodos --- */
 @keyframes nodePulse {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 1; }
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.35); }
+}
+
+.logo-animated {
+  animation: logoGlow 2.8s ease-in-out infinite;
+  will-change: filter;
 }
 
 .logo-animated .cls-4 {
   fill: transparent;
-  stroke: #ffffff;
-  stroke-width: 0.6;
+  stroke: #31dfde;           /* cian eléctrico — mismo tono del logo */
+  stroke-width: 1.2;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 40;
   stroke-dashoffset: 40;
-  animation: circuitDraw 2.8s ease-in-out infinite;
+  animation: circuitDraw 2.2s ease-in-out infinite;
   will-change: stroke-dashoffset, opacity;
 }
-/* Stagger: 3 olas desfasadas para simular corriente viajando */
 .logo-animated .cls-4:nth-of-type(3n+1) { animation-delay: 0s; }
-.logo-animated .cls-4:nth-of-type(3n+2) { animation-delay: 0.45s; }
-.logo-animated .cls-4:nth-of-type(3n)   { animation-delay: 0.9s; }
+.logo-animated .cls-4:nth-of-type(3n+2) { animation-delay: 0.35s; }
+.logo-animated .cls-4:nth-of-type(3n)   { animation-delay: 0.7s; }
 
 .logo-animated circle.cls-5,
 .logo-animated .cls-5 {
-  animation: nodePulse 2s ease-in-out infinite;
-  will-change: opacity;
+  transform-origin: center;
+  transform-box: fill-box;          /* para que scale() orbite desde el centro del circle */
+  animation: nodePulse 1.8s ease-in-out infinite;
+  will-change: opacity, transform;
 }
 .logo-animated circle.cls-5:nth-of-type(2n) { animation-delay: 0.5s; }
 
 @media (prefers-reduced-motion: reduce) {
+  .logo-animated,
+  .logo-animated .cls-4,
+  .logo-animated .cls-5,
+  .logo-animated circle.cls-5 { animation: none; }
   .logo-animated .cls-4 {
-    animation: none;
     fill: #ffffff;
     stroke: none;
     stroke-dashoffset: 0;
     opacity: 1;
   }
   .logo-animated .cls-5,
-  .logo-animated circle.cls-5 { animation: none; opacity: 1; }
+  .logo-animated circle.cls-5 { opacity: 1; transform: none; }
 }
