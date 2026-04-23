@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { FileCheck, AlertCircle, Paperclip } from 'lucide-react';
+import { FileCheck, AlertCircle, UserCog } from 'lucide-react';
 import type { Prisma, SoporteAfEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { SolicitudesTable, type SolicitudRow } from './solicitudes-table';
 
 export const metadata = { title: 'Soporte · Afiliaciones — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -22,29 +23,17 @@ const ESTADO_LABEL: Record<SoporteAfEstado, string> = {
   RECHAZADA: 'Rechazada',
   NOVEDAD: 'Novedad',
 };
-const ESTADO_TONE: Record<SoporteAfEstado, string> = {
-  EN_PROCESO: 'bg-sky-50 text-sky-700 ring-sky-200',
-  PROCESADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  RECHAZADA: 'bg-red-50 text-red-700 ring-red-200',
-  NOVEDAD: 'bg-amber-50 text-amber-700 ring-amber-200',
-};
 
-const DISPARO_LABEL = {
-  NUEVA: 'Nueva',
-  REACTIVACION: 'Reactivación',
-  CAMBIO_FECHA_INGRESO: 'Cambio fecha',
-  CAMBIO_EMPRESA: 'Cambio empresa',
-  CAMBIO_NIVEL_ARL: 'Cambio nivel ARL',
-  CAMBIO_PLAN_SGSS: 'Cambio plan',
-} as const;
+/** Primer día del mes actual (yyyy-MM-dd). */
+function defaultDesde(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
 
-function fmtDateTime(d: Date) {
-  const fecha = d.toLocaleDateString('es-CO');
-  const hora = d.toLocaleTimeString('es-CO', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  return { fecha, hora };
+/** Hoy (yyyy-MM-dd). */
+function defaultHasta(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
 export default async function SoporteAfiliacionesPage({
@@ -61,18 +50,23 @@ export default async function SoporteAfiliacionesPage({
     sp.estado === 'NOVEDAD'
       ? (sp.estado as SoporteAfEstado)
       : undefined;
-  const desde = sp.desde?.trim() ?? '';
-  const hasta = sp.hasta?.trim() ?? '';
+
+  // Rango por defecto: 1er día del mes actual → hoy. Si vienen explícitos
+  // en la URL se usan esos (aunque sean strings vacíos → no filtra).
+  const desde = sp.desde ?? defaultDesde();
+  const hasta = sp.hasta ?? defaultHasta();
   const createdByFilter = sp.createdById?.trim() ?? '';
   const q = sp.q?.trim() ?? '';
 
   const where: Prisma.SoporteAfiliacionWhereInput = {};
   if (estadoFilter) where.estado = estadoFilter;
   if (createdByFilter) where.createdById = createdByFilter;
-  if (desde || hasta) {
+  const fechaDesdeD = desde ? new Date(desde + 'T00:00:00') : null;
+  const fechaHastaD = hasta ? new Date(hasta + 'T23:59:59') : null;
+  if (fechaDesdeD || fechaHastaD) {
     where.fechaRadicacion = {};
-    if (desde) where.fechaRadicacion.gte = new Date(desde + 'T00:00:00');
-    if (hasta) where.fechaRadicacion.lte = new Date(hasta + 'T23:59:59');
+    if (fechaDesdeD) where.fechaRadicacion.gte = fechaDesdeD;
+    if (fechaHastaD) where.fechaRadicacion.lte = fechaHastaD;
   }
   if (q) {
     where.OR = [
@@ -89,39 +83,97 @@ export default async function SoporteAfiliacionesPage({
     ];
   }
 
-  const [solicitudes, statsByEstado, owners] = await Promise.all([
-    prisma.soporteAfiliacion.findMany({
-      where,
-      orderBy: { fechaRadicacion: 'desc' },
-      take: 300,
-      include: {
-        cotizante: {
-          select: {
-            tipoDocumento: true,
-            numeroDocumento: true,
-            primerNombre: true,
-            primerApellido: true,
-            segundoApellido: true,
+  const [solicitudes, statsByEstado, owners, statsGestionesByUser] =
+    await Promise.all([
+      prisma.soporteAfiliacion.findMany({
+        where,
+        orderBy: { fechaRadicacion: 'desc' },
+        take: 500,
+        include: {
+          cotizante: {
+            select: {
+              tipoDocumento: true,
+              numeroDocumento: true,
+              primerNombre: true,
+              primerApellido: true,
+              segundoApellido: true,
+            },
           },
+          createdBy: { select: { id: true, name: true } },
+          sucursal: { select: { codigo: true, nombre: true } },
+          _count: { select: { documentos: true } },
         },
-        createdBy: { select: { id: true, name: true } },
-        sucursal: { select: { codigo: true, nombre: true } },
-        _count: { select: { documentos: true, gestiones: true } },
-      },
-    }),
-    prisma.soporteAfiliacion.groupBy({
-      by: ['estado'],
-      _count: { _all: true },
-    }),
-    prisma.user.findMany({
-      where: { role: 'ALIADO_OWNER', active: true },
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true, sucursal: { select: { codigo: true } } },
-    }),
-  ]);
+      }),
+      prisma.soporteAfiliacion.groupBy({
+        by: ['estado'],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.user.findMany({
+        where: { role: 'ALIADO_OWNER', active: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, sucursal: { select: { codigo: true } } },
+      }),
+      // Stats de gestiones por usuario de soporte en el mismo rango de fechas.
+      prisma.soporteAfGestion.groupBy({
+        by: ['userId', 'userName'],
+        where: {
+          accionadaPor: 'SOPORTE',
+          ...(fechaDesdeD || fechaHastaD
+            ? {
+                createdAt: {
+                  ...(fechaDesdeD ? { gte: fechaDesdeD } : {}),
+                  ...(fechaHastaD ? { lte: fechaHastaD } : {}),
+                },
+              }
+            : {}),
+        },
+        _count: { _all: true },
+      }),
+    ]);
 
   const counts = new Map<SoporteAfEstado, number>();
   for (const r of statsByEstado) counts.set(r.estado, r._count._all);
+
+  // Ordenar stats por nombre y convertir a shape estable.
+  const statsSoporte = statsGestionesByUser
+    .filter((g) => g.userName)
+    .map((g) => ({
+      userId: g.userId,
+      userName: g.userName as string,
+      gestiones: g._count._all,
+    }))
+    .sort((a, b) => b.gestiones - a.gestiones);
+
+  const rows: SolicitudRow[] = solicitudes.map((s) => {
+    const nombre = [
+      s.cotizante.primerNombre,
+      s.cotizante.primerApellido,
+      s.cotizante.segundoApellido,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    return {
+      id: s.id,
+      consecutivo: s.consecutivo,
+      fechaRadicacion: s.fechaRadicacion.toISOString(),
+      aliadoNombre: s.createdBy?.name ?? null,
+      sucursalCodigo: s.sucursal?.codigo ?? null,
+      cotizanteNombre: nombre,
+      cotizanteDoc: `${s.cotizante.tipoDocumento} ${s.cotizante.numeroDocumento}`,
+      modalidadLabel:
+        s.modalidadSnap === 'DEPENDIENTE' ? 'Dependiente' : 'Independiente',
+      planLabel: s.planNombreSnap,
+      regimenLabel: s.regimenSnap,
+      disparos: s.disparos,
+      cantidadDocs: s._count.documentos,
+      estado: s.estado,
+    };
+  });
+
+  const hayFiltrosExtra = Boolean(
+    estadoFilter || createdByFilter || q || sp.desde || sp.hasta,
+  );
 
   return (
     <div className="space-y-6">
@@ -132,12 +184,14 @@ export default async function SoporteAfiliacionesPage({
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           Solicitudes generadas automáticamente cuando los aliados crean,
-          reactivan o modifican afiliaciones activas. Revisa el detalle,
-          cambia el estado y registra la gestión.
+          reactivan o modifican afiliaciones activas. Rango actual:{' '}
+          <span className="font-medium text-slate-700">
+            {desde || '—'} → {hasta || '—'}
+          </span>
         </p>
       </header>
 
-      {/* Stats */}
+      {/* Stats por estado */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {(Object.keys(ESTADO_LABEL) as SoporteAfEstado[]).map((e) => (
           <div
@@ -160,7 +214,46 @@ export default async function SoporteAfiliacionesPage({
         ))}
       </section>
 
-      {/* Filtros */}
+      {/* Stats por usuario soporte (en el rango) */}
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2">
+          <UserCog className="h-4 w-4 text-slate-500" />
+          <h2 className="text-xs font-semibold text-slate-700">
+            Gestiones por usuario soporte en el rango
+          </h2>
+          <span className="ml-auto text-[10px] text-slate-500">
+            {statsSoporte.length === 0
+              ? 'Sin gestiones'
+              : `${statsSoporte.length} usuario${statsSoporte.length === 1 ? '' : 's'}`}
+          </span>
+        </header>
+        {statsSoporte.length === 0 ? (
+          <p className="px-4 py-3 text-xs text-slate-500">
+            Ningún usuario de soporte ha registrado gestiones en este rango.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {statsSoporte.map((u) => (
+              <li
+                key={u.userId ?? u.userName}
+                className="flex items-center gap-3 px-4 py-2 text-xs"
+              >
+                <span className="flex-1 font-medium text-slate-900">
+                  {u.userName}
+                </span>
+                <span className="font-mono text-sm font-bold text-brand-blue-dark">
+                  {u.gestiones}
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  gestion{u.gestiones === 1 ? '' : 'es'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Filtros + Tabla */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
           <form
@@ -243,7 +336,7 @@ export default async function SoporteAfiliacionesPage({
             >
               Aplicar
             </button>
-            {(estadoFilter || desde || hasta || createdByFilter || q) && (
+            {hayFiltrosExtra && (
               <Link
                 href="/admin/soporte/afiliaciones"
                 className="h-9 leading-9 text-xs text-slate-500 underline"
@@ -252,12 +345,12 @@ export default async function SoporteAfiliacionesPage({
               </Link>
             )}
             <span className="ml-auto self-center text-xs text-slate-500">
-              {solicitudes.length} resultados
+              {rows.length} resultados
             </span>
           </form>
         </div>
 
-        {solicitudes.length === 0 ? (
+        {rows.length === 0 ? (
           <Alert variant="info" className="m-5">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>
@@ -266,108 +359,7 @@ export default async function SoporteAfiliacionesPage({
             </span>
           </Alert>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-4 py-2">Consecutivo</th>
-                  <th className="px-4 py-2">Recibido</th>
-                  <th className="px-4 py-2">Aliado</th>
-                  <th className="px-4 py-2">Cotizante</th>
-                  <th className="px-4 py-2">Modalidad</th>
-                  <th className="px-4 py-2">Plan SGSS</th>
-                  <th className="px-4 py-2">Régimen</th>
-                  <th className="px-4 py-2">Disparos</th>
-                  <th className="px-4 py-2">Docs</th>
-                  <th className="px-4 py-2">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {solicitudes.map((s) => {
-                  const nombre = [
-                    s.cotizante.primerNombre,
-                    s.cotizante.primerApellido,
-                    s.cotizante.segundoApellido,
-                  ]
-                    .filter(Boolean)
-                    .join(' ');
-                  const { fecha, hora } = fmtDateTime(s.fechaRadicacion);
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2 font-mono text-xs font-semibold">
-                        <Link
-                          href={`/admin/soporte/afiliaciones/${s.id}`}
-                          className="text-brand-blue hover:underline"
-                        >
-                          {s.consecutivo}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2 text-[11px] text-slate-500">
-                        <p>{fecha}</p>
-                        <p className="font-mono text-[10px] text-slate-400">
-                          {hora}
-                        </p>
-                      </td>
-                      <td className="px-4 py-2 text-xs">
-                        <p className="font-medium text-slate-900">
-                          {s.createdBy?.name ?? '—'}
-                        </p>
-                        {s.sucursal?.codigo && (
-                          <p className="font-mono text-[10px] text-slate-500">
-                            {s.sucursal.codigo}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-xs">
-                        <p className="font-medium">{nombre}</p>
-                        <p className="font-mono text-[10px] text-slate-500">
-                          {s.cotizante.tipoDocumento}{' '}
-                          {s.cotizante.numeroDocumento}
-                        </p>
-                      </td>
-                      <td className="px-4 py-2 text-[11px] text-slate-600">
-                        {s.modalidadSnap === 'DEPENDIENTE'
-                          ? 'Dependiente'
-                          : 'Independiente'}
-                      </td>
-                      <td className="px-4 py-2 text-[11px] text-slate-600">
-                        {s.planNombreSnap ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-[11px] text-slate-600">
-                        {s.regimenSnap ?? '—'}
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex flex-wrap gap-1">
-                          {s.disparos.map((d) => (
-                            <span
-                              key={d}
-                              className="inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-700"
-                            >
-                              {DISPARO_LABEL[d]}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-[11px] text-slate-500">
-                        <Paperclip className="mr-0.5 inline h-3 w-3" />
-                        {s._count.documentos}
-                      </td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={cn(
-                            'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                            ESTADO_TONE[s.estado],
-                          )}
-                        >
-                          {ESTADO_LABEL[s.estado]}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <SolicitudesTable rows={rows} />
         )}
       </section>
     </div>

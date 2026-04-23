@@ -15,6 +15,7 @@ import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { requireStaff } from '@/lib/auth-helpers';
 import { formatCOP } from '@/lib/format';
+import { resolverCambios } from '@/lib/soporte-af/cambios';
 import { GestionForm } from './gestion-form';
 
 export const metadata = { title: 'Solicitud Soporte · Afiliaciones' };
@@ -112,6 +113,11 @@ export default async function SolicitudSoporteAfPage({
   });
 
   if (!sol) notFound();
+
+  const cambios = await resolverCambios(
+    sol.snapshotAntes as Record<string, unknown> | null,
+    sol.snapshotDespues as Record<string, unknown> | null,
+  );
 
   const af = sol.afiliacion;
   const cot = af.cotizante;
@@ -320,7 +326,7 @@ export default async function SolicitudSoporteAfPage({
           </section>
 
           {/* Comparativa cambios (si hay) */}
-          {sol.snapshotAntes && (
+          {cambios.length > 0 && (
             <section className="rounded-xl border border-amber-200 bg-amber-50/40 shadow-sm">
               <header className="flex items-center gap-2 border-b border-amber-200/70 px-5 py-3">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -338,37 +344,19 @@ export default async function SolicitudSoporteAfPage({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-100">
-                    {(
-                      [
-                        ['estado', 'Estado'],
-                        ['fechaIngreso', 'Fecha ingreso'],
-                        ['empresaId', 'Empresa'],
-                        ['nivelRiesgo', 'Nivel ARL'],
-                        ['planSgssId', 'Plan SGSS'],
-                      ] as Array<[string, string]>
-                    )
-                      .filter(([k]) => {
-                        const a = (sol.snapshotAntes as Record<string, unknown>)[k];
-                        const d = (sol.snapshotDespues as Record<string, unknown>)[k];
-                        return a !== d;
-                      })
-                      .map(([k, label]) => {
-                        const a = (sol.snapshotAntes as Record<string, unknown>)[k];
-                        const d = (sol.snapshotDespues as Record<string, unknown>)[k];
-                        return (
-                          <tr key={k}>
-                            <td className="px-5 py-2 font-medium text-amber-900">
-                              {label}
-                            </td>
-                            <td className="px-5 py-2 font-mono text-slate-600 line-through">
-                              {a == null ? '—' : String(a)}
-                            </td>
-                            <td className="px-5 py-2 font-mono font-semibold text-slate-900">
-                              {d == null ? '—' : String(d)}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                    {cambios.map((c) => (
+                      <tr key={c.campo}>
+                        <td className="px-5 py-2 font-medium text-amber-900">
+                          {c.label}
+                        </td>
+                        <td className="px-5 py-2 text-slate-600 line-through">
+                          {c.antes}
+                        </td>
+                        <td className="px-5 py-2 font-semibold text-slate-900">
+                          {c.despues}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
