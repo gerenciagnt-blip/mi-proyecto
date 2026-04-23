@@ -62,7 +62,7 @@ function parseAfiliacion(fd: FormData) {
 
 // ============ Validación cruzada ============
 
-async function validateAfiliacion(data: {
+type AfiliacionPayload = {
   modalidad: string;
   empresaId: string | null;
   nivelRiesgo: string;
@@ -70,12 +70,65 @@ async function validateAfiliacion(data: {
   subtipoId: string | null;
   actividadEconomicaId: string | null;
   planSgssId: string | null;
+  regimen: string | null;
   epsId: string | null;
   afpId: string | null;
   arlId: string | null;
   ccfId: string | null;
   salario: number;
-}): Promise<string | null> {
+};
+
+type PlanConFlags = {
+  id: string;
+  nombre: string;
+  incluyeEps: boolean;
+  incluyeAfp: boolean;
+  incluyeArl: boolean;
+  incluyeCcf: boolean;
+  regimen: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS';
+};
+
+/**
+ * Prepara el payload: carga el plan SGSS (si hay) y LIMPIA los IDs de
+ * entidades que no aplican a ese plan.
+ *
+ * Ejemplo: plan sin AFP + usuario mandó `afpId = "abc"` → lo forzamos a
+ * null antes de guardar. Esto evita datos colgados en BD cuando el form
+ * oculta un campo pero el valor ya estaba seteado en una edición previa.
+ */
+async function prepararPayload(
+  data: AfiliacionPayload,
+): Promise<{ normalized: AfiliacionPayload; plan: PlanConFlags | null }> {
+  let plan: PlanConFlags | null = null;
+  if (data.planSgssId) {
+    plan = await prisma.planSgss.findUnique({
+      where: { id: data.planSgssId },
+      select: {
+        id: true,
+        nombre: true,
+        incluyeEps: true,
+        incluyeAfp: true,
+        incluyeArl: true,
+        incluyeCcf: true,
+        regimen: true,
+      },
+    });
+  }
+
+  const normalized: AfiliacionPayload = { ...data };
+  if (plan) {
+    if (!plan.incluyeEps) normalized.epsId = null;
+    if (!plan.incluyeAfp) normalized.afpId = null;
+    if (!plan.incluyeArl) normalized.arlId = null;
+    if (!plan.incluyeCcf) normalized.ccfId = null;
+  }
+  return { normalized, plan };
+}
+
+async function validateAfiliacion(
+  data: AfiliacionPayload,
+  plan: PlanConFlags | null,
+): Promise<string | null> {
   const smlv = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
   if (smlv && data.salario < Number(smlv.valor)) {
     return `Salario (${data.salario}) debe ser mayor o igual al SMLV (${Number(smlv.valor)})`;
@@ -84,7 +137,7 @@ async function validateAfiliacion(data: {
   // El tipo de cotizante debe coincidir con la modalidad elegida.
   const tipo = await prisma.tipoCotizante.findUnique({
     where: { id: data.tipoCotizanteId },
-    select: { modalidad: true, nombre: true },
+    select: { codigo: true, modalidad: true, nombre: true },
   });
   if (!tipo) return 'Tipo de cotizante no existe';
   if (tipo.modalidad !== data.modalidad) {
@@ -135,18 +188,49 @@ async function validateAfiliacion(data: {
     }
   }
 
-  // Plan SGSS — aplica a ambas modalidades. En INDEPENDIENTE, ARL proviene
-  // del selector directo; en DEPENDIENTE la ARL se hereda de la empresa.
-  if (data.planSgssId) {
-    const plan = await prisma.planSgss.findUnique({ where: { id: data.planSgssId } });
-    if (plan) {
-      if (plan.incluyeEps && !data.epsId) return `El plan "${plan.nombre}" requiere EPS`;
-      if (plan.incluyeAfp && !data.afpId) return `El plan "${plan.nombre}" requiere AFP`;
-      if (plan.incluyeCcf && !data.ccfId)
-        return `El plan "${plan.nombre}" requiere Caja de Compensación`;
-      if (plan.incluyeArl && data.modalidad === 'INDEPENDIENTE' && !data.arlId) {
-        return `El plan "${plan.nombre}" requiere ARL`;
+  // Plan SGSS — aplica a ambas modalidades.
+  if (plan) {
+    // (2) Validar compatibilidad de régimen: si el plan NO es AMBOS, el
+    // régimen de la afiliación debe coincidir. Para INDEPENDIENTES sin
+    // campo régimen (= null) se asume ORDINARIO por default.
+    if (plan.regimen !== 'AMBOS') {
+      const regimenAf = data.regimen ?? 'ORDINARIO';
+      if (plan.regimen !== regimenAf) {
+        return `El plan "${plan.nombre}" solo aplica al régimen ${plan.regimen.toLowerCase()}`;
       }
+    }
+
+    // (4) Restricciones para plan de Resolución EPS+ARL: el generador del
+    // archivo plano espera tipo cotizante 01 y subtipo 04 fijos. Hay que
+    // validar aquí para que el dato guardado sea coherente con la salida.
+    const esResolucionEpsArl =
+      plan.regimen === 'RESOLUCION' &&
+      plan.incluyeEps &&
+      plan.incluyeArl &&
+      !plan.incluyeAfp &&
+      !plan.incluyeCcf;
+    if (esResolucionEpsArl) {
+      if (tipo.codigo !== '01') {
+        return `El plan "${plan.nombre}" (Resolución EPS+ARL) requiere tipo cotizante 01 (Dependiente). Actual: ${tipo.codigo}`;
+      }
+      const sub = data.subtipoId
+        ? await prisma.subtipo.findUnique({
+            where: { id: data.subtipoId },
+            select: { codigo: true },
+          })
+        : null;
+      if (!sub || sub.codigo !== '04') {
+        return `El plan "${plan.nombre}" (Resolución EPS+ARL) requiere subtipo 04`;
+      }
+    }
+
+    // Entidades requeridas según el plan.
+    if (plan.incluyeEps && !data.epsId) return `El plan "${plan.nombre}" requiere EPS`;
+    if (plan.incluyeAfp && !data.afpId) return `El plan "${plan.nombre}" requiere AFP`;
+    if (plan.incluyeCcf && !data.ccfId)
+      return `El plan "${plan.nombre}" requiere Caja de Compensación`;
+    if (plan.incluyeArl && data.modalidad === 'INDEPENDIENTE' && !data.arlId) {
+      return `El plan "${plan.nombre}" requiere ARL`;
     }
   }
   return null;
@@ -201,7 +285,11 @@ export async function createAfiliacionAction(
     return { error: `Afiliación: ${afParsed.error.issues[0]?.message ?? 'inválida'}` };
   }
 
-  const validationError = await validateAfiliacion(afParsed.data);
+  // (3) Cascada: limpiar IDs de entidades que no aplican al plan
+  const { normalized, plan } = await prepararPayload(afParsed.data);
+
+  // (2)(4) Validaciones: régimen, restricciones por plan, empresa cruzada
+  const validationError = await validateAfiliacion(normalized, plan);
   if (validationError) return { error: validationError };
 
   const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
@@ -222,26 +310,26 @@ export async function createAfiliacionAction(
       const af = await tx.afiliacion.create({
         data: {
           cotizanteId: cotizante.id,
-          modalidad: afParsed.data.modalidad,
-          empresaId: afParsed.data.empresaId,
+          modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
+          empresaId: normalized.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
           asesorComercialId: afParsed.data.asesorComercialId,
-          planSgssId: afParsed.data.planSgssId,
-          actividadEconomicaId: afParsed.data.actividadEconomicaId,
-          tipoCotizanteId: afParsed.data.tipoCotizanteId,
-          subtipoId: afParsed.data.subtipoId,
-          nivelRiesgo: afParsed.data.nivelRiesgo,
-          regimen: afParsed.data.regimen,
+          planSgssId: normalized.planSgssId,
+          actividadEconomicaId: normalized.actividadEconomicaId,
+          tipoCotizanteId: normalized.tipoCotizanteId,
+          subtipoId: normalized.subtipoId,
+          nivelRiesgo: normalized.nivelRiesgo as 'I' | 'II' | 'III' | 'IV' | 'V',
+          regimen: (normalized.regimen as 'ORDINARIO' | 'RESOLUCION' | null) ?? null,
           formaPago: afParsed.data.formaPago,
           estado: afParsed.data.estado,
-          salario: afParsed.data.salario,
+          salario: normalized.salario,
           valorAdministracion: afParsed.data.valorAdministracion,
           fechaIngreso: afParsed.data.fechaIngreso,
           comentarios: afParsed.data.comentarios,
-          epsId: afParsed.data.epsId,
-          afpId: afParsed.data.afpId,
-          arlId: afParsed.data.arlId,
-          ccfId: afParsed.data.ccfId,
+          epsId: normalized.epsId,
+          afpId: normalized.afpId,
+          arlId: normalized.arlId,
+          ccfId: normalized.ccfId,
         },
       });
 
@@ -259,7 +347,7 @@ export async function createAfiliacionAction(
       entidadId: afiliacionId,
       accion: 'CREAR',
       descripcion: `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
-      cambios: { despues: afParsed.data },
+      cambios: { despues: normalized },
     });
   } catch (e) {
     return {
@@ -294,7 +382,11 @@ export async function updateAfiliacionAction(
   });
   if (!existing) return { error: 'Afiliación no encontrada' };
 
-  const validationError = await validateAfiliacion(afParsed.data);
+  // (3) Cascada: limpiar IDs de entidades que no aplican al plan
+  const { normalized, plan } = await prepararPayload(afParsed.data);
+
+  // (2)(4) Validaciones: régimen, restricciones por plan, empresa cruzada
+  const validationError = await validateAfiliacion(normalized, plan);
   if (validationError) return { error: validationError };
 
   const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
@@ -306,26 +398,26 @@ export async function updateAfiliacionAction(
       await tx.afiliacion.update({
         where: { id: afiliacionId },
         data: {
-          modalidad: afParsed.data.modalidad,
-          empresaId: afParsed.data.empresaId,
+          modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
+          empresaId: normalized.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
           asesorComercialId: afParsed.data.asesorComercialId,
-          planSgssId: afParsed.data.planSgssId,
-          actividadEconomicaId: afParsed.data.actividadEconomicaId,
-          tipoCotizanteId: afParsed.data.tipoCotizanteId,
-          subtipoId: afParsed.data.subtipoId,
-          nivelRiesgo: afParsed.data.nivelRiesgo,
-          regimen: afParsed.data.regimen,
+          planSgssId: normalized.planSgssId,
+          actividadEconomicaId: normalized.actividadEconomicaId,
+          tipoCotizanteId: normalized.tipoCotizanteId,
+          subtipoId: normalized.subtipoId,
+          nivelRiesgo: normalized.nivelRiesgo as 'I' | 'II' | 'III' | 'IV' | 'V',
+          regimen: (normalized.regimen as 'ORDINARIO' | 'RESOLUCION' | null) ?? null,
           formaPago: afParsed.data.formaPago,
           estado: afParsed.data.estado,
-          salario: afParsed.data.salario,
+          salario: normalized.salario,
           valorAdministracion: afParsed.data.valorAdministracion,
           fechaIngreso: afParsed.data.fechaIngreso,
           comentarios: afParsed.data.comentarios,
-          epsId: afParsed.data.epsId,
-          afpId: afParsed.data.afpId,
-          arlId: afParsed.data.arlId,
-          ccfId: afParsed.data.ccfId,
+          epsId: normalized.epsId,
+          afpId: normalized.afpId,
+          arlId: normalized.arlId,
+          ccfId: normalized.ccfId,
         },
       });
 

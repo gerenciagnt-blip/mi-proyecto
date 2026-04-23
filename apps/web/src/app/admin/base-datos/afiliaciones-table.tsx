@@ -45,6 +45,12 @@ export type AfiliacionRow = {
   };
   empresa: { nit: string; nombre: string } | null;
   tipoCotizante: { codigo: string; nombre: string };
+  plan: {
+    codigo: string;
+    nombre: string;
+    regimen: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS';
+  } | null;
+  regimen: 'ORDINARIO' | 'RESOLUCION' | null;
   initial: InitialAfiliacion;
 };
 
@@ -92,6 +98,8 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
               <th className="px-4 py-2">Documento</th>
               <th className="px-4 py-2">Nombre</th>
               <th className="px-4 py-2">Modalidad</th>
+              <th className="px-4 py-2">Régimen</th>
+              <th className="px-4 py-2">Plan</th>
               <th className="px-4 py-2">Empresa</th>
               <th className="px-4 py-2">Tipo</th>
               <th className="px-4 py-2">Nivel</th>
@@ -104,7 +112,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
                   {emptyMessage}
                 </td>
               </tr>
@@ -130,6 +138,34 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                     >
                       {a.modalidad === 'DEPENDIENTE' ? 'Dep.' : 'Indep.'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {a.regimen ? (
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          a.regimen === 'ORDINARIO'
+                            ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                            : 'bg-violet-50 text-violet-700 ring-violet-200',
+                        )}
+                      >
+                        {a.regimen === 'ORDINARIO' ? 'Ordinario' : 'Resolución'}
+                      </span>
+                    ) : (
+                      <span className="italic text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {a.plan ? (
+                      <div>
+                        <p className="font-medium">{a.plan.nombre}</p>
+                        <p className="font-mono text-[10px] text-slate-500">
+                          {a.plan.codigo}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="italic text-slate-400">Sin plan</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {a.empresa ? (

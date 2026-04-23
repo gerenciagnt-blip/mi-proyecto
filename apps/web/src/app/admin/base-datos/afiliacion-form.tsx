@@ -296,16 +296,44 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
       {/* Encabezado en edit/view */}
       {!isCreate && props.cotizanteSnapshot && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-          <p className="font-mono text-xs text-slate-500">
-            {props.cotizanteSnapshot.tipoDocumento}{' '}
-            {props.cotizanteSnapshot.numeroDocumento}
-          </p>
-          <p className="font-medium text-slate-900">
-            {props.cotizanteSnapshot.nombreCompleto}
-          </p>
-          <p className="mt-1 text-[11px] uppercase tracking-wider text-slate-500">
-            Modalidad · {modalidad.toLowerCase()}
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="font-mono text-xs text-slate-500">
+                {props.cotizanteSnapshot.tipoDocumento}{' '}
+                {props.cotizanteSnapshot.numeroDocumento}
+              </p>
+              <p className="font-medium text-slate-900">
+                {props.cotizanteSnapshot.nombreCompleto}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                  modalidad === 'DEPENDIENTE'
+                    ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                    : 'bg-amber-50 text-amber-700 ring-amber-200'
+                }`}
+              >
+                {modalidad === 'DEPENDIENTE' ? 'Dependiente' : 'Independiente'}
+              </span>
+              {regimenActual && (
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                    regimenActual === 'ORDINARIO'
+                      ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                      : 'bg-violet-50 text-violet-700 ring-violet-200'
+                  }`}
+                >
+                  {regimenActual === 'ORDINARIO' ? 'Ordinario' : 'Resolución'}
+                </span>
+              )}
+              {plan && (
+                <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
+                  Plan: {plan.nombre}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -519,48 +547,47 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             )}
           </div>
 
-          {/* 2) Régimen (DEPENDIENTE) o Forma de pago (INDEPENDIENTE) */}
-          {!isIndep ? (
-            <>
-              <div>
-                <Label htmlFor="regimen">
-                  Régimen <Req />
-                </Label>
-                <select
-                  id="regimen"
-                  name="regimen"
-                  required
-                  value={regimenActual}
-                  onChange={(e) => setRegimenActual(e.target.value)}
-                  disabled={readOnly}
-                  className={selectClass}
-                >
-                  <option value="ORDINARIO">Ordinario</option>
-                  <option value="RESOLUCION">Resolución</option>
-                </select>
-              </div>
-              <input type="hidden" name="formaPago" value="" />
-            </>
+          {/* 2) Régimen — aplica a ambas modalidades. Los independientes
+               también pueden tener plan de Resolución (p.ej. pagos solo ARL
+               bajo ese régimen), así que el selector siempre está presente.
+               El campo formaPago adicional solo aplica a independientes. */}
+          <div>
+            <Label htmlFor="regimen">
+              Régimen <Req />
+            </Label>
+            <select
+              id="regimen"
+              name="regimen"
+              required
+              value={regimenActual}
+              onChange={(e) => setRegimenActual(e.target.value)}
+              disabled={readOnly}
+              className={selectClass}
+            >
+              <option value="ORDINARIO">Ordinario</option>
+              <option value="RESOLUCION">Resolución</option>
+            </select>
+          </div>
+
+          {isIndep ? (
+            <div>
+              <Label htmlFor="formaPago">
+                Forma de pago <Req />
+              </Label>
+              <select
+                id="formaPago"
+                name="formaPago"
+                required
+                defaultValue={initial?.formaPago ?? 'VIGENTE'}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="VIGENTE">Vigente (paga mes en curso)</option>
+                <option value="VENCIDO">Vencido (paga mes anterior)</option>
+              </select>
+            </div>
           ) : (
-            <>
-              <input type="hidden" name="regimen" value="" />
-              <div>
-                <Label htmlFor="formaPago">
-                  Forma de pago <Req />
-                </Label>
-                <select
-                  id="formaPago"
-                  name="formaPago"
-                  required
-                  defaultValue={initial?.formaPago ?? 'VIGENTE'}
-                  disabled={readOnly}
-                  className={selectClass}
-                >
-                  <option value="VIGENTE">Vigente (paga mes en curso)</option>
-                  <option value="VENCIDO">Vencido (paga mes anterior)</option>
-                </select>
-              </div>
-            </>
+            <input type="hidden" name="formaPago" value="" />
           )}
 
           <div>

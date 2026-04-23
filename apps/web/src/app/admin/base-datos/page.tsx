@@ -83,6 +83,7 @@ export default async function BaseDatosPage({
         cotizante: true,
         empresa: { select: { nit: true, nombre: true } },
         tipoCotizante: { select: { codigo: true, nombre: true } },
+        planSgss: { select: { codigo: true, nombre: true, regimen: true } },
         serviciosAdicionales: { select: { servicioAdicionalId: true } },
       },
     }),
@@ -245,6 +246,14 @@ export default async function BaseDatosPage({
     },
     empresa: a.empresa,
     tipoCotizante: a.tipoCotizante,
+    plan: a.planSgss
+      ? {
+          codigo: a.planSgss.codigo,
+          nombre: a.planSgss.nombre,
+          regimen: a.planSgss.regimen,
+        }
+      : null,
+    regimen: a.regimen,
     initial: {
       modalidad: a.modalidad,
       empresaId: a.empresaId,
