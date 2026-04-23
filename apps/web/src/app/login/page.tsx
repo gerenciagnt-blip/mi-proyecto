@@ -1,5 +1,5 @@
 import { Clock, ShieldCheck } from 'lucide-react';
-import { PilaLogo } from '@/components/brand/pila-logo';
+import { PilaLogoInline } from '@/components/brand/pila-logo-inline';
 import { Alert } from '@/components/ui/alert';
 import { LoginForm } from './login-form';
 
@@ -42,7 +42,8 @@ export default async function LoginPage({
       <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center gap-8 px-5 py-8 sm:px-8 sm:py-10 md:flex-row md:gap-4 md:py-14 lg:gap-0 lg:py-16 xl:px-12">
         {/* --- Izquierda: logo con animación + tamaño responsive --- */}
         <section className="flex w-full flex-1 items-center justify-center md:pr-8 lg:pr-14 xl:pr-20">
-          <PilaLogo
+          <PilaLogoInline
+            animated
             imgClassName="w-56 sm:w-64 md:w-72 lg:w-[340px] xl:w-[420px] 2xl:w-[460px]"
           />
         </section>
