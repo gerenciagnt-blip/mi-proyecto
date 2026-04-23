@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, FileText, Download, Trash2 } from 'lucide-react';
-import type { CarteraEstado } from '@pila/db';
+import { ArrowLeft, FileText, Download } from 'lucide-react';
+import type { CarteraEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { formatCOP } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { GestionarLineaButton } from '../gestion-dialog';
 import { AnularConsolidadoButton } from '../anular-button';
+import { VerGestionesButton } from '../ver-gestiones-dialog';
 
 export const metadata = { title: 'Detalle consolidado · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -25,29 +26,64 @@ const ESTADO_TONE: Record<CarteraEstado, string> = {
   PAGADA_CARTERA_REAL: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
 };
 
+type SP = { doc?: string; sucursalId?: string; estado?: string };
+
 export default async function ConsolidadoDetallePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SP>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
 
-  const [consolidado, sucursales] = await Promise.all([
+  const docQ = sp.doc?.trim() ?? '';
+  const sucursalIdFilter = sp.sucursalId?.trim() ?? '';
+  const estadoFilter: CarteraEstado | undefined =
+    sp.estado === 'EN_CONCILIACION' ||
+    sp.estado === 'CONCILIADA' ||
+    sp.estado === 'CARTERA_REAL' ||
+    sp.estado === 'PAGADA_CARTERA_REAL'
+      ? (sp.estado as CarteraEstado)
+      : undefined;
+
+  // Where del detallado (filtros opcionales en la misma vista)
+  const whereDet: Prisma.CarteraDetalladoWhereInput = {
+    consolidadoId: id,
+  };
+  if (docQ) {
+    whereDet.OR = [
+      { numeroDocumento: { contains: docQ, mode: 'insensitive' } },
+      { nombreCompleto: { contains: docQ, mode: 'insensitive' } },
+    ];
+  }
+  if (sucursalIdFilter === 'NULL') {
+    whereDet.sucursalAsignadaId = null;
+  } else if (sucursalIdFilter) {
+    whereDet.sucursalAsignadaId = sucursalIdFilter;
+  }
+  if (estadoFilter) whereDet.estado = estadoFilter;
+
+  const [consolidado, detalladoFiltrado, sucursales] = await Promise.all([
     prisma.carteraConsolidado.findUnique({
       where: { id },
       include: {
         empresa: { select: { id: true, nombre: true } },
         createdBy: { select: { name: true, email: true } },
+        // `detallado` aquí es SOLO para agregados por estado (full list).
         detallado: {
-          orderBy: [{ nombreCompleto: 'asc' }, { periodoCobro: 'asc' }],
-          include: {
-            sucursalAsignada: { select: { id: true, codigo: true, nombre: true } },
-            cotizante: {
-              select: { id: true, sucursal: { select: { codigo: true } } },
-            },
-            _count: { select: { gestiones: true } },
-          },
+          select: { estado: true, valorCobro: true },
         },
+      },
+    }),
+    prisma.carteraDetallado.findMany({
+      where: whereDet,
+      orderBy: [{ nombreCompleto: 'asc' }, { periodoCobro: 'asc' }],
+      include: {
+        sucursalAsignada: { select: { id: true, codigo: true, nombre: true } },
+        cotizante: { select: { id: true } },
+        _count: { select: { gestiones: true } },
       },
     }),
     prisma.sucursal.findMany({
@@ -59,7 +95,7 @@ export default async function ConsolidadoDetallePage({
 
   if (!consolidado) notFound();
 
-  // Agregación: cuántas líneas por estado (para el header)
+  // Agregación: cuántas líneas por estado (basado en el full list)
   const porEstado = new Map<CarteraEstado, { count: number; total: number }>();
   for (const d of consolidado.detallado) {
     const prev = porEstado.get(d.estado) ?? { count: 0, total: 0 };
@@ -67,6 +103,8 @@ export default async function ConsolidadoDetallePage({
     prev.total += Number(d.valorCobro);
     porEstado.set(d.estado, prev);
   }
+
+  const hayFiltros = !!docQ || !!sucursalIdFilter || !!estadoFilter;
 
   return (
     <div className="space-y-6">
@@ -160,8 +198,94 @@ export default async function ConsolidadoDetallePage({
         )}
       </section>
 
-      {/* Tabla detallado */}
+      {/* Filtros del detallado */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <form
+            method="GET"
+            action={`/admin/soporte/cartera/${consolidado.id}`}
+            className="flex flex-wrap items-end gap-2"
+          >
+            <div className="flex-1 min-w-[200px]">
+              <label
+                htmlFor="doc"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Documento o nombre
+              </label>
+              <input
+                type="search"
+                id="doc"
+                name="doc"
+                defaultValue={docQ}
+                placeholder="Cédula, nombre…"
+                className="mt-0.5 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm placeholder:text-slate-400"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="sucursalId"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Sucursal
+              </label>
+              <select
+                id="sucursalId"
+                name="sucursalId"
+                defaultValue={sucursalIdFilter}
+                className="mt-0.5 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              >
+                <option value="">Todas</option>
+                <option value="NULL">Sin asignar</option>
+                {sucursales.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.codigo} · {s.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="estado"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Estado
+              </label>
+              <select
+                id="estado"
+                name="estado"
+                defaultValue={estadoFilter ?? ''}
+                className="mt-0.5 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              >
+                <option value="">Todos</option>
+                <option value="EN_CONCILIACION">En conciliación</option>
+                <option value="CONCILIADA">Conciliada</option>
+                <option value="CARTERA_REAL">Cartera real</option>
+                <option value="PAGADA_CARTERA_REAL">Pagada</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="h-9 rounded-lg bg-brand-blue px-3 text-sm font-medium text-white hover:bg-brand-blue-dark"
+            >
+              Filtrar
+            </button>
+            {hayFiltros && (
+              <Link
+                href={`/admin/soporte/cartera/${consolidado.id}`}
+                className="h-9 leading-9 text-xs text-slate-500 hover:text-slate-900"
+              >
+                Limpiar
+              </Link>
+            )}
+            <span className="ml-auto self-end text-xs text-slate-500">
+              {detalladoFiltrado.length}{' '}
+              {detalladoFiltrado.length === 1 ? 'línea' : 'líneas'}
+            </span>
+          </form>
+        </header>
+
+        {/* Tabla detallado */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
@@ -172,72 +296,95 @@ export default async function ConsolidadoDetallePage({
                 <th className="px-4 py-2 text-right">Valor</th>
                 <th className="px-4 py-2">Sucursal</th>
                 <th className="px-4 py-2">Estado</th>
-                <th className="px-4 py-2">Gestiones</th>
                 <th className="px-4 py-2 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {consolidado.detallado.map((d) => (
-                <tr key={d.id}>
-                  <td className="px-4 py-2 font-mono text-[11px]">
-                    {d.tipoDocumento} {d.numeroDocumento}
-                    {d.cotizanteId && (
-                      <span className="ml-1 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">
-                        match
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-xs">{d.nombreCompleto}</td>
-                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
-                    {d.periodoCobro}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs font-semibold">
-                    {formatCOP(Number(d.valorCobro))}
-                  </td>
-                  <td className="px-4 py-2 text-xs">
-                    {d.sucursalAsignada ? (
-                      <>
-                        <span className="font-mono text-[10px] font-semibold">
-                          {d.sucursalAsignada.codigo}
-                        </span>
-                        <span className="ml-1 text-slate-500">
-                          {d.sucursalAsignada.nombre}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="italic text-amber-700">sin asignar</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={cn(
-                        'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                        ESTADO_TONE[d.estado],
-                      )}
-                    >
-                      {ESTADO_LABEL[d.estado]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-xs text-slate-500">
-                    {d._count.gestiones}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <GestionarLineaButton
-                      detalladoId={d.id}
-                      estadoActual={d.estado}
-                      sucursalActualId={d.sucursalAsignadaId}
-                      sucursales={sucursales}
-                      cotizante={{
-                        tipo: d.tipoDocumento,
-                        numero: d.numeroDocumento,
-                        nombre: d.nombreCompleto,
-                      }}
-                      periodo={d.periodoCobro}
-                      valor={Number(d.valorCobro)}
-                    />
+              {detalladoFiltrado.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-4 py-8 text-center text-xs text-slate-400"
+                  >
+                    {hayFiltros
+                      ? 'Sin resultados con los filtros actuales.'
+                      : 'No hay líneas en este consolidado.'}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                detalladoFiltrado.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-4 py-2 font-mono text-[11px]">
+                      {d.tipoDocumento} {d.numeroDocumento}
+                      {d.cotizanteId && (
+                        <span className="ml-1 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">
+                          match
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs">{d.nombreCompleto}</td>
+                    <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
+                      {d.periodoCobro}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono text-xs font-semibold">
+                      {formatCOP(Number(d.valorCobro))}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {d.sucursalAsignada ? (
+                        <>
+                          <span className="font-mono text-[10px] font-semibold">
+                            {d.sucursalAsignada.codigo}
+                          </span>
+                          <span className="ml-1 text-slate-500">
+                            {d.sucursalAsignada.nombre}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="italic text-amber-700">sin asignar</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          ESTADO_TONE[d.estado],
+                        )}
+                      >
+                        {ESTADO_LABEL[d.estado]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <VerGestionesButton
+                          detalladoId={d.id}
+                          gestionesCount={d._count.gestiones}
+                          cotizante={{
+                            tipo: d.tipoDocumento,
+                            numero: d.numeroDocumento,
+                            nombre: d.nombreCompleto,
+                          }}
+                          periodo={d.periodoCobro}
+                          valor={Number(d.valorCobro)}
+                          variant="chip"
+                        />
+                        <GestionarLineaButton
+                          detalladoId={d.id}
+                          estadoActual={d.estado}
+                          sucursalActualId={d.sucursalAsignadaId}
+                          sucursales={sucursales}
+                          cotizante={{
+                            tipo: d.tipoDocumento,
+                            numero: d.numeroDocumento,
+                            nombre: d.nombreCompleto,
+                          }}
+                          periodo={d.periodoCobro}
+                          valor={Number(d.valorCobro)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

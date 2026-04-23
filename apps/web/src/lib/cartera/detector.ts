@@ -61,9 +61,42 @@ export function detectarOrigen(texto: string): DetectorResult {
 
 /** Utilidades compartidas por varios parsers. */
 
-/** Normaliza "12/2025", "202512", "12-2025", "01/2026" → "2026-01". */
+/**
+ * Normaliza cualquier representación de período a "AAAA-MM". Acepta:
+ *
+ *   "202512"         → "2025-12"    (AAAAMM sin separador)
+ *   "2026-01"        → "2026-01"    (ya normalizado)
+ *   "2026/01"        → "2026-01"    (slash o guión, AAAA primero)
+ *   "01/2026"        → "2026-01"    (MM/AAAA o MM-AAAA)
+ *   "01-2026"        → "2026-01"
+ *   "2026-04-18"     → "2026-04"    (AAAA-MM-DD — ISO date)
+ *   "18-04-2026"     → "2026-04"    (DD-MM-AAAA — fecha latina)
+ *   "18/04/2026"     → "2026-04"
+ *
+ * El número del mes se valida entre 1 y 12. Devuelve null si no matchea.
+ */
 export function normalizarPeriodo(raw: string): string | null {
   const s = raw.trim();
+
+  // "AAAA-MM-DD" o "AAAA/MM/DD" — tomamos los primeros dos grupos
+  const m0 = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (m0) {
+    const [, y, mo] = m0;
+    const moNum = Number(mo);
+    if (moNum >= 1 && moNum <= 12) {
+      return `${y}-${String(moNum).padStart(2, '0')}`;
+    }
+  }
+
+  // "DD-MM-AAAA" o "DD/MM/AAAA" — tomamos grupo 2 y 3
+  const m0b = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m0b) {
+    const [, , mo, y] = m0b;
+    const moNum = Number(mo);
+    if (moNum >= 1 && moNum <= 12) {
+      return `${y}-${String(moNum).padStart(2, '0')}`;
+    }
+  }
 
   // "202512" → "2025-12"
   const m1 = s.match(/^(\d{4})(\d{2})$/);
@@ -73,19 +106,25 @@ export function normalizarPeriodo(raw: string): string | null {
     if (moNum >= 1 && moNum <= 12) return `${y}-${mo}`;
   }
 
-  // "01/2026" o "12-2025"
-  const m2 = s.match(/^(\d{1,2})[/\-](\d{4})$/);
+  // "AAAA-MM" o "AAAA/MM" (ya normalizado o variante)
+  const m2 = s.match(/^(\d{4})[\/\-](\d{1,2})$/);
   if (m2) {
-    const [, mo, y] = m2;
+    const [, y, mo] = m2;
     const moNum = Number(mo);
     if (moNum >= 1 && moNum <= 12) {
       return `${y}-${String(moNum).padStart(2, '0')}`;
     }
   }
 
-  // "2026-01" (ya normalizado)
-  const m3 = s.match(/^(\d{4})-(\d{2})$/);
-  if (m3) return s;
+  // "MM/AAAA" o "MM-AAAA"
+  const m3 = s.match(/^(\d{1,2})[\/\-](\d{4})$/);
+  if (m3) {
+    const [, mo, y] = m3;
+    const moNum = Number(mo);
+    if (moNum >= 1 && moNum <= 12) {
+      return `${y}-${String(moNum).padStart(2, '0')}`;
+    }
+  }
 
   return null;
 }

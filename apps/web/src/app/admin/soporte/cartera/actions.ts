@@ -213,6 +213,60 @@ export async function gestionarLineaAction(
   return { ok: true };
 }
 
+// ============ Listar gestiones de una línea ============
+
+export type GestionRow = {
+  id: string;
+  accionadaPor: 'SOPORTE' | 'ALIADO';
+  nuevoEstado: string | null;
+  descripcion: string;
+  userName: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Devuelve la bitácora de gestiones de una línea, ordenada de más
+ * reciente a más antigua. Usada por los dialogs de "Ver gestiones" en
+ * ambos módulos (Soporte y Administrativo).
+ *
+ * Scope: STAFF ve cualquier línea; SUCURSAL sólo las asignadas a su
+ * sucursal.
+ */
+export async function listarGestionesLineaAction(
+  detalladoId: string,
+): Promise<GestionRow[]> {
+  const { requireAuth } = await import('@/lib/auth-helpers');
+  await requireAuth();
+  const { getUserScope } = await import('@/lib/sucursal-scope');
+  const scope = await getUserScope();
+  if (!scope) return [];
+
+  if (scope.tipo === 'SUCURSAL') {
+    const linea = await prisma.carteraDetallado.findUnique({
+      where: { id: detalladoId },
+      select: { sucursalAsignadaId: true },
+    });
+    if (!linea || linea.sucursalAsignadaId !== scope.sucursalId) return [];
+  }
+
+  const rows = await prisma.carteraGestion.findMany({
+    where: { detalladoId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      accionadaPor: true,
+      nuevoEstado: true,
+      descripcion: true,
+      userName: true,
+      createdAt: true,
+    },
+  });
+  return rows.map((r) => ({
+    ...r,
+    nuevoEstado: r.nuevoEstado ?? null,
+  }));
+}
+
 // ============ Anular consolidado ============
 
 /** Borra el consolidado completo (cascade). Solo ADMIN/SOPORTE. */

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { GestionarAliadoButton } from './gestion-dialog';
+import { VerGestionesButton } from '../../soporte/cartera/ver-gestiones-dialog';
 
 export const metadata = { title: 'Cartera · Administrativo — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -226,19 +227,33 @@ export default async function AdministrativoCarteraPage({
                         {ESTADO_LABEL[l.estado]}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      <GestionarAliadoButton
-                        detalladoId={l.id}
-                        estadoActual={l.estado}
-                        cotizante={{
-                          tipo: l.tipoDocumento,
-                          numero: l.numeroDocumento,
-                          nombre: l.nombreCompleto,
-                        }}
-                        periodo={l.periodoCobro}
-                        valor={Number(l.valorCobro)}
-                        gestionesCount={l._count.gestiones}
-                      />
+                    <td className="px-4 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <VerGestionesButton
+                          detalladoId={l.id}
+                          gestionesCount={l._count.gestiones}
+                          cotizante={{
+                            tipo: l.tipoDocumento,
+                            numero: l.numeroDocumento,
+                            nombre: l.nombreCompleto,
+                          }}
+                          periodo={l.periodoCobro}
+                          valor={Number(l.valorCobro)}
+                          variant="chip"
+                        />
+                        <GestionarAliadoButton
+                          detalladoId={l.id}
+                          estadoActual={l.estado}
+                          cotizante={{
+                            tipo: l.tipoDocumento,
+                            numero: l.numeroDocumento,
+                            nombre: l.nombreCompleto,
+                          }}
+                          periodo={l.periodoCobro}
+                          valor={Number(l.valorCobro)}
+                          gestionesCount={l._count.gestiones}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

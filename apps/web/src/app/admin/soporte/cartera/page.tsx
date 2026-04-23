@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
-import type { CarteraEstado, CarteraTipoEntidad } from '@pila/db';
+import type { CarteraEstado, CarteraTipoEntidad, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
@@ -31,9 +31,55 @@ const ESTADO_LABEL: Record<CarteraEstado, string> = {
   PAGADA_CARTERA_REAL: 'Pagada (cartera real)',
 };
 
-export default async function SoporteCarteraPage() {
-  // Resumen por estado (agregando detallado, no consolidado — las líneas
-  // pueden tener estados distintos dentro del mismo consolidado).
+/** Parse YYYY-MM-DD seguro; undefined si inválido. */
+function parseDateIso(s: string | undefined): Date | undefined {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!, 0, 0, 0));
+}
+
+type SP = {
+  desde?: string;
+  hasta?: string;
+  tipo?: string;
+  entidad?: string;
+};
+
+export default async function SoporteCarteraPage({
+  searchParams,
+}: {
+  searchParams: Promise<SP>;
+}) {
+  const sp = await searchParams;
+  const desde = parseDateIso(sp.desde);
+  const hasta = parseDateIso(sp.hasta);
+  const tipoFilter =
+    sp.tipo === 'EPS' || sp.tipo === 'AFP' || sp.tipo === 'ARL' || sp.tipo === 'CCF'
+      ? (sp.tipo as CarteraTipoEntidad)
+      : undefined;
+  const entidadQ = sp.entidad?.trim() ?? '';
+
+  const where: Prisma.CarteraConsolidadoWhereInput = {};
+  if (desde || hasta) {
+    where.fechaRegistro = {};
+    if (desde) where.fechaRegistro.gte = desde;
+    if (hasta) {
+      // Incluimos el día "hasta" completo (< siguiente día).
+      const next = new Date(hasta);
+      next.setUTCDate(next.getUTCDate() + 1);
+      where.fechaRegistro.lt = next;
+    }
+  }
+  if (tipoFilter) where.tipoEntidad = tipoFilter;
+  if (entidadQ) {
+    where.OR = [
+      { entidadNombre: { contains: entidadQ, mode: 'insensitive' } },
+      { empresaNit: { contains: entidadQ } },
+      { empresaRazonSocial: { contains: entidadQ, mode: 'insensitive' } },
+      { consecutivo: { contains: entidadQ, mode: 'insensitive' } },
+    ];
+  }
+
   const [lineasAgrupado, consolidados] = await Promise.all([
     prisma.carteraDetallado.groupBy({
       by: ['estado'],
@@ -41,8 +87,9 @@ export default async function SoporteCarteraPage() {
       _sum: { valorCobro: true },
     }),
     prisma.carteraConsolidado.findMany({
+      where,
       orderBy: { fechaRegistro: 'desc' },
-      take: 100,
+      take: 200,
       include: {
         empresa: { select: { id: true, nombre: true } },
         _count: { select: { detallado: true } },
@@ -103,6 +150,9 @@ export default async function SoporteCarteraPage() {
     },
   ];
 
+  const hayFiltros =
+    !!desde || !!hasta || !!tipoFilter || entidadQ.length > 0;
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -162,16 +212,104 @@ export default async function SoporteCarteraPage() {
       {/* Lista de consolidados */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 bg-slate-50 px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-700">
-            Consolidados recientes
-          </h2>
+          <form
+            method="GET"
+            action="/admin/soporte/cartera"
+            className="flex flex-wrap items-end gap-2"
+          >
+            <div>
+              <label
+                htmlFor="desde"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Desde
+              </label>
+              <input
+                type="date"
+                id="desde"
+                name="desde"
+                defaultValue={sp.desde ?? ''}
+                className="mt-0.5 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="hasta"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Hasta
+              </label>
+              <input
+                type="date"
+                id="hasta"
+                name="hasta"
+                defaultValue={sp.hasta ?? ''}
+                className="mt-0.5 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="tipo"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Tipo
+              </label>
+              <select
+                id="tipo"
+                name="tipo"
+                defaultValue={tipoFilter ?? ''}
+                className="mt-0.5 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+              >
+                <option value="">Todos</option>
+                <option value="EPS">EPS</option>
+                <option value="AFP">AFP</option>
+                <option value="ARL">ARL</option>
+                <option value="CCF">CCF</option>
+              </select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <label
+                htmlFor="entidad"
+                className="block text-[10px] font-medium uppercase tracking-wider text-slate-500"
+              >
+                Entidad / NIT / consecutivo
+              </label>
+              <input
+                type="search"
+                id="entidad"
+                name="entidad"
+                defaultValue={entidadQ}
+                placeholder="Salud Total · 901913106 · CC-000001…"
+                className="mt-0.5 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm placeholder:text-slate-400"
+              />
+            </div>
+            <button
+              type="submit"
+              className="h-9 rounded-lg bg-brand-blue px-3 text-sm font-medium text-white hover:bg-brand-blue-dark"
+            >
+              Filtrar
+            </button>
+            {hayFiltros && (
+              <Link
+                href="/admin/soporte/cartera"
+                className="h-9 leading-9 text-xs text-slate-500 hover:text-slate-900"
+              >
+                Limpiar
+              </Link>
+            )}
+            <span className="ml-auto self-end text-xs text-slate-500">
+              {consolidados.length}{' '}
+              {consolidados.length === 1 ? 'consolidado' : 'consolidados'}
+            </span>
+          </form>
         </header>
         {consolidados.length === 0 ? (
           <Alert variant="info" className="m-5">
             <FileText className="h-4 w-4 shrink-0" />
             <span>
-              No hay estados de cuenta cargados todavía. Usa el botón
-              “Cargar estado de cuenta” para importar el primer PDF.
+              {hayFiltros
+                ? 'Sin resultados con los filtros actuales.'
+                : 'No hay estados de cuenta cargados todavía. Usa el botón “Cargar estado de cuenta” para importar el primer PDF.'}
             </span>
           </Alert>
         ) : (
@@ -183,7 +321,6 @@ export default async function SoporteCarteraPage() {
                   <th className="px-4 py-2">Fecha</th>
                   <th className="px-4 py-2">Entidad</th>
                   <th className="px-4 py-2">Empresa (NIT)</th>
-                  <th className="px-4 py-2">Periodo</th>
                   <th className="px-4 py-2 text-right">Líneas</th>
                   <th className="px-4 py-2 text-right">Total</th>
                   <th className="px-4 py-2">Estado</th>
@@ -216,16 +353,14 @@ export default async function SoporteCarteraPage() {
                       <p className="font-mono text-[10px] text-slate-500">
                         NIT {c.empresaNit}
                         {!c.empresa && (
-                          <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700">
-                            sin match
+                          <span
+                            className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700"
+                            title="El NIT del PDF no corresponde a ninguna empresa registrada en el módulo Empresas. Se muestra la razón social tal como viene del PDF."
+                          >
+                            NIT no registrado
                           </span>
                         )}
                       </p>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
-                      {c.periodoDesde && c.periodoHasta
-                        ? `${c.periodoDesde} → ${c.periodoHasta}`
-                        : c.periodoHasta ?? '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-xs">
                       {c._count.detallado}
