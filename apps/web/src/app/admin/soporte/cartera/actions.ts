@@ -1,0 +1,233 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import type { CarteraEstado } from '@pila/db';
+import { prisma } from '@pila/db';
+import { requireStaff } from '@/lib/auth-helpers';
+import { parseCarteraPdf } from '@/lib/cartera/parse';
+import { guardarPdfCartera } from '@/lib/cartera/storage';
+import {
+  buscarConsolidadoExistente,
+  importarParsedCartera,
+  type ConsolidadoConflicto,
+  type ResultadoImport,
+} from '@/lib/cartera/normalizer';
+import type { ParsedCartera } from '@/lib/cartera/types';
+
+export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
+
+// ============ Preview (parsea sin guardar) ============
+
+export type PreviewResult =
+  | {
+      ok: true;
+      cabecera: {
+        origenPdf: ParsedCartera['origenPdf'];
+        tipoEntidad: ParsedCartera['tipoEntidad'];
+        entidadNombre: string;
+        empresaNit: string;
+        empresaRazonSocial: string;
+        periodoDesde?: string;
+        periodoHasta?: string;
+        valorTotalInformado: number;
+        cantidadLineas: number;
+        sumaDetallado: number;
+      };
+      /** Primeras 10 líneas del detallado para mostrar al usuario. */
+      previewLineas: ParsedCartera['detallado'];
+      advertencias: string[];
+      /** Si ya existe un consolidado con misma clave, datos del existente. */
+      conflicto: ConsolidadoConflicto | null;
+    }
+  | { ok: false; error: string; preview?: string };
+
+/**
+ * Recibe el PDF como FormData (campo `file`), lo parsea y devuelve un
+ * resumen para el UI (cabecera + primeras 10 líneas + advertencias). El
+ * archivo se reparsea al confirmar el import — el preview no persiste.
+ */
+export async function previewCarteraAction(
+  formData: FormData,
+): Promise<PreviewResult> {
+  await requireStaff();
+  const file = formData.get('file');
+  if (!(file instanceof File)) {
+    return { ok: false, error: 'Archivo PDF requerido' };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, error: 'El PDF supera los 10 MB permitidos' };
+  }
+  const buf = Buffer.from(await file.arrayBuffer());
+
+  const parsed = await parseCarteraPdf(buf);
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error, preview: parsed.preview };
+  }
+
+  const conflicto = await buscarConsolidadoExistente(
+    parsed.empresaNit,
+    parsed.entidadNombre,
+    parsed.periodoHasta,
+  );
+  const sumaDetallado = parsed.detallado.reduce((s, d) => s + d.valorCobro, 0);
+
+  return {
+    ok: true,
+    cabecera: {
+      origenPdf: parsed.origenPdf,
+      tipoEntidad: parsed.tipoEntidad,
+      entidadNombre: parsed.entidadNombre,
+      empresaNit: parsed.empresaNit,
+      empresaRazonSocial: parsed.empresaRazonSocial,
+      periodoDesde: parsed.periodoDesde,
+      periodoHasta: parsed.periodoHasta,
+      valorTotalInformado: parsed.valorTotalInformado,
+      cantidadLineas: parsed.detallado.length,
+      sumaDetallado,
+    },
+    previewLineas: parsed.detallado.slice(0, 10),
+    advertencias: parsed.advertencias,
+    conflicto,
+  };
+}
+
+// ============ Confirmar import ============
+
+/**
+ * Persiste el estado de cuenta: guarda el PDF en filesystem y crea
+ * CarteraConsolidado + CarteraDetallado[]. Si `reemplazar=true` y existe
+ * un consolidado previo con la misma clave, lo borra primero (cascade).
+ */
+export async function importarCarteraAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState & { consolidadoId?: string; consecutivo?: string }> {
+  const session = await requireStaff();
+  const userId = session.user.id;
+
+  const file = formData.get('file');
+  if (!(file instanceof File)) {
+    return { error: 'Archivo PDF requerido' };
+  }
+  const reemplazar = formData.get('reemplazar') === '1';
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const parsed = await parseCarteraPdf(buf);
+  if (!parsed.ok) {
+    return { error: parsed.error };
+  }
+  if (parsed.detallado.length === 0) {
+    return {
+      error:
+        'El PDF se reconoció pero no se extrajeron líneas. Revisa si es una imagen escaneada o un formato no soportado aún.',
+    };
+  }
+
+  // Guardamos el PDF en filesystem local antes de crear la fila.
+  const archivo = await guardarPdfCartera(buf, file.name);
+
+  const res: ResultadoImport = await importarParsedCartera(parsed, {
+    archivoPath: archivo.path,
+    archivoHash: archivo.hash,
+    createdById: userId,
+    reemplazar,
+  });
+
+  if (!res.ok) {
+    return { error: res.error };
+  }
+
+  revalidatePath('/admin/soporte/cartera');
+  return {
+    ok: true,
+    consolidadoId: res.consolidadoId,
+    consecutivo: res.consecutivo,
+    mensaje: `Importado ${res.consecutivo} · ${res.cantidadRegistros} líneas${
+      res.advertencias.length > 0 ? ` · ${res.advertencias.length} advertencias` : ''
+    }`,
+  };
+}
+
+// ============ Gestión por línea ============
+
+/**
+ * Crea una gestión sobre una línea del detallado. Si `nuevoEstado` viene,
+ * actualiza también el estado de la línea (y registra el cambio en la
+ * bitácora). Si `sucursalAsignadaId` viene, reasigna la sucursal.
+ */
+export async function gestionarLineaAction(
+  detalladoId: string,
+  params: {
+    descripcion: string;
+    nuevoEstado?: CarteraEstado;
+    sucursalAsignadaId?: string | null;
+  },
+): Promise<ActionState> {
+  const session = await requireStaff();
+  const userId = session.user.id;
+  const userName = session.user.name;
+
+  const desc = params.descripcion.trim();
+  if (!desc) return { error: 'La descripción es obligatoria' };
+
+  const linea = await prisma.carteraDetallado.findUnique({
+    where: { id: detalladoId },
+    select: { id: true, estado: true, sucursalAsignadaId: true, consolidadoId: true },
+  });
+  if (!linea) return { error: 'Línea no encontrada' };
+
+  const cambios: Partial<{ estado: CarteraEstado; sucursalAsignadaId: string | null }> = {};
+  if (params.nuevoEstado && params.nuevoEstado !== linea.estado) {
+    cambios.estado = params.nuevoEstado;
+  }
+  if (
+    params.sucursalAsignadaId !== undefined &&
+    params.sucursalAsignadaId !== linea.sucursalAsignadaId
+  ) {
+    cambios.sucursalAsignadaId = params.sucursalAsignadaId;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(cambios).length > 0) {
+      await tx.carteraDetallado.update({
+        where: { id: detalladoId },
+        data: cambios,
+      });
+    }
+    await tx.carteraGestion.create({
+      data: {
+        detalladoId,
+        accionadaPor: 'SOPORTE',
+        nuevoEstado: cambios.estado ?? null,
+        descripcion: desc,
+        userId,
+        userName,
+      },
+    });
+  });
+
+  revalidatePath('/admin/soporte/cartera');
+  revalidatePath(`/admin/soporte/cartera/${linea.consolidadoId}`);
+  // También en Administrativo por si la línea acaba de pasar a CARTERA_REAL.
+  revalidatePath('/admin/administrativo/cartera');
+  return { ok: true };
+}
+
+// ============ Anular consolidado ============
+
+/** Borra el consolidado completo (cascade). Solo ADMIN/SOPORTE. */
+export async function anularConsolidadoAction(
+  consolidadoId: string,
+): Promise<ActionState> {
+  await requireStaff();
+  const existe = await prisma.carteraConsolidado.findUnique({
+    where: { id: consolidadoId },
+    select: { id: true, consecutivo: true },
+  });
+  if (!existe) return { error: 'Consolidado no encontrado' };
+
+  await prisma.carteraConsolidado.delete({ where: { id: consolidadoId } });
+  revalidatePath('/admin/soporte/cartera');
+  revalidatePath('/admin/administrativo/cartera');
+  return { ok: true, mensaje: `${existe.consecutivo} anulado` };
+}

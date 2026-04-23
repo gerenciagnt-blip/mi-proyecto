@@ -21,6 +21,7 @@ build/
 
 # Uploads de usuarios — no incluir en git (se regeneran en cada entorno)
 apps/web/public/uploads/
+uploads/
 
 # Variables de entorno (todas, solo se commitea .env.example)
 .env

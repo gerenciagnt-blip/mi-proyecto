@@ -53,6 +53,7 @@ const NAV: NavItem[] = [
     label: 'Soporte',
     icon: LifeBuoy,
     children: [
+      { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet },
       { label: 'Afiliaciones', href: '/admin/soporte/afiliaciones', icon: FileCheck },
       { label: 'Incapacidades', href: '/admin/soporte/incapacidades', icon: FileText },
     ],
