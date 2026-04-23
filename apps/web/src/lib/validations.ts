@@ -295,6 +295,7 @@ export const PlanSgssSchema = z.object({
   incluyeAfp: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
   incluyeArl: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
   incluyeCcf: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+  regimen: z.enum(['ORDINARIO', 'RESOLUCION', 'AMBOS']).default('AMBOS'),
 });
 
 export const AfiliacionSchema = z

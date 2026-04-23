@@ -3,10 +3,7 @@ import {
   Briefcase,
   UserCheck,
   Database,
-  Users2,
   CreditCard,
-  Sparkles,
-  FileSignature,
   DollarSign,
   Layers3,
   Percent,
@@ -14,7 +11,7 @@ import {
 } from 'lucide-react';
 import { prisma } from '@pila/db';
 
-export const metadata = { title: 'Catálogos — Sistema PILA' };
+export const metadata = { title: 'Parametrización — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 type Card = {
@@ -26,27 +23,19 @@ type Card = {
   sub?: string;
 };
 
-export default async function CatalogosPage() {
+export default async function ParametrizacionPage() {
   const [
     entidadesPorTipo,
     actividades,
     tipos,
     subtipos,
-    asesores,
     medios,
-    servicios,
-    comprobantes,
-    sucursalesCount,
   ] = await Promise.all([
     prisma.entidadSgss.groupBy({ by: ['tipo'], _count: true }),
     prisma.actividadEconomica.count(),
     prisma.tipoCotizante.count(),
     prisma.subtipo.count(),
-    prisma.asesorComercial.count(),
     prisma.medioPago.count(),
-    prisma.servicioAdicional.count(),
-    prisma.comprobanteFormato.count({ where: { active: true } }),
-    prisma.sucursal.count(),
   ]);
 
   const planesCount = await prisma.planSgss.count();
@@ -90,40 +79,11 @@ export default async function CatalogosPage() {
       sub: subtipos > 0 ? `${subtipos} subtipos` : undefined,
     },
     {
-      href: '/admin/catalogos/asesores',
-      label: 'Asesores comerciales',
-      count: asesores,
-      icon: Users2,
-      desc: 'Se anclan al cotizante al crearlo',
-    },
-    {
-      href: '/admin/catalogos/medios-pago',
-      label: 'Medios de pago',
-      count: medios,
-      icon: CreditCard,
-      desc: 'Formas de pago del cuadre de caja',
-    },
-    {
-      href: '/admin/catalogos/servicios',
-      label: 'Servicios adicionales',
-      count: servicios,
-      icon: Sparkles,
-      desc: 'Cobros extra sobre el servicio base',
-    },
-    {
-      href: '/admin/catalogos/comprobantes',
-      label: 'Formato comprobantes',
-      count: comprobantes,
-      icon: FileSignature,
-      desc: 'Logo y plantilla personalizados por aliado',
-      sub: `${comprobantes}/${sucursalesCount} sucursales configuradas`,
-    },
-    {
       href: '/admin/catalogos/planes',
       label: 'Planes SGSS',
       count: planesCount,
       icon: Layers3,
-      desc: 'Combinaciones EPS/AFP/ARL/CCF que definen un plan',
+      desc: 'Combinaciones EPS/AFP/ARL/CCF con régimen aplicable',
     },
     {
       href: '/admin/catalogos/tarifas',
@@ -141,13 +101,20 @@ export default async function CatalogosPage() {
       desc: 'Salario mínimo legal vigente (actualiza toda la BD)',
       sub: smlvConfig ? copFmt.format(Number(smlvConfig.valor)) : 'Sin configurar',
     },
+    {
+      href: '/admin/catalogos/medios-pago',
+      label: 'Medios de pago',
+      count: medios,
+      icon: CreditCard,
+      desc: 'Formas de pago del cuadre de caja',
+    },
   ];
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
-          Catálogos
+          Parametrización
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           Datos maestros del sistema. Carga manual o importación desde Excel.

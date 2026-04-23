@@ -59,6 +59,8 @@ export type PlanOpt = {
   incluyeAfp: boolean;
   incluyeArl: boolean;
   incluyeCcf: boolean;
+  /** Régimen al que aplica: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS'. */
+  regimen: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS';
 };
 
 export type EntidadOpt = { id: string; codigo: string; nombre: string };
@@ -159,12 +161,37 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     [props.tipos, modalidad],
   );
 
+  // Régimen seleccionado (solo aplica a dependientes; independiente no tiene
+  // régimen, por eso para ellos filtramos contra 'ORDINARIO' por default).
+  const [regimenActual, setRegimenActual] = useState<string>(
+    initial?.regimen ?? 'ORDINARIO',
+  );
+
+  // Planes visibles según régimen del cotizante/afiliación:
+  //   - regimen del plan = AMBOS → siempre visible
+  //   - regimen del plan = ORDINARIO → visible si régimen actual ORDINARIO
+  //   - regimen del plan = RESOLUCION → visible si régimen actual RESOLUCION
+  const planesFiltrados = useMemo(() => {
+    const target = regimenActual || 'ORDINARIO';
+    return props.planes.filter(
+      (p) => p.regimen === 'AMBOS' || p.regimen === target,
+    );
+  }, [props.planes, regimenActual]);
+
   // Plan → requiereArl (necesario para decidir filtros aguas abajo)
   const [planId, setPlanId] = useState(initial?.planSgssId ?? '');
   const plan = useMemo(
     () => props.planes.find((p) => p.id === planId),
     [props.planes, planId],
   );
+
+  // Si al cambiar de régimen el plan actual deja de ser compatible → reset
+  useEffect(() => {
+    if (planId && !planesFiltrados.some((p) => p.id === planId)) {
+      setPlanId('');
+    }
+  }, [planId, planesFiltrados]);
+
   // Si el plan no incluye ARL, el nivel de riesgo y la actividad económica
   // dejan de aplicar, y la lista de empresas planilla no se filtra.
   const requiereArl = !plan || plan.incluyeArl;
@@ -455,12 +482,20 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               className={selectClass}
             >
               <option value="">— Sin plan (todas las entidades visibles) —</option>
-              {props.planes.map((p) => (
+              {planesFiltrados.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.nombre}
+                  {p.regimen !== 'AMBOS' ? ` · ${p.regimen}` : ''}
                 </option>
               ))}
             </select>
+            {props.planes.length > planesFiltrados.length && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                Se ocultaron {props.planes.length - planesFiltrados.length}{' '}
+                {props.planes.length - planesFiltrados.length === 1 ? 'plan' : 'planes'}{' '}
+                de otro régimen.
+              </p>
+            )}
             {plan && (
               <>
                 <p className="mt-1 text-[10px] text-slate-400">
@@ -495,7 +530,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   id="regimen"
                   name="regimen"
                   required
-                  defaultValue={initial?.regimen ?? 'ORDINARIO'}
+                  value={regimenActual}
+                  onChange={(e) => setRegimenActual(e.target.value)}
                   disabled={readOnly}
                   className={selectClass}
                 >

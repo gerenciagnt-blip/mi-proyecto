@@ -21,6 +21,7 @@ export async function createPlanAction(
     incluyeAfp: formData.get('incluyeAfp'),
     incluyeArl: formData.get('incluyeArl'),
     incluyeCcf: formData.get('incluyeCcf'),
+    regimen: formData.get('regimen') ?? 'AMBOS',
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 

@@ -346,6 +346,15 @@ model ActividadEconomica {
   @@map("actividades_economicas")
 }
 
+// Régimen aplicable a un Plan SGSS. Si es AMBOS, el plan puede usarse
+// con cotizantes de cualquier régimen; si se restringe a ORDINARIO o
+// RESOLUCION, la UI de afiliación solo permite elegirlo cuando coincide.
+enum RegimenPlan {
+  ORDINARIO
+  RESOLUCION
+  AMBOS
+}
+
 // Plan SGSS — combinación de entidades que un cotizante puede tener
 // en una afiliación (p.ej. "EPS + ARL", "EPS + AFP + ARL"). El plan
 // determina qué campos de entidades son requeridos/visibles en el form.
@@ -358,12 +367,14 @@ model PlanSgss {
   incluyeAfp  Boolean  @default(false)
   incluyeArl  Boolean  @default(false)
   incluyeCcf  Boolean  @default(false)
+  regimen     RegimenPlan @default(AMBOS)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   afiliaciones Afiliacion[]
 
+  @@index([regimen])
   @@map("planes_sgss")
 }
 

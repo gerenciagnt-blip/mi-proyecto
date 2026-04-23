@@ -156,6 +156,7 @@ export default async function BaseDatosPage({
         incluyeAfp: true,
         incluyeArl: true,
         incluyeCcf: true,
+        regimen: true,
       },
     }),
   ]);

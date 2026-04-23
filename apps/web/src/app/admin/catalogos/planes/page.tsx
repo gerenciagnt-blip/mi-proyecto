@@ -28,14 +28,15 @@ export default async function PlanesPage() {
           className="inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-slate-900"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Catálogos</span>
+          <span>Parametrización</span>
         </Link>
         <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
           Planes SGSS
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Define combinaciones de entidades (EPS, AFP, ARL, CCF). El plan determina qué campos de
-          entidades son requeridos en la afiliación.
+          Define combinaciones de entidades (EPS, AFP, ARL, CCF) y el régimen aplicable. El plan
+          determina qué campos de entidades son requeridos en la afiliación, y el régimen filtra
+          qué cotizantes pueden usarlo.
         </p>
       </header>
 
@@ -54,6 +55,7 @@ export default async function PlanesPage() {
               <th className="px-4 py-2 text-center">AFP</th>
               <th className="px-4 py-2 text-center">ARL</th>
               <th className="px-4 py-2 text-center">CCF</th>
+              <th className="px-4 py-2">Régimen</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -61,7 +63,7 @@ export default async function PlanesPage() {
           <tbody className="divide-y divide-slate-100">
             {planes.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay planes
                 </td>
               </tr>
@@ -94,6 +96,19 @@ export default async function PlanesPage() {
                   <div className="flex justify-center">
                     <Flag on={p.incluyeCcf} />
                   </div>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                      p.regimen === 'ORDINARIO'
+                        ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                        : p.regimen === 'RESOLUCION'
+                          ? 'bg-violet-50 text-violet-700 ring-violet-200'
+                          : 'bg-slate-50 text-slate-600 ring-slate-200'
+                    }`}
+                  >
+                    {p.regimen === 'AMBOS' ? 'Ambos' : p.regimen}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <span

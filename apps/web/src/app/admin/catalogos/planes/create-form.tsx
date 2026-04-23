@@ -3,6 +3,7 @@
 import { useActionState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { createPlanAction, type ActionState } from './actions';
@@ -47,10 +48,23 @@ export function CreatePlanForm() {
             </label>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">
-          El código interno se genera automáticamente (PLAN-0001, PLAN-0002…).
+      </div>
+
+      <div className="sm:max-w-xs">
+        <Label htmlFor="regimen">Régimen aplicable *</Label>
+        <Select id="regimen" name="regimen" defaultValue="AMBOS" required className="mt-1">
+          <option value="AMBOS">Ambos regímenes</option>
+          <option value="ORDINARIO">Solo ordinario</option>
+          <option value="RESOLUCION">Solo resolución</option>
+        </Select>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Determina qué cotizantes pueden usar este plan en su afiliación.
         </p>
       </div>
+
+      <p className="text-[11px] text-slate-500">
+        El código interno se genera automáticamente (PLAN-0001, PLAN-0002…).
+      </p>
 
       {state.error && <Alert variant="danger">{state.error}</Alert>}
 

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { UsuariosTabs } from '../usuarios/usuarios-tabs';
 import { CreateSucursalForm } from './create-form';
 import { toggleSucursalAction, toggleBloqueoMoraAction } from './actions';
 
@@ -24,6 +25,8 @@ export default async function SucursalesPage() {
           cuenta de cobro.
         </p>
       </header>
+
+      <UsuariosTabs />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold">Crear nueva</h2>

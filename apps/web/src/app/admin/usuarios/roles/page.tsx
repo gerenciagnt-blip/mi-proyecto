@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { ArrowLeft, Shield, UserCog, UserCheck, Layers } from 'lucide-react';
+import { Shield, UserCog, UserCheck, Layers } from 'lucide-react';
 import { prisma } from '@pila/db';
 import type { Role } from '@pila/db';
+import { UsuariosTabs } from '../usuarios-tabs';
 import { PermisosForm } from './permisos-form';
 import { CreateRolCustomDialog } from './create-rol-dialog';
 import { toggleRolCustomAction } from './actions';
@@ -65,14 +66,7 @@ export default async function RolesPage() {
   return (
     <div className="space-y-6">
       <header>
-        <Link
-          href="/admin/usuarios"
-          className="inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-slate-900"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Usuarios</span>
-        </Link>
-        <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
           Roles y permisos
         </h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -80,6 +74,8 @@ export default async function RolesPage() {
           Marca lo permitido; lo no marcado queda denegado.
         </p>
       </header>
+
+      <UsuariosTabs />
 
       {/* Stat cards — roles de sistema */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

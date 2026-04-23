@@ -4,6 +4,7 @@ import type { Prisma } from '@pila/db';
 import { auth } from '@/auth';
 import { prisma } from '@pila/db';
 import { CreateUserDialog } from './create-dialog';
+import { UsuariosTabs } from './usuarios-tabs';
 import { toggleUserAction } from './actions';
 
 export const metadata = { title: 'Usuarios — Sistema PILA' };
@@ -62,10 +63,14 @@ export default async function UsuariosPage({
           <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
             Usuarios
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Admins y usuarios de aliados</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Usuarios del sistema, roles y sucursales.
+          </p>
         </div>
         <CreateUserDialog sucursales={sucursales} />
       </header>
+
+      <UsuariosTabs />
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
