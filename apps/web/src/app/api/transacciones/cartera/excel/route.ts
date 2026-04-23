@@ -213,6 +213,13 @@ export async function GET() {
             })),
           },
           periodo: { anio: periodo.anio, mes: periodo.mes },
+          periodoAporte:
+            opciones.periodoAporteAnio && opciones.periodoAporteMes
+              ? {
+                  anio: opciones.periodoAporteAnio,
+                  mes: opciones.periodoAporteMes,
+                }
+              : undefined,
           smlv: periodo.smlvSnapshot,
           forzarTipo: opciones.forzarTipo ?? 'MENSUALIDAD',
           aplicaArlObligatoria: esPrimeraMens,

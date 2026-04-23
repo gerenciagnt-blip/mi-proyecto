@@ -68,8 +68,19 @@ export type CalcInput = {
    *     (no depende de este flag).
    */
   aplicaArlObligatoria?: boolean;
-  /** Año/mes del período a liquidar. */
+  /** Año/mes del período contable (en el que se emite la factura). */
   periodo: { anio: number; mes: number };
+  /**
+   * Año/mes del período de APORTE SGSS (el mes que cubre la cotización).
+   * Puede diferir del `periodo` contable — p. ej. un independiente VENCIDO
+   * factura en abril pero cotiza por marzo. Si no se pasa, se asume
+   * mismo mes que `periodo`.
+   *
+   * Se usa para:
+   *   - Decidir días proporcionales cuando la fecha de ingreso cae en
+   *     este mes (primera mensualidad de afiliación mid-mes).
+   */
+  periodoAporte?: { anio: number; mes: number };
   /** Base de cotización del período (si no se pasa, se usa salario). */
   ibc?: Prisma.Decimal | number;
   /** SMLV vigente al momento del cálculo (para ubicar FSP). */
@@ -235,10 +246,18 @@ export function calcularLiquidacion(
 ): CalcResult | null {
   const { afiliacion, periodo, forzarTipo } = input;
 
-  // Tipo y días según fecha de ingreso vs período.
+  // Período de referencia para decidir días proporcionales: el periodo de
+  // APORTE (si se pasó) o el contable como fallback. Esto arregla el caso
+  // de la primera mensualidad cuando la fecha de ingreso cae en el mes
+  // de aporte pero la factura se emite en otro mes contable (p. ej. mes
+  // vencido, o simplemente factura mes siguiente al de afiliación).
+  const periodoReferencia = input.periodoAporte ?? periodo;
+
+  // Tipo y días según fecha de ingreso vs período de aporte.
   // Si el llamador fuerza un tipo (emisión manual), ajustamos los días:
-  //   - VINCULACION forzada → 30 días (afecta sólo concepto ADMIN que es fijo)
-  //   - MENSUALIDAD forzada → 30 días completos
+  //   - VINCULACION forzada → usa días proporcionales si los hay
+  //   - MENSUALIDAD forzada → usa días proporcionales si fechaIngreso cae
+  //     en el período de aporte; 30 completos si ya ingresó antes.
   // Si no se fuerza, seguimos la lógica automática.
   let tipo: TipoLiq;
   let diasCotizados: number;
@@ -246,12 +265,11 @@ export function calcularLiquidacion(
   let diaHasta: number | null;
 
   if (forzarTipo) {
-    const auto = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
+    const auto = determinarTipoYDias(afiliacion.fechaIngreso, periodoReferencia);
     tipo = forzarTipo;
     // Si auto existe (fechaIngreso dentro o antes del período), usamos
     // sus días — esto da proporcional correcto cuando forzamos MENSUALIDAD
-    // y la fecha cae en el período actual (caso indep vigente).
-    // Si auto es null (fechaIngreso posterior al período) usamos mes completo.
+    // y la fecha cae en el período de aporte.
     if (auto) {
       diasCotizados = auto.dias;
       diaDesde = auto.diaDesde;
@@ -262,7 +280,7 @@ export function calcularLiquidacion(
       diaHasta = null;
     }
   } else {
-    const td = determinarTipoYDias(afiliacion.fechaIngreso, periodo);
+    const td = determinarTipoYDias(afiliacion.fechaIngreso, periodoReferencia);
     if (!td) return null;
     tipo = td.tipo;
     diasCotizados = td.dias;
@@ -663,6 +681,10 @@ export async function persistirLiquidacion(
         })),
       },
       periodo: { anio: periodo.anio, mes: periodo.mes },
+      periodoAporte:
+        opts.periodoAporteAnio && opts.periodoAporteMes
+          ? { anio: opts.periodoAporteAnio, mes: opts.periodoAporteMes }
+          : undefined,
       ibc: opts.ibc,
       smlv: periodo.smlvSnapshot,
       forzarTipo: opts.forzarTipo,

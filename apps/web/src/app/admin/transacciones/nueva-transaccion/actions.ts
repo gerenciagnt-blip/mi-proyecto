@@ -449,6 +449,13 @@ export async function previsualizarTransaccionAction(
           })),
         },
         periodo: { anio: periodo.anio, mes: periodo.mes },
+        periodoAporte:
+          opciones.periodoAporteAnio && opciones.periodoAporteMes
+            ? {
+                anio: opciones.periodoAporteAnio,
+                mes: opciones.periodoAporteMes,
+              }
+            : undefined,
         smlv: periodo.smlvSnapshot,
         forzarTipo: opciones.forzarTipo,
         aplicaArlObligatoria: esPrimeraMensualidad, // preview sin novedad
