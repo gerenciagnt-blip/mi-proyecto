@@ -35,6 +35,8 @@ export type AfiliacionRow = {
   nivelRiesgo: string;
   salario: number;
   fechaIngreso: string;
+  /** Nombre del dueño aliado de la sucursal (solo se llena para staff). */
+  duenoAliado: string | null;
   cotizante: {
     tipoDocumento: string;
     numeroDocumento: string;
@@ -59,6 +61,8 @@ type Props = {
   emptyMessage: string;
   // Catálogos compartidos para los modales de edit/view
   catalogos: Omit<AfiliacionFormProps, 'mode' | 'modalidad' | 'initial' | 'afiliacionId' | 'cotizanteSnapshot' | 'onSuccess'>;
+  /** Muestra la columna "Dueño aliado" (solo staff). */
+  mostrarDueno?: boolean;
 };
 
 /** Nombre corto para la tabla: solo primer nombre + primer apellido. */
@@ -73,7 +77,7 @@ function fullName(c: AfiliacionRow['cotizante']) {
     .join(' ');
 }
 
-export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
+export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno = false }: Props) {
   const [dialog, setDialog] = useState<
     | { mode: 'edit' | 'view'; row: AfiliacionRow }
     | null
@@ -101,6 +105,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
+              {mostrarDueno && <th className="px-4 py-2">Dueño aliado</th>}
               <th className="px-4 py-2">Documento</th>
               <th className="px-4 py-2">Nombre</th>
               <th className="px-4 py-2">Modalidad</th>
@@ -117,7 +122,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={mostrarDueno ? 12 : 11} className="px-4 py-8 text-center text-slate-400">
                   {emptyMessage}
                 </td>
               </tr>
@@ -127,6 +132,11 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
               const isToggling = pendingToggle && toggleId === a.id;
               return (
                 <tr key={a.id}>
+                  {mostrarDueno && (
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      {a.duenoAliado ?? <span className="italic text-slate-400">—</span>}
+                    </td>
+                  )}
                   <td className="px-4 py-3 font-mono text-xs">
                     {DOC_LABELS[a.cotizante.tipoDocumento] ?? a.cotizante.tipoDocumento}{' '}
                     {a.cotizante.numeroDocumento}

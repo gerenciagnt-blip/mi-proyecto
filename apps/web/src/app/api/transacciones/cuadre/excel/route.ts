@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { fullName, hoyIso } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,7 @@ function esConceptoInterno(subconcepto: string | null): boolean {
 }
 
 export async function GET(req: Request) {
-  await requireAdmin();
+  await requireAuth();
 
   const url = new URL(req.url);
   const rawDesde = url.searchParams.get('desde');
@@ -65,10 +66,11 @@ export async function GET(req: Request) {
           numeroDocumento: true,
           primerNombre: true,
           primerApellido: true,
+          sucursalId: true,
         },
       },
-      cuentaCobro: { select: { codigo: true, razonSocial: true } },
-      asesorComercial: { select: { codigo: true, nombre: true } },
+      cuentaCobro: { select: { codigo: true, razonSocial: true, sucursalId: true } },
+      asesorComercial: { select: { codigo: true, nombre: true, sucursalId: true } },
       createdBy: { select: { name: true, email: true } },
       liquidaciones: {
         include: {
@@ -120,10 +122,23 @@ export async function GET(req: Request) {
   // ===== Hoja 1: Detalle (una fila por liquidación) =====
   const ws = wb.addWorksheet('Detalle');
 
-  ws.columns = [
+  // Cargamos dueños solo si el requester es staff (el aliado no ve la columna).
+  const esStaff = scope?.tipo === 'STAFF';
+  const duenosBySuc = esStaff ? await cargarDuenosPorSucursal() : null;
+
+  // Orden de columnas solicitado: Hora proc → Usuario dueño → Consecutivo
+  // (la columna Dueño sólo aparece para staff).
+  const baseCols: Array<{ header: string; key: string; width: number }> = [
     { header: 'Fecha proc.', key: 'fechaProc', width: 12 },
     { header: 'Hora proc.', key: 'horaProc', width: 10 },
-    { header: 'Consecutivo', key: 'consecutivo', width: 14 },
+  ];
+  if (esStaff) {
+    baseCols.push({ header: 'Usuario dueño', key: 'duenoAliado', width: 22 });
+  }
+  baseCols.push({ header: 'Consecutivo', key: 'consecutivo', width: 14 });
+
+  ws.columns = [
+    ...baseCols,
     { header: 'Tipo', key: 'tipo', width: 14 },
     { header: 'Agrupación', key: 'agrupacion', width: 18 },
     { header: 'Destinatario', key: 'destinatario', width: 30 },
@@ -250,6 +265,15 @@ export async function GET(req: Request) {
     const usuario = c.createdBy?.name ?? c.createdBy?.email ?? '—';
     const periodoContable = `${String(c.periodo.mes).padStart(2, '0')}/${c.periodo.anio}`;
 
+    // Dueño aliado (solo staff): sucursal efectiva del comprobante.
+    const sucCompId =
+      c.cotizante?.sucursalId ??
+      c.cuentaCobro?.sucursalId ??
+      c.asesorComercial?.sucursalId ??
+      null;
+    const duenoAliado =
+      duenosBySuc && sucCompId ? (duenosBySuc.get(sucCompId) ?? '—') : '—';
+
     // Desglose para resumen (por comprobante)
     const desgComp: DesgloseComp = {
       sgssReal: 0,
@@ -324,6 +348,7 @@ export async function GET(req: Request) {
       const row = ws.addRow({
         fechaProc,
         horaProc,
+        ...(esStaff ? { duenoAliado } : {}),
         consecutivo: c.consecutivo,
         tipo: c.tipo,
         agrupacion: c.agrupacion,

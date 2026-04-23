@@ -65,6 +65,8 @@ export type HistorialRowData = {
     estado: 'CONSOLIDADO' | 'PAGADA' | 'ANULADA';
     numeroPlanillaExt: string | null;
   }>;
+  /** Nombre del dueño aliado de la sucursal (solo staff). */
+  duenoAliado?: string | null;
 };
 
 export function HistorialRow({ row }: { row: HistorialRowData }) {
@@ -100,6 +102,11 @@ export function HistorialRow({ row }: { row: HistorialRowData }) {
           </p>
         )}
       </td>
+      {row.duenoAliado !== undefined && (
+        <td className="px-4 py-2.5 text-xs text-slate-600 no-underline">
+          {row.duenoAliado ?? <span className="italic text-slate-400">—</span>}
+        </td>
+      )}
       <td className="px-4 py-2.5 text-xs">
         {row.formaPago ? FORMA_PAGO_LABEL[row.formaPago] ?? row.formaPago : '—'}
         {row.medioPago && (

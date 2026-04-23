@@ -8,6 +8,7 @@ import {
   scopeWhereOpt,
   scopeWhereViaCotizante,
 } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { NuevaAfiliacionButton } from './afiliacion-dialog';
 import { AfiliacionesTable, type AfiliacionRow } from './afiliaciones-table';
 
@@ -243,6 +244,10 @@ export default async function BaseDatosPage({
   const smlv = smlvConfig ? Number(smlvConfig.valor) : 0;
   const totalCount = activasCount + inactivasCount;
 
+  // Dueño aliado por sucursal — solo visible para staff en la tabla.
+  const esStaff = scope?.tipo === 'STAFF';
+  const duenosBySuc = esStaff ? await cargarDuenosPorSucursal() : null;
+
   // Catálogos compartidos (se pasan al trigger create y al modal edit/view)
   const catalogos = {
     empresas: empresaOpts,
@@ -268,6 +273,10 @@ export default async function BaseDatosPage({
     nivelRiesgo: a.nivelRiesgo,
     salario: Number(a.salario),
     fechaIngreso: dateInput(a.fechaIngreso),
+    duenoAliado:
+      duenosBySuc && a.cotizante.sucursalId
+        ? (duenosBySuc.get(a.cotizante.sucursalId) ?? null)
+        : null,
     cotizante: {
       tipoDocumento: a.cotizante.tipoDocumento,
       numeroDocumento: a.cotizante.numeroDocumento,
@@ -459,7 +468,12 @@ export default async function BaseDatosPage({
           </div>
         </div>
 
-        <AfiliacionesTable rows={rows} emptyMessage={emptyMessage} catalogos={catalogos} />
+        <AfiliacionesTable
+          rows={rows}
+          emptyMessage={emptyMessage}
+          catalogos={catalogos}
+          mostrarDueno={esStaff}
+        />
       </section>
     </div>
   );

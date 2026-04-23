@@ -14,6 +14,7 @@ import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
@@ -23,7 +24,7 @@ export const metadata = { title: 'Planos PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 type Tab = 'consolidado' | 'guardado' | 'pagadas';
-type SP = { tab?: string };
+type SP = { tab?: string; sucursalId?: string };
 
 const MESES = [
   'Enero',
@@ -69,6 +70,7 @@ export default async function PlanosPage({
   const tabRaw = sp.tab;
   const tab: Tab =
     tabRaw === 'guardado' || tabRaw === 'pagadas' ? tabRaw : 'consolidado';
+  const sucursalFilter = sp.sucursalId?.trim() || '';
 
   // Período vigente = mes en curso
   const now = new Date();
@@ -97,21 +99,46 @@ export default async function PlanosPage({
   }
 
   // Scope: SUCURSAL ve sólo comprobantes/planillas de su sucursal.
+  // Staff (ADMIN/SOPORTE) puede además filtrar explícitamente por sucursal.
   const scope = await getUserScope();
-  const planillaScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
-  const compScopeOR: Prisma.ComprobanteWhereInput[] =
+  const esStaff = scope?.tipo === 'STAFF';
+  const sucursalAplicada: string | null =
     scope?.tipo === 'SUCURSAL'
-      ? [
-          { cotizante: { sucursalId: scope.sucursalId } },
-          { cuentaCobro: { sucursalId: scope.sucursalId } },
-          {
-            asesorComercial: {
-              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
-            },
+      ? scope.sucursalId
+      : esStaff && sucursalFilter
+        ? sucursalFilter
+        : null;
+
+  const planillaScope = sucursalAplicada
+    ? { sucursalId: sucursalAplicada }
+    : {};
+  const compScopeOR: Prisma.ComprobanteWhereInput[] = sucursalAplicada
+    ? [
+        { cotizante: { sucursalId: sucursalAplicada } },
+        { cuentaCobro: { sucursalId: sucursalAplicada } },
+        {
+          asesorComercial: {
+            OR: [{ sucursalId: null }, { sucursalId: sucursalAplicada }],
           },
-        ]
-      : [];
+        },
+      ]
+    : [];
+
+  // Listado de sucursales para el selector (sólo staff)
+  let sucursalesList: Array<{ id: string; nombre: string }> = [];
+  let duenosBySuc: Map<string, string> | null = null;
+  if (esStaff) {
+    const [sucs, duenos] = await Promise.all([
+      prisma.sucursal.findMany({
+        where: { active: true },
+        orderBy: { nombre: 'asc' },
+        select: { id: true, nombre: true },
+      }),
+      cargarDuenosPorSucursal(),
+    ]);
+    sucursalesList = sucs;
+    duenosBySuc = duenos;
+  }
 
   // Conteos para badges en tabs
   const [countConsolidado, countGuardado, countPagadas] = await Promise.all([
@@ -133,6 +160,10 @@ export default async function PlanosPage({
     }),
   ]);
 
+  const qs = sucursalFilter
+    ? `&sucursalId=${encodeURIComponent(sucursalFilter)}`
+    : '';
+
   return (
     <div className="space-y-6">
       <Header tab={tab} />
@@ -141,21 +172,21 @@ export default async function PlanosPage({
       <div className="border-b border-slate-200">
         <nav className="-mb-px flex gap-4">
           <TabLink
-            href="/admin/planos?tab=consolidado"
+            href={`/admin/planos?tab=consolidado${qs}`}
             active={tab === 'consolidado'}
             icon={FileStack}
             label="Consolidado"
             count={countConsolidado}
           />
           <TabLink
-            href="/admin/planos?tab=guardado"
+            href={`/admin/planos?tab=guardado${qs}`}
             active={tab === 'guardado'}
             icon={Save}
             label="Guardado"
             count={countGuardado}
           />
           <TabLink
-            href="/admin/planos?tab=pagadas"
+            href={`/admin/planos?tab=pagadas${qs}`}
             active={tab === 'pagadas'}
             icon={CheckCircle2}
             label="Pagadas"
@@ -164,16 +195,77 @@ export default async function PlanosPage({
         </nav>
       </div>
 
-      <p className="text-xs text-slate-500">
-        Período contable en curso:{' '}
-        <span className="font-medium text-slate-700">
-          {mesLabel(periodo.anio, periodo.mes)}
-        </span>
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          Período contable en curso:{' '}
+          <span className="font-medium text-slate-700">
+            {mesLabel(periodo.anio, periodo.mes)}
+          </span>
+        </p>
 
-      {tab === 'consolidado' && <TabConsolidado periodoId={periodo.id} />}
-      {tab === 'guardado' && <TabGuardado periodoId={periodo.id} />}
-      {tab === 'pagadas' && <TabPagadas />}
+        {esStaff && (
+          <form
+            method="get"
+            className="flex flex-wrap items-center gap-2 text-xs"
+          >
+            <input type="hidden" name="tab" value={tab} />
+            <label
+              htmlFor="sucursalId"
+              className="font-medium text-slate-600"
+            >
+              Sucursal / dueño aliado:
+            </label>
+            <select
+              id="sucursalId"
+              name="sucursalId"
+              defaultValue={sucursalFilter}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 shadow-sm"
+            >
+              <option value="">Todas las sucursales</option>
+              {sucursalesList.map((s) => {
+                const dueno = duenosBySuc?.get(s.id);
+                return (
+                  <option key={s.id} value={s.id}>
+                    {dueno ? `${s.nombre} — ${dueno}` : s.nombre}
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              type="submit"
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Aplicar
+            </button>
+            {sucursalFilter && (
+              <Link
+                href={`/admin/planos?tab=${tab}`}
+                className="text-xs text-slate-500 underline hover:text-slate-700"
+              >
+                Limpiar
+              </Link>
+            )}
+          </form>
+        )}
+      </div>
+
+      {tab === 'consolidado' && (
+        <TabConsolidado
+          periodoId={periodo.id}
+          staffSucursalFilter={esStaff ? sucursalFilter || null : null}
+        />
+      )}
+      {tab === 'guardado' && (
+        <TabGuardado
+          periodoId={periodo.id}
+          staffSucursalFilter={esStaff ? sucursalFilter || null : null}
+        />
+      )}
+      {tab === 'pagadas' && (
+        <TabPagadas
+          staffSucursalFilter={esStaff ? sucursalFilter || null : null}
+        />
+      )}
     </div>
   );
 }
@@ -240,21 +332,31 @@ function TabLink({
 
 // ================== Tab Consolidado =====================
 
-async function TabConsolidado({ periodoId }: { periodoId: string }) {
+async function TabConsolidado({
+  periodoId,
+  staffSucursalFilter,
+}: {
+  periodoId: string;
+  staffSucursalFilter: string | null;
+}) {
   // Scope: aliado sólo ve preview de sus comprobantes pendientes.
+  // Staff puede filtrar explícitamente por sucursal.
   const scope = await getUserScope();
-  const compScopeOR: Prisma.ComprobanteWhereInput[] =
+  const sucursalAplicada: string | null =
     scope?.tipo === 'SUCURSAL'
-      ? [
-          { cotizante: { sucursalId: scope.sucursalId } },
-          { cuentaCobro: { sucursalId: scope.sucursalId } },
-          {
-            asesorComercial: {
-              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
-            },
+      ? scope.sucursalId
+      : staffSucursalFilter;
+  const compScopeOR: Prisma.ComprobanteWhereInput[] = sucursalAplicada
+    ? [
+        { cotizante: { sucursalId: sucursalAplicada } },
+        { cuentaCobro: { sucursalId: sucursalAplicada } },
+        {
+          asesorComercial: {
+            OR: [{ sucursalId: null }, { sucursalId: sucursalAplicada }],
           },
-        ]
-      : [];
+        },
+      ]
+    : [];
 
   // Traer todos los comprobantes pendientes con suficiente info para mostrar
   // el agrupamiento "preview" que se va a generar.
@@ -493,14 +595,36 @@ async function TabConsolidado({ periodoId }: { periodoId: string }) {
 
 // ================== Tab Guardado =====================
 
-async function TabGuardado({ periodoId }: { periodoId: string }) {
-  return <PlanillasTable periodoId={periodoId} estado="CONSOLIDADO" />;
+async function TabGuardado({
+  periodoId,
+  staffSucursalFilter,
+}: {
+  periodoId: string;
+  staffSucursalFilter: string | null;
+}) {
+  return (
+    <PlanillasTable
+      periodoId={periodoId}
+      estado="CONSOLIDADO"
+      staffSucursalFilter={staffSucursalFilter}
+    />
+  );
 }
 
 // ================== Tab Pagadas =====================
 
-async function TabPagadas() {
-  return <PlanillasTable estado="PAGADA" showPeriodo />;
+async function TabPagadas({
+  staffSucursalFilter,
+}: {
+  staffSucursalFilter: string | null;
+}) {
+  return (
+    <PlanillasTable
+      estado="PAGADA"
+      showPeriodo
+      staffSucursalFilter={staffSucursalFilter}
+    />
+  );
 }
 
 // ================== Planillas table =====================
@@ -509,15 +633,23 @@ async function PlanillasTable({
   periodoId,
   estado,
   showPeriodo = false,
+  staffSucursalFilter,
 }: {
   periodoId?: string;
   estado: EstadoPlanilla;
   showPeriodo?: boolean;
+  staffSucursalFilter: string | null;
 }) {
   // Scope: aliado sólo ve sus propias planillas.
+  // Staff puede filtrar explícitamente por sucursal.
   const scope = await getUserScope();
-  const planillaScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const sucursalAplicada: string | null =
+    scope?.tipo === 'SUCURSAL'
+      ? scope.sucursalId
+      : staffSucursalFilter;
+  const planillaScope = sucursalAplicada
+    ? { sucursalId: sucursalAplicada }
+    : {};
 
   const planillas = await prisma.planilla.findMany({
     where: {

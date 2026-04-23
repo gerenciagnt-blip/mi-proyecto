@@ -14,6 +14,7 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import {
   formatCOP,
   hoyIso,
@@ -35,7 +36,7 @@ function esConceptoInterno(c: { subconcepto: string | null }): boolean {
   return c.subconcepto?.toLowerCase().includes('interno') ?? false;
 }
 
-type SP = { fecha?: string; desde?: string; hasta?: string };
+type SP = { fecha?: string; desde?: string; hasta?: string; sucursalId?: string };
 
 function diaSiguienteIso(iso: string): string {
   const dt = parseIsoToUtcNoon(iso);
@@ -85,18 +86,36 @@ export default async function CuadreCajaPage({
 
   // Scope: SUCURSAL sólo ve su caja; STAFF ve todo.
   const scope = await getUserScope();
-  const scopeOR: Prisma.ComprobanteWhereInput[] =
-    scope?.tipo === 'SUCURSAL'
-      ? [
-          { cotizante: { sucursalId: scope.sucursalId } },
-          { cuentaCobro: { sucursalId: scope.sucursalId } },
-          {
-            asesorComercial: {
-              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
-            },
+  const esStaff = scope?.tipo === 'STAFF';
+  const sucursalFilter = sp.sucursalId?.trim() ?? '';
+
+  // El staff puede filtrar por sucursal explícita. Si hay filtro, gana
+  // sobre el OR de 3 ramas; si no, aplica el scope por rol.
+  const scopeOR: Prisma.ComprobanteWhereInput[] = (() => {
+    if (scope?.tipo === 'SUCURSAL') {
+      return [
+        { cotizante: { sucursalId: scope.sucursalId } },
+        { cuentaCobro: { sucursalId: scope.sucursalId } },
+        {
+          asesorComercial: {
+            OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
           },
-        ]
-      : [];
+        },
+      ];
+    }
+    if (esStaff && sucursalFilter) {
+      return [
+        { cotizante: { sucursalId: sucursalFilter } },
+        { cuentaCobro: { sucursalId: sucursalFilter } },
+        {
+          asesorComercial: {
+            OR: [{ sucursalId: null }, { sucursalId: sucursalFilter }],
+          },
+        },
+      ];
+    }
+    return [];
+  })();
 
   // Nota: fechaPago es la fecha en la que el dinero entró a caja.
   // Usamos fechaPago para cuadrar. procesadoEn sirve como orden secundario.
@@ -115,10 +134,11 @@ export default async function CuadreCajaPage({
           numeroDocumento: true,
           primerNombre: true,
           primerApellido: true,
+          sucursalId: true,
         },
       },
-      cuentaCobro: { select: { codigo: true, razonSocial: true } },
-      asesorComercial: { select: { codigo: true, nombre: true } },
+      cuentaCobro: { select: { codigo: true, razonSocial: true, sucursalId: true } },
+      asesorComercial: { select: { codigo: true, nombre: true, sucursalId: true } },
       createdBy: { select: { name: true, email: true } },
       liquidaciones: {
         include: {
@@ -131,6 +151,17 @@ export default async function CuadreCajaPage({
       },
     },
   });
+
+  const [duenosBySuc, sucursalesList] = await Promise.all([
+    esStaff ? cargarDuenosPorSucursal() : Promise.resolve(null),
+    esStaff
+      ? prisma.sucursal.findMany({
+          where: { active: true },
+          orderBy: { codigo: 'asc' },
+          select: { id: true, codigo: true, nombre: true },
+        })
+      : Promise.resolve([]),
+  ]);
 
   // Sumario por comprobante: desglose en SGSS real, SGSS interno, ADMIN, SERVICIO
   type DesgloseComp = {
@@ -272,6 +303,21 @@ export default async function CuadreCajaPage({
                 defaultValue={hastaIso}
                 className="w-auto"
               />
+              {esStaff && (
+                <select
+                  name="sucursalId"
+                  defaultValue={sucursalFilter}
+                  className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
+                  title="Filtrar por sucursal / dueño aliado"
+                >
+                  <option value="">Todas las sucursales</option>
+                  {sucursalesList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.codigo} · {s.nombre}
+                    </option>
+                  ))}
+                </select>
+              )}
               <Button type="submit" variant="primary" size="sm">
                 Ver
               </Button>
@@ -427,6 +473,7 @@ export default async function CuadreCajaPage({
                 <tr>
                   {!diaUnico && <th className="px-4 py-2">Fecha</th>}
                   <th className="px-4 py-2">Hora</th>
+                  {esStaff && <th className="px-4 py-2">Dueño aliado</th>}
                   <th className="px-4 py-2">Consecutivo</th>
                   <th className="px-4 py-2">Destinatario</th>
                   <th className="px-4 py-2">Medio</th>
@@ -468,6 +515,13 @@ export default async function CuadreCajaPage({
                   const fechaPagoIso = c.fechaPago
                     ? new Date(c.fechaPago).toISOString().slice(0, 10)
                     : '—';
+                  const sucComp =
+                    c.cotizante?.sucursalId ??
+                    c.cuentaCobro?.sucursalId ??
+                    c.asesorComercial?.sucursalId ??
+                    null;
+                  const dueno =
+                    duenosBySuc && sucComp ? (duenosBySuc.get(sucComp) ?? null) : null;
 
                   return (
                     <tr
@@ -482,6 +536,13 @@ export default async function CuadreCajaPage({
                         </td>
                       )}
                       <td className="px-4 py-2.5 font-mono text-xs">{hora}</td>
+                      {esStaff && (
+                        <td className="px-4 py-2.5 text-xs text-slate-600 no-underline">
+                          {dueno ?? (
+                            <span className="italic text-slate-400">—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 font-mono text-xs font-medium">
                         {c.consecutivo}
                       </td>

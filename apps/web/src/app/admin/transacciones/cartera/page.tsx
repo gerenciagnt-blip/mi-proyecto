@@ -6,6 +6,7 @@ import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import {
   formatCOP,
   fullName,
@@ -218,7 +219,12 @@ export default async function CarteraPage({
     totalGeneral: number;
     gestionesCount: number;
     consulta: ConsultaCotizante;
+    duenoAliado: string | null;
   };
+
+  // Dueño aliado por sucursal — solo staff.
+  const esStaff = scope?.tipo === 'STAFF';
+  const duenosBySuc = esStaff ? await cargarDuenosPorSucursal() : null;
 
   const filas: FilaCartera[] = [];
   let totalGeneralCartera = 0;
@@ -348,6 +354,8 @@ export default async function CarteraPage({
       fechaIngreso: primera.fechaIngreso.toISOString().slice(0, 10),
       totalGeneral: totalCot,
       gestionesCount: c.gestionesCartera.length,
+      duenoAliado:
+        duenosBySuc && c.sucursalId ? (duenosBySuc.get(c.sucursalId) ?? null) : null,
       consulta: {
         cotizante: {
           tipoDocumento: c.tipoDocumento,
@@ -481,6 +489,7 @@ export default async function CarteraPage({
                   <th className="px-4 py-2">Tipo doc</th>
                   <th className="px-4 py-2">N° documento</th>
                   <th className="px-4 py-2">Nombre</th>
+                  {esStaff && <th className="px-4 py-2">Dueño aliado</th>}
                   <th className="px-4 py-2">Modalidad</th>
                   <th className="px-4 py-2">Empresa planilla</th>
                   <th className="px-4 py-2">Empresa CC</th>
@@ -498,6 +507,13 @@ export default async function CarteraPage({
                     <td className="px-4 py-2.5">
                       <p className="font-medium">{r.nombre}</p>
                     </td>
+                    {esStaff && (
+                      <td className="px-4 py-2.5 text-xs text-slate-600">
+                        {r.duenoAliado ?? (
+                          <span className="italic text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-2.5 text-xs">
                       <span
                         className={cn(

@@ -4,6 +4,7 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { HistorialRow, type HistorialRowData } from './historial-row';
 
 export const metadata = { title: 'Historial de transacciones — Sistema PILA' };
@@ -140,8 +141,8 @@ export default async function HistorialPage({
       include: {
         periodo: true,
         cotizante: true,
-        cuentaCobro: { select: { codigo: true, razonSocial: true } },
-        asesorComercial: { select: { codigo: true, nombre: true } },
+        cuentaCobro: { select: { codigo: true, razonSocial: true, sucursalId: true } },
+        asesorComercial: { select: { codigo: true, nombre: true, sucursalId: true } },
         medioPago: { select: { codigo: true, nombre: true } },
         liquidaciones: {
           include: {
@@ -173,6 +174,10 @@ export default async function HistorialPage({
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
+
+  // Dueño aliado por sucursal — solo staff.
+  const esStaff = scope?.tipo === 'STAFF';
+  const duenosBySuc = esStaff ? await cargarDuenosPorSucursal() : null;
 
   const rows: HistorialRowData[] = comprobantes.map((c) => {
     let destinatario = '—';
@@ -274,6 +279,18 @@ export default async function HistorialPage({
         estado: cp.planilla.estado,
         numeroPlanillaExt: cp.planilla.numeroPlanillaExt,
       })),
+      duenoAliado: duenosBySuc
+        ? ((): string | null => {
+            // El comprobante tiene UN enlace activo (cotizante/cc/asesor).
+            // Tomamos la sucursal del que esté seteado y buscamos el dueño.
+            const suc =
+              c.cotizante?.sucursalId ??
+              c.cuentaCobro?.sucursalId ??
+              c.asesorComercial?.sucursalId ??
+              null;
+            return suc ? (duenosBySuc.get(suc) ?? null) : null;
+          })()
+        : undefined,
     };
   });
 
@@ -374,6 +391,7 @@ export default async function HistorialPage({
                     <th className="px-4 py-2">Período</th>
                     <th className="px-4 py-2">Tipo</th>
                     <th className="px-4 py-2">Destinatario</th>
+                    {esStaff && <th className="px-4 py-2">Dueño aliado</th>}
                     <th className="px-4 py-2">Forma de pago</th>
                     <th className="px-4 py-2">Fecha pago</th>
                     <th className="px-4 py-2 text-right">SGSS</th>

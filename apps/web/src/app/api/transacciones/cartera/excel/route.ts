@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import {
@@ -30,7 +30,7 @@ const MESES = [
  * (helper `debeFacturarseEnPeriodo`).
  */
 export async function GET() {
-  await requireAdmin();
+  await requireAuth();
 
   // Período en curso
   const now = new Date();
