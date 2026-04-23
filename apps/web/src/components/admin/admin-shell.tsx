@@ -57,7 +57,7 @@ export function AdminShell({
             <PilaLogo size="sm" />
           </div>
           <div className="flex-1 overflow-y-auto">
-            <AdminNav />
+            <AdminNav role={userRole} />
           </div>
         </div>
       </aside>

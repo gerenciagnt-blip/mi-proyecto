@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { ActividadSchema } from '@/lib/validations';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
 import type { ImportState } from '../_components/import-form';
@@ -13,7 +13,7 @@ export async function createActividadAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = ActividadSchema.safeParse({
     codigoCiiu: String(formData.get('codigoCiiu') ?? '').trim(),
@@ -34,7 +34,7 @@ export async function createActividadAction(
 }
 
 export async function toggleActividadAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const a = await prisma.actividadEconomica.findUnique({ where: { id } });
   if (!a) return;
   await prisma.actividadEconomica.update({ where: { id }, data: { active: !a.active } });
@@ -45,7 +45,7 @@ export async function importActividadesAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  await requireAdmin();
+  await requireStaff();
 
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) return { error: 'Selecciona un archivo' };

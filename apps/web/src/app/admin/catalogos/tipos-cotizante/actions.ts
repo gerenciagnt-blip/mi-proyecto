@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { TipoCotizanteSchema } from '@/lib/validations';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
 import type { ImportState } from '../_components/import-form';
@@ -13,7 +13,7 @@ export async function createTipoAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = TipoCotizanteSchema.safeParse({
     codigo: String(formData.get('codigo') ?? '').trim(),
@@ -38,13 +38,13 @@ export async function updateTipoModalidadAction(
   id: string,
   modalidad: 'DEPENDIENTE' | 'INDEPENDIENTE',
 ) {
-  await requireAdmin();
+  await requireStaff();
   await prisma.tipoCotizante.update({ where: { id }, data: { modalidad } });
   revalidatePath('/admin/catalogos/tipos-cotizante');
 }
 
 export async function toggleTipoAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const t = await prisma.tipoCotizante.findUnique({ where: { id } });
   if (!t) return;
   await prisma.tipoCotizante.update({ where: { id }, data: { active: !t.active } });
@@ -55,7 +55,7 @@ export async function importTiposAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  await requireAdmin();
+  await requireStaff();
 
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) return { error: 'Selecciona un archivo' };

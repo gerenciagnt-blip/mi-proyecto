@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { TarifaSgssSchema, FspRangoSchema } from '@/lib/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -26,7 +26,7 @@ export async function createTarifaAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = TarifaSgssSchema.safeParse(parseTarifa(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -46,7 +46,7 @@ export async function updateTarifaAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = TarifaSgssSchema.safeParse(parseTarifa(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -62,7 +62,7 @@ export async function updateTarifaAction(
 }
 
 export async function toggleTarifaAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const t = await prisma.tarifaSgss.findUnique({ where: { id } });
   if (!t) return;
   await prisma.tarifaSgss.update({ where: { id }, data: { active: !t.active } });
@@ -70,7 +70,7 @@ export async function toggleTarifaAction(id: string) {
 }
 
 export async function deleteTarifaAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   await prisma.tarifaSgss.delete({ where: { id } });
   revalidatePath('/admin/catalogos/tarifas');
 }
@@ -90,7 +90,7 @@ export async function createFspAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = FspRangoSchema.safeParse(parseFsp(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -110,7 +110,7 @@ export async function updateFspAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = FspRangoSchema.safeParse(parseFsp(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -126,7 +126,7 @@ export async function updateFspAction(
 }
 
 export async function toggleFspAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const r = await prisma.fspRango.findUnique({ where: { id } });
   if (!r) return;
   await prisma.fspRango.update({ where: { id }, data: { active: !r.active } });
@@ -134,7 +134,7 @@ export async function toggleFspAction(id: string) {
 }
 
 export async function deleteFspAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   await prisma.fspRango.delete({ where: { id } });
   revalidatePath('/admin/catalogos/tarifas');
 }

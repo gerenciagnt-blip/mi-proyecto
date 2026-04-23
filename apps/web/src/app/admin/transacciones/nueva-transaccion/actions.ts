@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { auth } from '@/auth';
 import {
@@ -77,7 +77,7 @@ export async function buscarCotizanteAction(
   numeroDocumento: string,
   periodoId?: string,
 ): Promise<{ found: CotizanteEncontrado | null; error?: string }> {
-  await requireAdmin();
+  await requireAuth();
 
   const doc = numeroDocumento.trim().toUpperCase();
   if (!doc) return { found: null, error: 'Ingresa un número de documento' };
@@ -171,7 +171,7 @@ export async function listarCuentasCobroAction(
   periodoId: string,
   soloSinMovimiento = true,
 ): Promise<CuentaCobroDisponible[]> {
-  await requireAdmin();
+  await requireAuth();
 
   // Scope: aliado sólo ve SUS cuentas de cobro.
   const scope = await getUserScope();
@@ -223,7 +223,7 @@ export async function listarAsesoresAction(
   periodoId: string,
   soloSinMovimiento = true,
 ): Promise<AsesorDisponible[]> {
-  await requireAdmin();
+  await requireAuth();
 
   // Scope: aliado ve sus asesores + los globales (null).
   const scope = await getUserScope();
@@ -330,7 +330,7 @@ export type PreviewResult = {
 export async function previsualizarTransaccionAction(
   input: PreviewInput,
 ): Promise<PreviewResult> {
-  await requireAdmin();
+  await requireAuth();
 
   const periodo = await prisma.periodoContable.findUnique({
     where: { id: input.periodoId },
@@ -623,7 +623,7 @@ export type ProcesarResult = {
 export async function procesarTransaccionAction(
   input: ProcesarInput,
 ): Promise<ProcesarResult> {
-  await requireAdmin();
+  await requireAuth();
   const session = await auth();
   const userId = session?.user?.id ?? null;
 
@@ -934,7 +934,7 @@ export async function procesarTransaccionAction(
 export async function anularTransaccionAction(
   comprobanteId: string,
 ): Promise<{ ok?: boolean; error?: string }> {
-  await requireAdmin();
+  await requireAuth();
 
   const comp = await prisma.comprobante.findUnique({
     where: { id: comprobanteId },
@@ -1044,7 +1044,7 @@ export async function anularTransaccionAction(
 export async function listarMediosPagoAction(): Promise<
   Array<{ id: string; codigo: string; nombre: string }>
 > {
-  await requireAdmin();
+  await requireAuth();
 
   // Scope: aliado ve medios de su sucursal + globales; STAFF ve todos.
   const scope = await getUserScope();

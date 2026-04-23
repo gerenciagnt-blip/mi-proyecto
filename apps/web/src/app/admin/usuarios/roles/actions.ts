@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { prisma } from '@pila/db';
 import type { Role } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { ACCIONES, MODULOS } from '@/lib/permisos';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -20,7 +20,7 @@ export async function savePermisosAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   if (role === 'ADMIN') {
     return { error: 'ADMIN tiene todos los permisos por defecto (no editable)' };
@@ -61,7 +61,7 @@ export async function createRolCustomAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = RolCustomSchema.safeParse({
     nombre: String(formData.get('nombre') ?? '').trim(),
@@ -108,7 +108,7 @@ export async function updateRolCustomAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = RolCustomSchema.safeParse({
     nombre: String(formData.get('nombre') ?? '').trim(),
@@ -155,7 +155,7 @@ export async function updateRolCustomAction(
 }
 
 export async function toggleRolCustomAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const r = await prisma.rolCustom.findUnique({ where: { id } });
   if (!r) return;
   await prisma.rolCustom.update({ where: { id }, data: { active: !r.active } });
@@ -163,7 +163,7 @@ export async function toggleRolCustomAction(id: string) {
 }
 
 export async function deleteRolCustomAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   await prisma.rolCustom.delete({ where: { id } });
   revalidatePath('/admin/usuarios/roles');
   redirect('/admin/usuarios/roles');

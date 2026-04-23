@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import type { IncapacidadDocumentoTipo, TipoDocumento } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { nextIncapacidadConsecutivo } from '@/lib/incapacidades/consecutivo';
 import {
@@ -53,7 +53,7 @@ export async function buscarCotizanteIncapAction(
   tipoDocumento: string,
   numeroDocumento: string,
 ): Promise<{ found: CotizanteIncap | null; error?: string }> {
-  await requireAdmin();
+  await requireAuth();
   const scope = await getUserScope();
   if (!scope) return { found: null, error: 'Sesión inválida' };
 
@@ -146,7 +146,7 @@ export async function radicarIncapacidadAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState & { incapacidadId?: string; consecutivo?: string }> {
-  const session = await requireAdmin();
+  const session = await requireAuth();
   const userId = session.user.id;
   const userName = session.user.name;
 
@@ -338,7 +338,7 @@ export async function gestionAliadoIncapAction(
   incapacidadId: string,
   descripcion: string,
 ): Promise<ActionState> {
-  const session = await requireAdmin();
+  const session = await requireAuth();
   const userId = session.user.id;
   const userName = session.user.name;
 

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { PlanSgssSchema } from '@/lib/validations';
 import { nextPlanSgssCodigo } from '@/lib/consecutivo';
 
@@ -12,7 +12,7 @@ export async function createPlanAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = PlanSgssSchema.safeParse({
     nombre: String(formData.get('nombre') ?? '').trim(),
@@ -48,7 +48,7 @@ export async function createPlanAction(
 }
 
 export async function togglePlanAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const p = await prisma.planSgss.findUnique({ where: { id } });
   if (!p) return;
   await prisma.planSgss.update({ where: { id }, data: { active: !p.active } });

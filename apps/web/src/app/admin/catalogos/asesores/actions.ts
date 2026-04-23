@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import {
   getUserScope,
   validarSucursalIdAsignable,
@@ -23,7 +23,7 @@ export async function createAsesorAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const sucursalId = await resolverSucursalId(
     String(formData.get('sucursalId') ?? ''),
@@ -64,7 +64,7 @@ export async function createAsesorAction(
 }
 
 export async function toggleAsesorAction(id: string) {
-  await requireAdmin();
+  await requireAuth();
   const a = await prisma.asesorComercial.findUnique({ where: { id } });
   if (!a) return;
 

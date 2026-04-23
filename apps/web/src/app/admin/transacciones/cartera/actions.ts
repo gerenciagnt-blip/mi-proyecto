@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin, requireStaff } from '@/lib/auth-helpers';
+import { requireAuth, requireStaff } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
@@ -32,7 +32,7 @@ export async function registrarGestionAction(
   accion: AccionGestion,
   descripcion: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
   const desc = descripcion.trim();
   if (!desc) return { error: 'La descripción no puede estar vacía' };
 
@@ -70,7 +70,7 @@ export async function listarGestionesAction(
   cotizanteId: string,
   periodoId: string,
 ) {
-  await requireAdmin();
+  await requireAuth();
 
   // Scope: un aliado no puede listar gestiones de cotizantes de otra sucursal.
   const scope = await getUserScope();

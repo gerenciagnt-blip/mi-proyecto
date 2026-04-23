@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import type { NivelRiesgo } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { NivelRiesgoEnum } from '@/lib/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -13,7 +13,7 @@ export async function updateEmpresaConfigAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   // Niveles (enum)
   const selectedNiveles = formData

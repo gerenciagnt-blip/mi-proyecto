@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import {
   getUserScope,
   validarSucursalIdAsignable,
@@ -29,7 +29,7 @@ export async function createMedioPagoAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const sucursalId = await resolverSucursalId(
     String(formData.get('sucursalId') ?? ''),
@@ -66,7 +66,7 @@ export async function createMedioPagoAction(
 }
 
 export async function toggleMedioPagoAction(id: string) {
-  await requireAdmin();
+  await requireAuth();
   const m = await prisma.medioPago.findUnique({ where: { id } });
   if (!m) return;
 

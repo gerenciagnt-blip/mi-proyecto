@@ -25,13 +25,25 @@ import {
   ArrowLeft,
   type LucideIcon,
 } from 'lucide-react';
+import type { Role } from '@pila/db';
 import { cn } from '@/lib/utils';
+
+/** Conjuntos de roles (para dejar intención clara en la matriz). */
+const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
+const ADMIN_ONLY: Role[] = ['ADMIN'];
+const ALL: Role[] = ['ADMIN', 'SOPORTE', 'ALIADO_OWNER', 'ALIADO_USER'];
 
 type NavItem = {
   label: string;
   href?: string;
   icon: LucideIcon;
   children?: NavItem[];
+  /**
+   * Roles que ven este item. Omitido ⇒ visible para todos los
+   * autenticados. Los grupos se auto-ocultan si ninguno de sus hijos
+   * aplica al rol actual.
+   */
+  roles?: Role[];
 };
 
 const NAV: NavItem[] = [
@@ -40,18 +52,20 @@ const NAV: NavItem[] = [
     label: 'Configuración',
     icon: Settings,
     children: [
-      { label: 'Empresas planilla', href: '/admin/empresas', icon: Building },
+      { label: 'Empresas planilla', href: '/admin/empresas', icon: Building, roles: STAFF },
       { label: 'Empresa CC', href: '/admin/cuentas-cobro', icon: Receipt },
-      { label: 'Usuarios', href: '/admin/usuarios', icon: Users },
-      { label: 'Parametrización', href: '/admin/catalogos', icon: Database },
+      { label: 'Usuarios', href: '/admin/usuarios', icon: Users, roles: STAFF },
+      { label: 'Parametrización', href: '/admin/catalogos', icon: Database, roles: STAFF },
       { label: 'Asesor comercial', href: '/admin/catalogos/asesores', icon: Users2 },
       { label: 'Servicios adicionales', href: '/admin/catalogos/servicios', icon: Sparkles },
       { label: 'Formato comprobante', href: '/admin/catalogos/comprobantes', icon: FileSignature },
+      { label: 'Sucursales', href: '/admin/sucursales', icon: Building, roles: ADMIN_ONLY },
     ],
   },
   {
     label: 'Soporte',
     icon: LifeBuoy,
+    roles: STAFF,
     children: [
       { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet },
       { label: 'Afiliaciones', href: '/admin/soporte/afiliaciones', icon: FileCheck },
@@ -70,6 +84,23 @@ const NAV: NavItem[] = [
     ],
   },
 ];
+
+/** Filtra el árbol de navegación según el rol; oculta grupos vacíos. */
+function filtrarPorRol(items: NavItem[], role: Role): NavItem[] {
+  const out: NavItem[] = [];
+  for (const it of items) {
+    // Si el item restringe y el rol no está, lo saltamos.
+    if (it.roles && !it.roles.includes(role)) continue;
+    if (it.children && it.children.length > 0) {
+      const hijos = filtrarPorRol(it.children, role);
+      if (hijos.length === 0) continue; // grupo vacío ⇒ ocultar
+      out.push({ ...it, children: hijos });
+    } else {
+      out.push(it);
+    }
+  }
+  return out;
+}
 
 function containsActive(item: NavItem, pathname: string): boolean {
   if (item.href && (pathname === item.href || pathname.startsWith(item.href + '/'))) return true;
@@ -99,7 +130,6 @@ function NavGroup({
   const paddingLeft = depth === 0 ? 'pl-3' : depth === 1 ? 'pl-8' : 'pl-12';
 
   if (!hasChildren) {
-    // Leaf
     const leafActive = isExactlyActive(item.href, pathname);
     if (!item.href) return null;
     return (
@@ -124,7 +154,6 @@ function NavGroup({
     );
   }
 
-  // Group with children
   const leafActive = isExactlyActive(item.href, pathname);
   return (
     <div>
@@ -187,13 +216,14 @@ function NavGroup({
   );
 }
 
-export function AdminNav() {
+export function AdminNav({ role }: { role: Role }) {
   const pathname = usePathname() ?? '';
+  const items = filtrarPorRol(NAV, role);
 
   return (
     <nav className="flex h-full flex-col p-3">
       <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-        {NAV.map((item) => (
+        {items.map((item) => (
           <NavGroup key={item.label} item={item} pathname={pathname} />
         ))}
       </div>
@@ -210,3 +240,7 @@ export function AdminNav() {
     </nav>
   );
 }
+
+// Re-exportamos también el array filtrado como helper si alguien más
+// lo necesita (futuro: breadcrumb, búsqueda, etc).
+export { filtrarPorRol, NAV, type NavItem };

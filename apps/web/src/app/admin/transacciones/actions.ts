@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
@@ -17,7 +17,7 @@ export async function abrirPeriodoAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const anio = Number(formData.get('anio'));
   const mes = Number(formData.get('mes'));
@@ -47,7 +47,7 @@ export async function abrirPeriodoAction(
  * Cierra un período — snapshot final, no se puede recalcular.
  */
 export async function cerrarPeriodoAction(periodoId: string) {
-  await requireAdmin();
+  await requireAuth();
   await prisma.periodoContable.update({
     where: { id: periodoId },
     data: { estado: 'CERRADO', cerradoEn: new Date() },
@@ -56,7 +56,7 @@ export async function cerrarPeriodoAction(periodoId: string) {
 }
 
 export async function reabrirPeriodoAction(periodoId: string) {
-  await requireAdmin();
+  await requireAuth();
   await prisma.periodoContable.update({
     where: { id: periodoId },
     data: { estado: 'ABIERTO', cerradoEn: null },
@@ -75,7 +75,7 @@ export async function reabrirPeriodoAction(periodoId: string) {
  * conservan intactas.
  */
 export async function liquidarPeriodoAction(periodoId: string): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const periodo = await prisma.periodoContable.findUnique({ where: { id: periodoId } });
   if (!periodo) return { error: 'Período no existe' };
@@ -169,7 +169,7 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
  * de ingreso o el período cambió. Las PAGADAS no se tocan.
  */
 export async function recalcularLiquidacionAction(liquidacionId: string) {
-  await requireAdmin();
+  await requireAuth();
   const liq = await prisma.liquidacion.findUnique({
     where: { id: liquidacionId },
     select: {
@@ -211,7 +211,7 @@ export async function marcarRevisadaAction(
   liquidacionId: string,
   revisada: boolean,
 ) {
-  await requireAdmin();
+  await requireAuth();
 
   // Scope: SUCURSAL sólo revisa SUS liquidaciones.
   const scope = await getUserScope();
@@ -248,7 +248,7 @@ export async function marcarRevisadaAction(
 export async function generarComprobantesPeriodoAction(
   periodoId: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const periodo = await prisma.periodoContable.findUnique({ where: { id: periodoId } });
   if (!periodo) return { error: 'Período no existe' };
@@ -457,7 +457,7 @@ async function comprobanteAccesibleEnScope(comprobanteId: string): Promise<boole
 }
 
 export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
-  await requireAdmin();
+  await requireAuth();
   if (!(await comprobanteAccesibleEnScope(comprobanteId))) return;
   const c = await prisma.comprobante.findUnique({ where: { id: comprobanteId } });
   if (!c) return;
@@ -472,7 +472,7 @@ export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
 }
 
 export async function anularComprobanteAction(comprobanteId: string) {
-  await requireAdmin();
+  await requireAuth();
   if (!(await comprobanteAccesibleEnScope(comprobanteId))) return;
   await prisma.comprobante.update({
     where: { id: comprobanteId },

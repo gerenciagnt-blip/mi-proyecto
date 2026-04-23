@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import type { Prisma, TipoPlanilla } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
 import {
@@ -45,7 +45,7 @@ async function currentUserId(): Promise<string | null> {
 export async function generarPlanillasAction(
   periodoId: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
   const userId = await currentUserId();
 
   const periodo = await prisma.periodoContable.findUnique({
@@ -439,7 +439,7 @@ export async function marcarPlanillaPagadaAction(
   numeroPlanillaExt: string,
   fechaPagoIso: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const num = numeroPlanillaExt.trim();
   if (!num) return { error: 'El número de planilla es obligatorio' };
@@ -506,7 +506,7 @@ export async function marcarPlanillaPagadaAction(
 export async function anularPlanillaAction(
   planillaId: string,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },

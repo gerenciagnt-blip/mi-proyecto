@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import type { TipoEntidadSgss } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { EntidadSgssSchema, TipoEntidadSgssEnum } from '@/lib/validations';
 import { nextEntidadSgssCodigo } from '@/lib/consecutivo';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
@@ -20,7 +20,7 @@ export async function createEntidadAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const tipo = parseTipo(formData.get('tipo'));
   if (!tipo) return { error: 'Tipo inválido' };
@@ -51,7 +51,7 @@ export async function createEntidadAction(
 }
 
 export async function toggleEntidadAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const e = await prisma.entidadSgss.findUnique({ where: { id } });
   if (!e) return;
   await prisma.entidadSgss.update({ where: { id }, data: { active: !e.active } });
@@ -63,7 +63,7 @@ export async function importEntidadesAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  await requireAdmin();
+  await requireStaff();
 
   const tipo = parseTipo(tipoParam);
   if (!tipo) return { error: 'Tipo inválido' };

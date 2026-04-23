@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
@@ -274,7 +274,7 @@ export async function createAfiliacionAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const cotParsed = CotizanteSchema.safeParse(parseCotizante(formData));
   if (!cotParsed.success) {
@@ -414,7 +414,7 @@ export async function updateAfiliacionAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const afParsed = AfiliacionSchema.safeParse(parseAfiliacion(formData));
   if (!afParsed.success) {
@@ -555,7 +555,7 @@ export async function updateAfiliacionAction(
 // ============ Toggle estado (action simple sin form) ============
 
 export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
-  await requireAdmin();
+  await requireAuth();
   const a = await prisma.afiliacion.findUnique({
     where: { id: afiliacionId },
     include: { cotizante: { select: { sucursalId: true } } },

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { SubtipoSchema } from '@/lib/validations';
 import { parseExcelFile, newImportResult } from '@/lib/excel';
 import type { ImportState } from '../../_components/import-form';
@@ -14,7 +14,7 @@ export async function createSubtipoAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = SubtipoSchema.safeParse({
     codigo: String(formData.get('codigo') ?? '').trim(),
@@ -37,7 +37,7 @@ export async function createSubtipoAction(
 }
 
 export async function toggleSubtipoAction(tipoCotizanteId: string, id: string) {
-  await requireAdmin();
+  await requireStaff();
   const s = await prisma.subtipo.findUnique({ where: { id } });
   if (!s) return;
   await prisma.subtipo.update({ where: { id }, data: { active: !s.active } });
@@ -49,7 +49,7 @@ export async function importSubtiposAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
-  await requireAdmin();
+  await requireStaff();
 
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) return { error: 'Selecciona un archivo' };

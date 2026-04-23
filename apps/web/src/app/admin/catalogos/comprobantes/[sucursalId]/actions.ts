@@ -6,7 +6,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -60,7 +60,7 @@ export async function saveComprobanteAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const parsed = TextSchema.safeParse({
     nombre: String(formData.get('nombre') ?? '').trim(),
@@ -118,7 +118,7 @@ export async function saveComprobanteAction(
 }
 
 export async function toggleComprobanteAction(sucursalId: string) {
-  await requireAdmin();
+  await requireAuth();
   const f = await prisma.comprobanteFormato.findUnique({ where: { sucursalId } });
   if (!f) return;
   await prisma.comprobanteFormato.update({

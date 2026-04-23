@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import {
   UserCreateSchema,
   UserUpdateSchema,
@@ -18,7 +18,7 @@ export async function createUserAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const role = String(formData.get('role') ?? '');
   const sucursalRaw = String(formData.get('sucursalId') ?? '');
@@ -81,7 +81,7 @@ export async function updateUserAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   const esSelf = session.user.id === id;
 
   const existing = await prisma.user.findUnique({ where: { id } });
@@ -138,7 +138,7 @@ export async function updateUserAction(
 }
 
 export async function toggleUserAction(id: string) {
-  const session = await requireAdmin();
+  const session = await requireStaff();
   if (session.user.id === id) return; // no permitir auto-desactivar
   const u = await prisma.user.findUnique({ where: { id } });
   if (!u) return;
@@ -151,7 +151,7 @@ export async function resetPasswordAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = UserPasswordSchema.safeParse({
     password: String(formData.get('password') ?? ''),

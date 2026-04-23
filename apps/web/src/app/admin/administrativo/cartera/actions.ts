@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import type { CarteraEstado } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -28,7 +28,7 @@ export async function gestionarCarteraAliadoAction(
     marcarPagada?: boolean;
   },
 ): Promise<ActionState> {
-  const session = await requireAdmin();
+  const session = await requireAuth();
   const userId = session.user.id;
   const userName = session.user.name;
 

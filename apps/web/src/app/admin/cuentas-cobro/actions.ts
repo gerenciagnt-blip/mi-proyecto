@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { CuentaCobroSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
@@ -33,7 +33,7 @@ export async function createCuentaCobroAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireAuth();
 
   const raw = parseForm(formData);
 
@@ -62,7 +62,7 @@ export async function createCuentaCobroAction(
 }
 
 export async function toggleCuentaCobroAction(id: string) {
-  await requireAdmin();
+  await requireAuth();
   const c = await prisma.cuentaCobro.findUnique({ where: { id } });
   if (!c) return;
 

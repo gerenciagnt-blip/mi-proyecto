@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 import { EmpresaCreateSchema, EmpresaUpdateSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
@@ -40,7 +40,7 @@ export async function createEmpresaAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = EmpresaCreateSchema.safeParse(parseForm(formData));
   if (!parsed.success) {
@@ -65,7 +65,7 @@ export async function updateEmpresaAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const parsed = EmpresaUpdateSchema.safeParse({
     ...parseForm(formData),
@@ -89,7 +89,7 @@ export async function updateEmpresaAction(
 }
 
 export async function toggleEmpresaAction(id: string) {
-  await requireAdmin();
+  await requireStaff();
   const e = await prisma.empresa.findUnique({ where: { id } });
   if (!e) return;
   await prisma.empresa.update({ where: { id }, data: { active: !e.active } });

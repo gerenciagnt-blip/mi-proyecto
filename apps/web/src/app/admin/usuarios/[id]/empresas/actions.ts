@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requireStaff } from '@/lib/auth-helpers';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -11,7 +11,7 @@ export async function updateUserEmpresasAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireStaff();
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: 'Usuario no encontrado' };
