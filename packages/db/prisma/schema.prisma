@@ -176,6 +176,9 @@ model Sucursal {
   users              User[]
   cuentasCobro       CuentaCobro[]
   comprobanteFormato ComprobanteFormato?
+  mediosPago         MedioPago[]
+  asesoresComerciales AsesorComercial[]
+  serviciosAdicionales ServicioAdicional[]
 
   @@map("sucursales")
 }
@@ -461,40 +464,53 @@ model Cargo {
 }
 
 // Asesor comercial — se ancla a cotizante para reportería/comisiones
+// Asesor comercial — scoped por sucursal (cada aliado tiene los suyos).
+// sucursalId null = recurso "global" visible por todas las sucursales
+// (caso excepcional, gestionado por ADMIN/SOPORTE).
 model AsesorComercial {
-  id        String   @id @default(cuid())
-  codigo    String   @unique
-  nombre    String
-  email     String?
-  telefono  String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  sucursalId String?
+  codigo     String
+  nombre     String
+  email      String?
+  telefono   String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
+  sucursal     Sucursal?     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
 
+  @@unique([sucursalId, codigo])
+  @@index([sucursalId])
   @@map("asesores_comerciales")
 }
 
-// Medio de pago — usado en cuadre de caja
+// Medio de pago — scoped por sucursal
 model MedioPago {
-  id        String   @id @default(cuid())
-  codigo    String   @unique
-  nombre    String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  sucursalId String?
+  codigo     String
+  nombre     String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
+  sucursal     Sucursal?    @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   comprobantes Comprobante[]
 
+  @@unique([sucursalId, codigo])
+  @@index([sucursalId])
   @@map("medios_pago")
 }
 
-// Servicio adicional — cobros extra sobre el servicio base
+// Servicio adicional — scoped por sucursal (cada aliado puede tener sus
+// propios planes/servicios extra).
 model ServicioAdicional {
   id          String   @id @default(cuid())
-  codigo      String   @unique
+  sucursalId  String?
+  codigo      String
   nombre      String
   descripcion String?
   precio      Decimal  @default(0) @db.Decimal(12, 2)
@@ -502,8 +518,11 @@ model ServicioAdicional {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  sucursal     Sucursal?            @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones AfiliacionServicio[]
 
+  @@unique([sucursalId, codigo])
+  @@index([sucursalId])
   @@map("servicios_adicionales")
 }
 
