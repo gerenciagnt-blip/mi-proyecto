@@ -4,11 +4,17 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { CreateUserForm } from './create-form';
+import { CreateUserForm, type RolCustomOpt } from './create-form';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
-export function CreateUserDialog({ sucursales }: { sucursales: Sucursal[] }) {
+export function CreateUserDialog({
+  sucursales,
+  rolesCustom,
+}: {
+  sucursales: Sucursal[];
+  rolesCustom: RolCustomOpt[];
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -25,7 +31,11 @@ export function CreateUserDialog({ sucursales }: { sucursales: Sucursal[] }) {
         description="El usuario recibirá la contraseña inicial para iniciar sesión."
         size="md"
       >
-        <CreateUserForm sucursales={sucursales} onSuccess={() => setOpen(false)} />
+        <CreateUserForm
+          sucursales={sucursales}
+          rolesCustom={rolesCustom}
+          onSuccess={() => setOpen(false)}
+        />
       </Dialog>
     </>
   );

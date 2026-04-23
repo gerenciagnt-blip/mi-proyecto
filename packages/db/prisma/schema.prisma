@@ -12,10 +12,14 @@ datasource db {
 }
 
 // --- Roles del sistema ---
+// Niveles base — cada usuario tiene uno. Para refinar permisos dentro
+// de un nivel, se le asigna además un `RolCustom` con su propia matriz
+// de permisos.
 enum Role {
   ADMIN         // staff plataforma — ve todo, sin sucursal
-  ALIADO_OWNER  // dueño del aliado — ve todas las empresas de su sucursal
-  ALIADO_USER   // empleado del aliado — solo empresas con acceso explícito
+  SOPORTE       // staff plataforma — mismos permisos base que ADMIN pero con matriz configurable
+  ALIADO_OWNER  // dueño del aliado — ve toda su sucursal
+  ALIADO_USER   // [DEPRECADO] usar ALIADO_OWNER + rolCustom. Se mantiene por retrocompatibilidad.
 }
 
 enum TipoPersona {
@@ -130,18 +134,20 @@ model Permiso {
 }
 
 // Roles personalizados creados por el admin — variaciones con
-// permisos específicos. basedOn define el "nivel" base (ALIADO_OWNER
-// / ALIADO_USER).
+// permisos específicos sobre un rol base (ALIADO_OWNER o SOPORTE).
+// Ejemplos: "Operaciones", "Facturación", "Cartera" heredando de
+// ALIADO_OWNER con permisos restringidos.
 model RolCustom {
   id          String   @id @default(cuid())
   nombre      String   @unique
   descripcion String?
-  basedOn     Role // ALIADO_OWNER o ALIADO_USER (ADMIN no se personaliza)
+  basedOn     Role // ALIADO_OWNER o SOPORTE (ADMIN no se personaliza)
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   permisos PermisoCustom[]
+  users    User[]
 
   @@map("roles_custom")
 }
@@ -181,17 +187,27 @@ model User {
   name         String
   passwordHash String
   role         Role
-  sucursalId   String? // NULL solo para ADMIN
+  sucursalId   String? // NULL solo para ADMIN/SOPORTE
+  /**
+   * Rol custom opcional. Si está seteado, los permisos efectivos del
+   * usuario son los definidos en PermisoCustom para ese rol. Si es NULL,
+   * el usuario usa la matriz Permiso del rol base.
+   * Permite crear perfiles granulares (Operaciones, Facturación, etc.)
+   * heredando de ALIADO_OWNER o SOPORTE.
+   */
+  rolCustomId  String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   sucursal            Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  rolCustom           RolCustom?       @relation(fields: [rolCustomId], references: [id], onDelete: SetNull)
   empresas            UsuarioEmpresa[]
   comprobantesCreados Comprobante[]    @relation("ComprobantesCreados")
   planillasCreadas    Planilla[]       @relation("PlanillasCreadas")
 
   @@index([sucursalId])
+  @@index([rolCustomId])
   @@map("users")
 }
 

@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
+  SOPORTE: 'Soporte',
   ALIADO_OWNER: 'Dueño Aliado',
   ALIADO_USER: 'Usuario Aliado',
 };
@@ -40,12 +41,13 @@ export default async function UsuariosPage({
     ];
   }
 
-  const [usuarios, sucursales] = await Promise.all([
+  const [usuarios, sucursales, rolesCustom] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
         sucursal: { select: { codigo: true } },
+        rolCustom: { select: { nombre: true } },
         _count: { select: { empresas: true } },
       },
     }),
@@ -53,6 +55,11 @@ export default async function UsuariosPage({
       where: { active: true },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
+    }),
+    prisma.rolCustom.findMany({
+      where: { active: true },
+      orderBy: { nombre: 'asc' },
+      select: { id: true, nombre: true, basedOn: true },
     }),
   ]);
 
@@ -67,7 +74,7 @@ export default async function UsuariosPage({
             Usuarios del sistema, roles y sucursales.
           </p>
         </div>
-        <CreateUserDialog sucursales={sucursales} />
+        <CreateUserDialog sucursales={sucursales} rolesCustom={rolesCustom} />
       </header>
 
       <UsuariosTabs />
@@ -151,7 +158,14 @@ export default async function UsuariosPage({
                 <tr key={u.id}>
                   <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
                   <td className="px-4 py-3">{u.name}</td>
-                  <td className="px-4 py-3 text-xs">{ROLE_LABELS[u.role] ?? u.role}</td>
+                  <td className="px-4 py-3 text-xs">
+                    <p>{ROLE_LABELS[u.role] ?? u.role}</p>
+                    {u.rolCustom && (
+                      <p className="mt-0.5 text-[10px] text-brand-blue">
+                        {u.rolCustom.nombre}
+                      </p>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">
                     {u.sucursal?.codigo ?? '—'}
                   </td>

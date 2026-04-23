@@ -12,6 +12,12 @@ import { createUserAction, type ActionState } from './actions';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
+export type RolCustomOpt = {
+  id: string;
+  nombre: string;
+  basedOn: 'ADMIN' | 'SOPORTE' | 'ALIADO_OWNER' | 'ALIADO_USER';
+};
+
 /** Genera una contraseña aleatoria con 12 caracteres:
  *   - mínimo 1 mayúscula, 1 minúscula, 1 dígito, 1 símbolo.
  *   - sin caracteres ambiguos (O/0, l/1, etc.).
@@ -35,26 +41,36 @@ function generarPassword(): string {
 
 export function CreateUserForm({
   sucursales,
+  rolesCustom,
   onSuccess,
 }: {
   sucursales: Sucursal[];
+  rolesCustom: RolCustomOpt[];
   onSuccess?: () => void;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createUserAction, {});
   const ref = useRef<HTMLFormElement>(null);
-  const [role, setRole] = useState('ALIADO_USER');
+  const [role, setRole] = useState('ALIADO_OWNER');
+  const [rolCustomId, setRolCustomId] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
   useEffect(() => {
     if (state.ok) {
       ref.current?.reset();
-      setRole('ALIADO_USER');
+      setRole('ALIADO_OWNER');
+      setRolCustomId('');
       setPassword('');
       setPasswordConfirm('');
       onSuccess?.();
     }
   }, [state.ok, onSuccess]);
+
+  // Roles custom filtrados según el rol base elegido.
+  const rolesCustomDisponibles = rolesCustom.filter((r) => r.basedOn === role);
+
+  // Staff (ADMIN / SOPORTE) no requiere sucursal — es cross-tenant.
+  const esStaff = role === 'ADMIN' || role === 'SOPORTE';
 
   // Validación cliente: coincidencia de contraseñas
   const passwordsMatch =
@@ -146,21 +162,27 @@ export function CreateUserForm({
 
         <div>
           <Label htmlFor="role">
-            Rol <span className="text-red-500">*</span>
+            Nivel base <span className="text-red-500">*</span>
           </Label>
           <Select
             id="role"
             name="role"
             value={role}
-            onChange={(e) => setRole(e.target.value)}
+            onChange={(e) => {
+              setRole(e.target.value);
+              setRolCustomId(''); // reset rol custom al cambiar nivel
+            }}
             className="mt-1"
           >
             <option value="ADMIN">Administrador</option>
+            <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
-            <option value="ALIADO_USER">Usuario Aliado</option>
           </Select>
+          <p className="mt-1 text-[10px] text-slate-500">
+            ADMIN y Soporte ven todas las sucursales. Dueño Aliado ve solo la suya.
+          </p>
         </div>
-        {role !== 'ADMIN' && (
+        {!esStaff && (
           <div>
             <Label htmlFor="sucursalId">
               Sucursal <span className="text-red-500">*</span>
@@ -188,6 +210,28 @@ export function CreateUserForm({
             )}
           </div>
         )}
+        <div className={esStaff ? 'sm:col-span-2' : 'sm:col-span-2'}>
+          <Label htmlFor="rolCustomId">Rol personalizado (opcional)</Label>
+          <Select
+            id="rolCustomId"
+            name="rolCustomId"
+            value={rolCustomId}
+            onChange={(e) => setRolCustomId(e.target.value)}
+            className="mt-1"
+          >
+            <option value="">— Usar permisos base del nivel —</option>
+            {rolesCustomDisponibles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nombre}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-[10px] text-slate-500">
+            Refina los permisos con un rol creado en{' '}
+            <span className="font-medium">Roles</span>. Si no eliges ninguno,
+            aplican los permisos base del nivel.
+          </p>
+        </div>
       </div>
 
       {state.error && (

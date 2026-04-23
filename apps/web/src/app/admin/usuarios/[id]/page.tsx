@@ -15,12 +15,17 @@ export default async function EditUserPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [user, sucursales, session] = await Promise.all([
+  const [user, sucursales, rolesCustom, session] = await Promise.all([
     prisma.user.findUnique({ where: { id } }),
     prisma.sucursal.findMany({
       where: { active: true },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
+    }),
+    prisma.rolCustom.findMany({
+      where: { active: true },
+      orderBy: { nombre: 'asc' },
+      select: { id: true, nombre: true, basedOn: true },
     }),
     auth(),
   ]);
@@ -51,6 +56,7 @@ export default async function EditUserPage({
           <EditUserForm
             user={user}
             sucursales={sucursales}
+            rolesCustom={rolesCustom}
             sessionUserId={sessionUserId}
           />
         </section>

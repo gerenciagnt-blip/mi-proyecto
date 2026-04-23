@@ -15,25 +15,36 @@ type User = {
   name: string;
   role: Role;
   sucursalId: string | null;
+  rolCustomId: string | null;
   active: boolean;
 };
 
 type Sucursal = { id: string; codigo: string; nombre: string };
+type RolCustomOpt = {
+  id: string;
+  nombre: string;
+  basedOn: 'ADMIN' | 'SOPORTE' | 'ALIADO_OWNER' | 'ALIADO_USER';
+};
 
 export function EditUserForm({
   user,
   sucursales,
-  /** ID del usuario actualmente logueado (para proteger auto-cambio). */
+  rolesCustom,
   sessionUserId,
 }: {
   user: User;
   sucursales: Sucursal[];
+  rolesCustom: RolCustomOpt[];
+  /** ID del usuario actualmente logueado (para proteger auto-cambio). */
   sessionUserId: string;
 }) {
   const bound = updateUserAction.bind(null, user.id);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
   const [role, setRole] = useState<Role>(user.role);
+  const [rolCustomId, setRolCustomId] = useState<string>(user.rolCustomId ?? '');
   const esSelf = user.id === sessionUserId;
+  const esStaff = role === 'ADMIN' || role === 'SOPORTE';
+  const rolesCustomDisponibles = rolesCustom.filter((r) => r.basedOn === role);
 
   return (
     <form action={action} className="space-y-4">
@@ -62,22 +73,28 @@ export function EditUserForm({
         </div>
         <div>
           <Label htmlFor="role">
-            Rol <span className="text-red-500">*</span>
+            Nivel base <span className="text-red-500">*</span>
           </Label>
           <Select
             id="role"
             name="role"
             value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
+            onChange={(e) => {
+              setRole(e.target.value as Role);
+              setRolCustomId(''); // reset al cambiar nivel
+            }}
             disabled={esSelf}
             className="mt-1"
           >
             <option value="ADMIN">Administrador</option>
+            <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
-            <option value="ALIADO_USER">Usuario Aliado</option>
+            {user.role === 'ALIADO_USER' && (
+              <option value="ALIADO_USER">Usuario Aliado (legado)</option>
+            )}
           </Select>
         </div>
-        {role !== 'ADMIN' && (
+        {!esStaff && (
           <div>
             <Label htmlFor="sucursalId">
               Sucursal <span className="text-red-500">*</span>
@@ -101,6 +118,24 @@ export function EditUserForm({
             </Select>
           </div>
         )}
+        <div className="sm:col-span-2">
+          <Label htmlFor="rolCustomId">Rol personalizado (opcional)</Label>
+          <Select
+            id="rolCustomId"
+            name="rolCustomId"
+            value={rolCustomId}
+            onChange={(e) => setRolCustomId(e.target.value)}
+            disabled={esSelf}
+            className="mt-1"
+          >
+            <option value="">— Usar permisos base del nivel —</option>
+            {rolesCustomDisponibles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nombre}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <label className="flex items-center gap-2 text-sm">

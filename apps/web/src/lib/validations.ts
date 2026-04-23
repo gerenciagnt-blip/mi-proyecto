@@ -68,7 +68,15 @@ export const EmpresaUpdateSchema = EmpresaCreateSchema.extend({
   active: z.boolean().optional(),
 });
 
-export const RoleEnum = z.enum(['ADMIN', 'ALIADO_OWNER', 'ALIADO_USER']);
+export const RoleEnum = z.enum([
+  'ADMIN',
+  'SOPORTE',
+  'ALIADO_OWNER',
+  'ALIADO_USER', // legado — para usuarios existentes, no se expone en el UI de creación
+]);
+
+/** Staff (ADMIN/SOPORTE) no requieren sucursal — operan cross-tenant. */
+const esStaffRole = (r: string) => r === 'ADMIN' || r === 'SOPORTE';
 
 export const UserCreateSchema = z
   .object({
@@ -77,8 +85,9 @@ export const UserCreateSchema = z
     password: z.string().min(8, 'Mínimo 8 caracteres'),
     role: RoleEnum,
     sucursalId: z.string().nullable(),
+    rolCustomId: z.string().nullable().optional(),
   })
-  .refine((v) => v.role === 'ADMIN' || !!v.sucursalId, {
+  .refine((v) => esStaffRole(v.role) || !!v.sucursalId, {
     message: 'Sucursal obligatoria para roles de aliado',
     path: ['sucursalId'],
   });
@@ -88,9 +97,10 @@ export const UserUpdateSchema = z
     name: z.string().min(1).max(200),
     role: RoleEnum,
     sucursalId: z.string().nullable(),
+    rolCustomId: z.string().nullable().optional(),
     active: z.boolean(),
   })
-  .refine((v) => v.role === 'ADMIN' || !!v.sucursalId, {
+  .refine((v) => esStaffRole(v.role) || !!v.sucursalId, {
     message: 'Sucursal obligatoria para roles de aliado',
     path: ['sucursalId'],
   });

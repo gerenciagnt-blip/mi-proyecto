@@ -22,15 +22,34 @@ export async function createUserAction(
 
   const role = String(formData.get('role') ?? '');
   const sucursalRaw = String(formData.get('sucursalId') ?? '');
+  const rolCustomRaw = String(formData.get('rolCustomId') ?? '');
+  const esStaff = role === 'ADMIN' || role === 'SOPORTE';
   const parsed = UserCreateSchema.safeParse({
     email: String(formData.get('email') ?? '').toLowerCase().trim(),
     name: titleCase(String(formData.get('name') ?? '').trim()),
     password: String(formData.get('password') ?? ''),
     role,
-    sucursalId: role === 'ADMIN' ? null : sucursalRaw || null,
+    sucursalId: esStaff ? null : sucursalRaw || null,
+    rolCustomId: rolCustomRaw || null,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  }
+
+  // Validar que el rol custom (si se pasó) sea compatible con el rol base
+  if (parsed.data.rolCustomId) {
+    const rc = await prisma.rolCustom.findUnique({
+      where: { id: parsed.data.rolCustomId },
+      select: { basedOn: true, active: true },
+    });
+    if (!rc || !rc.active) {
+      return { error: 'Rol personalizado no existe o está inactivo' };
+    }
+    if (rc.basedOn !== parsed.data.role) {
+      return {
+        error: `El rol personalizado no aplica al nivel ${parsed.data.role}`,
+      };
+    }
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
@@ -43,6 +62,7 @@ export async function createUserAction(
         passwordHash,
         role: parsed.data.role,
         sucursalId: parsed.data.sucursalId,
+        rolCustomId: parsed.data.rolCustomId ?? null,
       },
     });
   } catch (e) {
@@ -74,16 +94,37 @@ export async function updateUserAction(
   const sucursalRaw = esSelf
     ? (existing.sucursalId ?? '')
     : String(formData.get('sucursalId') ?? '');
+  const rolCustomRaw = esSelf
+    ? (existing.rolCustomId ?? '')
+    : String(formData.get('rolCustomId') ?? '');
   const active = esSelf ? existing.active : formData.get('active') === 'on';
+  const esStaff = role === 'ADMIN' || role === 'SOPORTE';
 
   const parsed = UserUpdateSchema.safeParse({
     name: titleCase(String(formData.get('name') ?? '').trim()),
     role,
-    sucursalId: role === 'ADMIN' ? null : sucursalRaw || null,
+    sucursalId: esStaff ? null : sucursalRaw || null,
+    rolCustomId: rolCustomRaw || null,
     active,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  }
+
+  // Validar compatibilidad del rol custom con el rol base
+  if (parsed.data.rolCustomId) {
+    const rc = await prisma.rolCustom.findUnique({
+      where: { id: parsed.data.rolCustomId },
+      select: { basedOn: true, active: true },
+    });
+    if (!rc || !rc.active) {
+      return { error: 'Rol personalizado no existe o está inactivo' };
+    }
+    if (rc.basedOn !== parsed.data.role) {
+      return {
+        error: `El rol personalizado no aplica al nivel ${parsed.data.role}`,
+      };
+    }
   }
 
   try {
