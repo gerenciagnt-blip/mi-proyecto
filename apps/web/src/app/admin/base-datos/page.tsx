@@ -104,6 +104,12 @@ export default async function BaseDatosPage({
         tipoCotizante: { select: { codigo: true, nombre: true } },
         planSgss: { select: { codigo: true, nombre: true, regimen: true } },
         serviciosAdicionales: { select: { servicioAdicionalId: true } },
+        // Último estado en la bandeja Soporte · Afiliaciones (columna Estado Sop.)
+        soportes: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { estado: true },
+        },
       },
     }),
     prisma.afiliacion.count({
@@ -295,6 +301,7 @@ export default async function BaseDatosPage({
         }
       : null,
     regimen: a.regimen,
+    estadoSoporte: a.soportes[0]?.estado ?? null,
     initial: {
       modalidad: a.modalidad,
       empresaId: a.empresaId,

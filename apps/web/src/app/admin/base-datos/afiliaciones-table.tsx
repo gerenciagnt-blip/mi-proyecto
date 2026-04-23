@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Eye, Pencil, ToggleLeft, ToggleRight } from 'lucide-react';
+import type { SoporteAfEstado } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { toggleEstadoAfiliacionAction } from './actions';
 import { AfiliacionDialog } from './afiliacion-dialog';
@@ -11,6 +12,19 @@ import type {
   CotizanteSnapshot,
   Modalidad,
 } from './afiliacion-form';
+
+const SOP_ESTADO_LABEL: Record<SoporteAfEstado, string> = {
+  EN_PROCESO: 'En proceso',
+  PROCESADA: 'Procesada',
+  RECHAZADA: 'Rechazada',
+  NOVEDAD: 'Novedad',
+};
+const SOP_ESTADO_TONE: Record<SoporteAfEstado, string> = {
+  EN_PROCESO: 'bg-sky-50 text-sky-700 ring-sky-200',
+  PROCESADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  RECHAZADA: 'bg-red-50 text-red-700 ring-red-200',
+  NOVEDAD: 'bg-amber-50 text-amber-700 ring-amber-200',
+};
 
 const DOC_LABELS: Record<string, string> = {
   CC: 'CC',
@@ -53,6 +67,8 @@ export type AfiliacionRow = {
     regimen: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS';
   } | null;
   regimen: 'ORDINARIO' | 'RESOLUCION' | null;
+  /** Último estado de la bandeja Soporte · Afiliaciones para esta afiliación. */
+  estadoSoporte: SoporteAfEstado | null;
   initial: InitialAfiliacion;
 };
 
@@ -116,13 +132,14 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno 
               <th className="px-4 py-2 text-right">Salario</th>
               <th className="px-4 py-2">Ingreso</th>
               <th className="px-4 py-2">Estado</th>
+              <th className="px-4 py-2">Estado Sop.</th>
               <th className="px-4 py-2 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={mostrarDueno ? 12 : 11} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={mostrarDueno ? 13 : 12} className="px-4 py-8 text-center text-slate-400">
                   {emptyMessage}
                 </td>
               </tr>
@@ -211,6 +228,21 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno 
                       />
                       {a.estado}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {a.estadoSoporte ? (
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          SOP_ESTADO_TONE[a.estadoSoporte],
+                        )}
+                        title="Último estado en la bandeja Soporte · Afiliaciones"
+                      >
+                        {SOP_ESTADO_LABEL[a.estadoSoporte]}
+                      </span>
+                    ) : (
+                      <span className="italic text-slate-400 text-[11px]">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">

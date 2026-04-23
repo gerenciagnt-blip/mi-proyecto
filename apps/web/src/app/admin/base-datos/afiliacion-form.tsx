@@ -979,6 +979,24 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         </section>
       )}
 
+      {/* Soportes (adjuntos que van a la bandeja Soporte · Afiliaciones) */}
+      {!readOnly && (
+        <section className={sectionCls}>
+          <h3 className={sectionTitle}>Soportes adjuntos</h3>
+          <p className="mb-2 text-[11px] text-slate-500">
+            Opcional. PDF, JPG, PNG o WebP hasta 5 MB cada uno. Se enviarán a
+            soporte junto con la solicitud generada automáticamente.
+          </p>
+          <input
+            type="file"
+            name="documento"
+            multiple
+            accept="application/pdf,image/jpeg,image/jpg,image/png,image/webp"
+            className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+          />
+        </section>
+      )}
+
       {/* Comentarios */}
       <section className={sectionCls}>
         <h3 className={sectionTitle}>Comentarios / observaciones</h3>

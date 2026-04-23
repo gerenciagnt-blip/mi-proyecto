@@ -9,6 +9,57 @@ import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
 import { dispararSoporteAfiliacion } from '@/lib/soporte-af/dispatch';
 import type { AfiliacionSnapshot } from '@/lib/soporte-af/disparos';
+import {
+  guardarDocumentoSoporteAf,
+  MIMES_PERMITIDOS as SOP_MIMES,
+  TAMANO_MAX as SOP_TAMANO_MAX,
+} from '@/lib/soporte-af/storage';
+
+/**
+ * Toma los archivos adjuntados al FormData (input `documento`) y los guarda
+ * asociados a la solicitud SoporteAfiliacion recién creada (con
+ * accionadaPor=ALIADO). Se ejecuta best-effort: si algún archivo falla,
+ * se loggea y se continúa — la afiliación y la solicitud ya están creadas.
+ */
+async function adjuntarSoportesAliado(
+  soporteAfId: string,
+  userId: string | null,
+  formData: FormData,
+): Promise<void> {
+  const files = formData
+    .getAll('documento')
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return;
+
+  for (const f of files) {
+    if (!(SOP_MIMES as readonly string[]).includes(f.type)) {
+      console.warn('[afiliacion/upload] MIME no permitido:', f.type, f.name);
+      continue;
+    }
+    if (f.size > SOP_TAMANO_MAX) {
+      console.warn('[afiliacion/upload] archivo > 5MB:', f.name);
+      continue;
+    }
+    try {
+      const buf = Buffer.from(await f.arrayBuffer());
+      const saved = await guardarDocumentoSoporteAf(buf, f.name, soporteAfId);
+      await prisma.soporteAfDocumento.create({
+        data: {
+          soporteAfId,
+          accionadaPor: 'ALIADO',
+          archivoPath: saved.path,
+          archivoHash: saved.hash,
+          archivoMime: f.type,
+          archivoSize: saved.size,
+          archivoNombreOriginal: f.name,
+          userId,
+        },
+      });
+    } catch (e) {
+      console.error('[afiliacion/upload] fallo al subir', f.name, e);
+    }
+  }
+}
 
 /** Normaliza un registro de Afiliacion/payload a la forma esperada por el detector de disparos. */
 function toSoporteAfSnapshot(src: {
@@ -420,7 +471,7 @@ export async function createAfiliacionAction(
 
     // Soporte · Afiliaciones — dispatch automático si queda ACTIVA.
     const autor = await currentUser();
-    await dispararSoporteAfiliacion({
+    const disparo = await dispararSoporteAfiliacion({
       afiliacionId,
       antes: null,
       despues: toSoporteAfSnapshot({
@@ -432,6 +483,9 @@ export async function createAfiliacionAction(
       }),
       autorUserId: autor.id,
     });
+    if (disparo) {
+      await adjuntarSoportesAliado(disparo.id, autor.id, formData);
+    }
   } catch (e) {
     return {
       error:
@@ -585,7 +639,7 @@ export async function updateAfiliacionAction(
 
     // Soporte · Afiliaciones — dispatch si la edición cumple condiciones.
     const autor = await currentUser();
-    await dispararSoporteAfiliacion({
+    const disparo = await dispararSoporteAfiliacion({
       afiliacionId,
       antes: toSoporteAfSnapshot({
         estado: existing.estado,
@@ -603,12 +657,105 @@ export async function updateAfiliacionAction(
       }),
       autorUserId: autor.id,
     });
+    if (disparo) {
+      await adjuntarSoportesAliado(disparo.id, autor.id, formData);
+    }
   } catch {
     return { error: 'Error al actualizar' };
   }
 
   revalidatePath('/admin/base-datos');
   return { ok: true };
+}
+
+// ============ Listado para modal "Consultar" ============
+
+/**
+ * Lista las solicitudes de Soporte · Afiliaciones asociadas a una
+ * afiliación, con sus documentos y gestiones. Usado por la sección
+ * "Soporte Afiliaciones" del modal Consultar.
+ *
+ * Aplica scope: un aliado SUCURSAL sólo ve si la afiliación pertenece a
+ * su sucursal (a través del cotizante); staff ve todo.
+ */
+export async function listarSoportesPorAfiliacionAction(afiliacionId: string) {
+  await requireAuth();
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' as const };
+
+  const af = await prisma.afiliacion.findUnique({
+    where: { id: afiliacionId },
+    select: { cotizante: { select: { sucursalId: true } } },
+  });
+  if (!af) return { error: 'Afiliación no encontrada' as const };
+  if (
+    scope.tipo === 'SUCURSAL' &&
+    af.cotizante.sucursalId !== scope.sucursalId
+  ) {
+    return { error: 'Sin permiso' as const };
+  }
+
+  const solicitudes = await prisma.soporteAfiliacion.findMany({
+    where: { afiliacionId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      createdBy: { select: { name: true } },
+      gestionadoPor: { select: { name: true } },
+      documentos: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          archivoNombreOriginal: true,
+          archivoSize: true,
+          accionadaPor: true,
+          eliminado: true,
+          createdAt: true,
+        },
+      },
+      gestiones: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          accionadaPor: true,
+          descripcion: true,
+          nuevoEstado: true,
+          userName: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  return {
+    ok: true as const,
+    items: solicitudes.map((s) => ({
+      id: s.id,
+      consecutivo: s.consecutivo,
+      fechaRadicacion: s.fechaRadicacion.toISOString(),
+      disparos: s.disparos,
+      estado: s.estado,
+      estadoObservaciones: s.estadoObservaciones,
+      creadoPor: s.createdBy?.name ?? null,
+      gestionadoPor: s.gestionadoPor?.name ?? null,
+      gestionadoEn: s.gestionadoEn?.toISOString() ?? null,
+      documentos: s.documentos.map((d) => ({
+        id: d.id,
+        nombre: d.archivoNombreOriginal,
+        tamano: d.archivoSize,
+        accionadaPor: d.accionadaPor,
+        eliminado: d.eliminado,
+        fecha: d.createdAt.toISOString(),
+      })),
+      gestiones: s.gestiones.map((g) => ({
+        id: g.id,
+        accionadaPor: g.accionadaPor,
+        descripcion: g.descripcion,
+        nuevoEstado: g.nuevoEstado,
+        userName: g.userName,
+        fecha: g.createdAt.toISOString(),
+      })),
+    })),
+  };
 }
 
 // ============ Toggle estado (action simple sin form) ============

@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { AfiliacionForm, type AfiliacionFormProps, type Modalidad } from './afiliacion-form';
+import { SoporteAfSection } from './soporte-af-section';
 
 type CreateTriggerProps = Omit<AfiliacionFormProps, 'mode' | 'onSuccess'> & {
   modalidad: Modalidad;
@@ -70,6 +71,11 @@ export function AfiliacionDialog(props: ControlledProps) {
   return (
     <Dialog open={open} onClose={onClose} title={title} description={description} size="xl">
       <AfiliacionForm {...formProps} onSuccess={onClose} />
+      {props.mode === 'view' && props.afiliacionId && (
+        <div className="mt-4">
+          <SoporteAfSection afiliacionId={props.afiliacionId} />
+        </div>
+      )}
     </Dialog>
   );
 }
