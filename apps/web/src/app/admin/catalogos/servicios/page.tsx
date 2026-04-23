@@ -1,21 +1,39 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
+import { formatCOP } from '@/lib/format';
 import { CreateServicioForm } from './create-form';
 import { toggleServicioAction } from './actions';
 
 export const metadata = { title: 'Servicios adicionales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-const copFmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
-
 export default async function ServiciosPage() {
-  const servicios = await prisma.servicioAdicional.findMany({ orderBy: { codigo: 'asc' } });
+  const scope = await getUserScope();
+  const where = await scopeWhereOpt();
+
+  const [servicios, sucursales] = await Promise.all([
+    prisma.servicioAdicional.findMany({
+      where,
+      orderBy: [{ sucursalId: 'asc' }, { codigo: 'asc' }],
+      include: { sucursal: { select: { codigo: true, nombre: true } } },
+    }),
+    scope?.tipo === 'STAFF'
+      ? prisma.sucursal.findMany({
+          where: { active: true },
+          orderBy: { codigo: 'asc' },
+          select: { id: true, codigo: true, nombre: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const esStaff = scope?.tipo === 'STAFF';
 
   return (
     <div className="space-y-6">
       <header>
         <Link href="/admin/catalogos" className="text-sm text-slate-500 hover:text-slate-900">
-          ← Catálogos
+          ← Parametrización
         </Link>
         <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
           Servicios adicionales
@@ -27,7 +45,7 @@ export default async function ServiciosPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold">Crear nuevo servicio</h2>
-        <CreateServicioForm />
+        <CreateServicioForm esStaff={esStaff} sucursales={sucursales} />
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -36,6 +54,7 @@ export default async function ServiciosPage() {
             <tr>
               <th className="px-4 py-2">Código</th>
               <th className="px-4 py-2">Nombre</th>
+              <th className="px-4 py-2">Sucursal</th>
               <th className="px-4 py-2">Precio</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
@@ -44,7 +63,7 @@ export default async function ServiciosPage() {
           <tbody className="divide-y divide-slate-100">
             {servicios.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay servicios adicionales
                 </td>
               </tr>
@@ -56,7 +75,18 @@ export default async function ServiciosPage() {
                   <p className="font-medium">{s.nombre}</p>
                   {s.descripcion && <p className="text-[11px] text-slate-500">{s.descripcion}</p>}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs">{copFmt.format(Number(s.precio))}</td>
+                <td className="px-4 py-3 text-xs">
+                  {s.sucursal ? (
+                    <span className="font-mono text-slate-600">
+                      {s.sucursal.codigo}
+                    </span>
+                  ) : (
+                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                      Global
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">{formatCOP(Number(s.precio))}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${

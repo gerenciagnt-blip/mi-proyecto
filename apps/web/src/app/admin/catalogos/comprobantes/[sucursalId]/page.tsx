@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { ComprobanteForm } from './form';
 import { toggleComprobanteAction } from './actions';
 
@@ -14,6 +15,13 @@ export default async function ComprobanteEditPage({
   params: Promise<{ sucursalId: string }>;
 }) {
   const { sucursalId } = await params;
+
+  // Un aliado solo puede abrir la página de su propia sucursal. Si manipula
+  // la URL con otra sucursalId, redirigir a la raíz del módulo.
+  const scope = await getUserScope();
+  if (scope?.tipo === 'SUCURSAL' && scope.sucursalId !== sucursalId) {
+    redirect('/admin/catalogos/comprobantes');
+  }
 
   const [sucursal, formato] = await Promise.all([
     prisma.sucursal.findUnique({ where: { id: sucursalId } }),

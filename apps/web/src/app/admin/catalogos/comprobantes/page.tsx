@@ -1,12 +1,20 @@
 import Link from 'next/link';
 import { ArrowLeft, Check, Minus } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { getUserScope } from '@/lib/sucursal-scope';
 
 export const metadata = { title: 'Formato de comprobantes — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function ComprobantesPage() {
+  const scope = await getUserScope();
+
+  // Un aliado solo ve su sucursal. Staff ve todas.
+  const where =
+    scope?.tipo === 'SUCURSAL' ? { id: scope.sucursalId } : {};
+
   const sucursales = await prisma.sucursal.findMany({
+    where,
     orderBy: { codigo: 'asc' },
     include: { comprobanteFormato: true },
   });

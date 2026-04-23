@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { scopeWhereOpt } from '@/lib/sucursal-scope';
 
 export const metadata = { title: 'Parametrización — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,11 @@ type Card = {
 };
 
 export default async function ParametrizacionPage() {
+  // Medios de pago es el único catálogo con scope por sucursal en este hub.
+  // Los demás son globales (entidades, actividades, tipos, planes, tarifas,
+  // SMLV) — todos los usuarios ven el mismo count.
+  const mediosWhere = await scopeWhereOpt();
+
   const [
     entidadesPorTipo,
     actividades,
@@ -35,7 +41,7 @@ export default async function ParametrizacionPage() {
     prisma.actividadEconomica.count(),
     prisma.tipoCotizante.count(),
     prisma.subtipo.count(),
-    prisma.medioPago.count(),
+    prisma.medioPago.count({ where: mediosWhere }),
   ]);
 
   const planesCount = await prisma.planSgss.count();

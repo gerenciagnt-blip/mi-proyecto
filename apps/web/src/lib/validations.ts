@@ -174,11 +174,13 @@ export const AsesorSchema = z.object({
   nombre: z.string().trim().min(1, 'Requerido').max(200),
   email: optional.pipe(z.string().email('Correo no válido').optional()),
   telefono: optional,
+  sucursalId: z.string().trim().nullable().optional(),
 });
 
 export const MedioPagoSchema = z.object({
   codigo: z.string().trim().min(1, 'Requerido').max(20),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
+  sucursalId: z.string().trim().nullable().optional(),
 });
 
 export const ServicioAdicionalSchema = z.object({
@@ -186,6 +188,7 @@ export const ServicioAdicionalSchema = z.object({
   nombre: z.string().trim().min(1, 'Requerido').max(200),
   descripcion: optional,
   precio: z.coerce.number().min(0, 'Precio no puede ser negativo').default(0),
+  sucursalId: z.string().trim().nullable().optional(),
 });
 
 // --- Cuenta de Cobro (Fase 1.6.3) ---
