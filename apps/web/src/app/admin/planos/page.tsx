@@ -9,10 +9,11 @@ import {
   AlertCircle,
   Download,
 } from 'lucide-react';
-import type { EstadoPlanilla } from '@pila/db';
+import type { EstadoPlanilla, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
@@ -95,6 +96,23 @@ export default async function PlanosPage({
     );
   }
 
+  // Scope: SUCURSAL ve sólo comprobantes/planillas de su sucursal.
+  const scope = await getUserScope();
+  const planillaScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const compScopeOR: Prisma.ComprobanteWhereInput[] =
+    scope?.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
   // Conteos para badges en tabs
   const [countConsolidado, countGuardado, countPagadas] = await Promise.all([
     // Comprobantes del período sin planilla activa
@@ -104,13 +122,14 @@ export default async function PlanosPage({
         procesadoEn: { not: null },
         estado: { not: 'ANULADO' },
         planillas: { none: {} },
+        ...(compScopeOR.length > 0 ? { OR: compScopeOR } : {}),
       },
     }),
     prisma.planilla.count({
-      where: { periodoId: periodo.id, estado: 'CONSOLIDADO' },
+      where: { periodoId: periodo.id, estado: 'CONSOLIDADO', ...planillaScope },
     }),
     prisma.planilla.count({
-      where: { periodoId: periodo.id, estado: 'PAGADA' },
+      where: { periodoId: periodo.id, estado: 'PAGADA', ...planillaScope },
     }),
   ]);
 
@@ -222,6 +241,21 @@ function TabLink({
 // ================== Tab Consolidado =====================
 
 async function TabConsolidado({ periodoId }: { periodoId: string }) {
+  // Scope: aliado sólo ve preview de sus comprobantes pendientes.
+  const scope = await getUserScope();
+  const compScopeOR: Prisma.ComprobanteWhereInput[] =
+    scope?.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
   // Traer todos los comprobantes pendientes con suficiente info para mostrar
   // el agrupamiento "preview" que se va a generar.
   const comps = await prisma.comprobante.findMany({
@@ -230,6 +264,7 @@ async function TabConsolidado({ periodoId }: { periodoId: string }) {
       procesadoEn: { not: null },
       estado: { not: 'ANULADO' },
       planillas: { none: {} },
+      ...(compScopeOR.length > 0 ? { OR: compScopeOR } : {}),
     },
     include: {
       liquidaciones: {
@@ -479,10 +514,16 @@ async function PlanillasTable({
   estado: EstadoPlanilla;
   showPeriodo?: boolean;
 }) {
+  // Scope: aliado sólo ve sus propias planillas.
+  const scope = await getUserScope();
+  const planillaScope =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+
   const planillas = await prisma.planilla.findMany({
     where: {
       ...(periodoId ? { periodoId } : {}),
       estado,
+      ...planillaScope,
     },
     orderBy: [{ generadoEn: 'desc' }],
     include: {

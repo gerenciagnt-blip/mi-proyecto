@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { generarPlano } from '@/lib/planos/generar';
 
 export const dynamic = 'force-dynamic';
@@ -101,6 +102,18 @@ export async function GET(
     return NextResponse.json(
       { error: 'Planilla anulada — plano no disponible' },
       { status: 410 },
+    );
+  }
+
+  // Scope: un aliado sólo puede descargar sus planillas.
+  const scope = await getUserScope();
+  if (!scope) {
+    return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
+  }
+  if (scope.tipo === 'SUCURSAL' && planilla.sucursalId !== scope.sucursalId) {
+    return NextResponse.json(
+      { error: 'No tienes permiso sobre esta planilla' },
+      { status: 403 },
     );
   }
 

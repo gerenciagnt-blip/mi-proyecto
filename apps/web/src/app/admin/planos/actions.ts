@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
-import type { TipoPlanilla } from '@pila/db';
+import type { Prisma, TipoPlanilla } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
 import {
   planillasParaAfiliacion,
@@ -52,6 +53,24 @@ export async function generarPlanillasAction(
   });
   if (!periodo) return { error: 'Período no existe' };
 
+  // Scope: aliado genera sólo SUS planillas; STAFF genera cross-tenant,
+  // pero siempre agrupando por sucursal para que las planillas tipo E/I
+  // no mezclen cotizantes de sucursales distintas.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  const compScopeOR: Prisma.ComprobanteWhereInput[] =
+    scope.tipo === 'SUCURSAL'
+      ? [
+          { cotizante: { sucursalId: scope.sucursalId } },
+          { cuentaCobro: { sucursalId: scope.sucursalId } },
+          {
+            asesorComercial: {
+              OR: [{ sucursalId: null }, { sucursalId: scope.sucursalId }],
+            },
+          },
+        ]
+      : [];
+
   // Comprobantes del período listos para planilla
   const comps = await prisma.comprobante.findMany({
     where: {
@@ -59,8 +78,12 @@ export async function generarPlanillasAction(
       procesadoEn: { not: null },
       estado: { not: 'ANULADO' },
       planillas: { none: {} }, // sin planilla activa (ANULADA borra los links en cascade)
+      ...(compScopeOR.length > 0 ? { OR: compScopeOR } : {}),
     },
     include: {
+      cotizante: { select: { sucursalId: true } },
+      cuentaCobro: { select: { sucursalId: true } },
+      asesorComercial: { select: { sucursalId: true } },
       liquidaciones: {
         include: {
           liquidacion: {
@@ -74,6 +97,7 @@ export async function generarPlanillasAction(
                   regimen: true,
                   empresaId: true,
                   cotizanteId: true,
+                  cotizante: { select: { sucursalId: true } },
                   planSgss: {
                     select: {
                       incluyeEps: true,
@@ -119,6 +143,7 @@ export async function generarPlanillasAction(
     tipoPlanilla: TipoPlanilla;
     empresaId: string | null;
     cotizanteId: string | null;
+    sucursalId: string | null;
     periodoAporteAnio: number;
     periodoAporteMes: number;
     comprobanteIds: Set<string>;
@@ -153,6 +178,17 @@ export async function generarPlanillasAction(
     const paAnio = primera.periodoAporteAnio ?? periodo.anio;
     const paMes = primera.periodoAporteMes ?? periodo.mes;
 
+    // Sucursal del comprobante: se resuelve desde el enlace que tenga
+    // seteado (uno sólo es no-null según la agrupación). Para staff, esto
+    // asegura que planillas tipo E no mezclan cotizantes de sucursales
+    // distintas al agrupar la misma empresa.
+    const sucursalComp: string | null =
+      comp.cotizante?.sucursalId ??
+      comp.cuentaCobro?.sucursalId ??
+      comp.asesorComercial?.sucursalId ??
+      af.cotizante?.sucursalId ??
+      null;
+
     // Determinar qué tipos de planilla genera esta afiliación (política)
     const tipos = planillasParaAfiliacion({
       modalidad: af.modalidad,
@@ -174,6 +210,10 @@ export async function generarPlanillasAction(
         'comprobanteIds' | 'cotizantesSet' | 'totales'
       >;
 
+      // Clave: incluye sucursalId para evitar mezclar cotizantes de
+      // sucursales distintas en una misma planilla tipo E.
+      const sucSuffix = `|suc=${sucursalComp ?? 'null'}`;
+
       if (tipo === 'E') {
         // Tipo E agrupa por empresa (dependientes ordinarios). Para
         // RESOLUCIÓN el tipo E se genera a nivel cotizante individual
@@ -188,11 +228,12 @@ export async function generarPlanillasAction(
             });
             continue;
           }
-          key = `E-RES|${cotId}|${paAnio}-${paMes}`;
+          key = `E-RES|${cotId}|${paAnio}-${paMes}${sucSuffix}`;
           bucketBase = {
             tipoPlanilla: 'E',
             empresaId: null,
             cotizanteId: cotId,
+            sucursalId: sucursalComp,
             periodoAporteAnio: paAnio,
             periodoAporteMes: paMes,
           };
@@ -204,11 +245,12 @@ export async function generarPlanillasAction(
             });
             continue;
           }
-          key = `E|${af.empresaId}|${paAnio}-${paMes}`;
+          key = `E|${af.empresaId}|${paAnio}-${paMes}${sucSuffix}`;
           bucketBase = {
             tipoPlanilla: 'E',
             empresaId: af.empresaId,
             cotizanteId: null,
+            sucursalId: sucursalComp,
             periodoAporteAnio: paAnio,
             periodoAporteMes: paMes,
           };
@@ -222,11 +264,12 @@ export async function generarPlanillasAction(
           });
           continue;
         }
-        key = `${tipo}|${cotId}|${paAnio}-${paMes}`;
+        key = `${tipo}|${cotId}|${paAnio}-${paMes}${sucSuffix}`;
         bucketBase = {
           tipoPlanilla: tipo,
           empresaId: null,
           cotizanteId: cotId,
+          sucursalId: sucursalComp,
           periodoAporteAnio: paAnio,
           periodoAporteMes: paMes,
         };
@@ -328,6 +371,7 @@ export async function generarPlanillasAction(
           tipoPlanilla: b.tipoPlanilla,
           empresaId: b.empresaId,
           cotizanteId: b.cotizanteId,
+          sucursalId: b.sucursalId,
           periodoAporteAnio: b.periodoAporteAnio,
           periodoAporteMes: b.periodoAporteMes,
           totalSalud: b.totales.salud,
@@ -409,6 +453,7 @@ export async function marcarPlanillaPagadaAction(
     where: { id: planillaId },
     select: {
       estado: true,
+      sucursalId: true,
       comprobantes: { select: { comprobanteId: true } },
     },
   });
@@ -418,6 +463,13 @@ export async function marcarPlanillaPagadaAction(
   }
   if (planilla.estado === 'ANULADA') {
     return { error: 'La planilla está anulada' };
+  }
+
+  // Scope: aliado sólo marca pagadas sus planillas.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  if (scope.tipo === 'SUCURSAL' && planilla.sucursalId !== scope.sucursalId) {
+    return { error: 'No tienes permiso sobre esta planilla' };
   }
 
   const comprobanteIds = planilla.comprobantes.map((c) => c.comprobanteId);
@@ -458,7 +510,7 @@ export async function anularPlanillaAction(
 
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { estado: true },
+    select: { estado: true, sucursalId: true },
   });
   if (!planilla) return { error: 'Planilla no existe' };
   if (planilla.estado === 'PAGADA') {
@@ -466,6 +518,13 @@ export async function anularPlanillaAction(
   }
   if (planilla.estado === 'ANULADA') {
     return { error: 'La planilla ya está anulada' };
+  }
+
+  // Scope: aliado sólo anula sus planillas.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  if (scope.tipo === 'SUCURSAL' && planilla.sucursalId !== scope.sucursalId) {
+    return { error: 'No tienes permiso sobre esta planilla' };
   }
 
   // Cascade borra las filas de PlanillaComprobante, liberando los
