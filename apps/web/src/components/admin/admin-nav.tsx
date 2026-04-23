@@ -187,7 +187,7 @@ function NavGroup({
 }
 
 export function AdminNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   return (
     <nav className="flex h-full flex-col p-3">

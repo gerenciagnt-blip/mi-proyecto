@@ -18,7 +18,7 @@ export function EntidadTabs({ current }: { current: string }) {
     <div className="flex gap-1 border-b border-slate-200">
       {TABS.map((t) => {
         const active = current === t.tipo;
-        const search = new URLSearchParams(params.toString());
+        const search = new URLSearchParams(params?.toString() ?? '');
         search.set('tipo', t.tipo);
         return (
           <Link

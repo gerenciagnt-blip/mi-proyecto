@@ -48,7 +48,8 @@ const TABS: TabDef[] = [
   },
 ];
 
-function isActive(tab: TabDef, pathname: string): boolean {
+function isActive(tab: TabDef, pathname: string | null): boolean {
+  if (!pathname) return false;
   // Sucursales: cualquier ruta que empiece con /admin/sucursales
   if (tab.href === '/admin/sucursales') {
     return pathname.startsWith('/admin/sucursales');

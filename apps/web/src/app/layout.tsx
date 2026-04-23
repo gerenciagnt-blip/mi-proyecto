@@ -2,6 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import { Montserrat, Roboto } from 'next/font/google';
 import './globals.css';
 
+// Evita el prerender estático del layout raíz. La app depende de
+// sesión (NextAuth) en casi todas las rutas, así que no gana nada
+// siendo estática y evita el bug conocido donde el /404 estático
+// cae en el fallback de Pages Router e intenta importar <Html>.
+export const dynamic = 'force-dynamic';
+
 const montserrat = Montserrat({
   subsets: ['latin'],
   variable: '--font-montserrat',

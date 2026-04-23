@@ -277,6 +277,8 @@ export function ComprobantePdf({ data }: { data: ComprobantePdfData }) {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             {data.formato?.logoUrl ? (
+              // El <Image> viene de @react-pdf/renderer — no acepta `alt`.
+              // eslint-disable-next-line jsx-a11y/alt-text
               <Image style={styles.logo} src={data.formato.logoUrl} />
             ) : null}
             <View>
