@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { CuentaCobroSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
@@ -34,7 +35,15 @@ export async function createCuentaCobroAction(
 ): Promise<ActionState> {
   await requireAdmin();
 
-  const parsed = CuentaCobroSchema.safeParse(parseForm(formData));
+  const raw = parseForm(formData);
+
+  // Scope: un SUCURSAL sólo puede crear cuentas en SU sucursal — ignoramos
+  // lo que venga del form y forzamos su sucursalId. STAFF puede elegir.
+  const scope = await getUserScope();
+  if (!scope) return { error: 'Sesión inválida' };
+  if (scope.tipo === 'SUCURSAL') raw.sucursalId = scope.sucursalId;
+
+  const parsed = CuentaCobroSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
   try {
@@ -56,6 +65,12 @@ export async function toggleCuentaCobroAction(id: string) {
   await requireAdmin();
   const c = await prisma.cuentaCobro.findUnique({ where: { id } });
   if (!c) return;
+
+  // Scope: SUCURSAL sólo puede activar/desactivar sus propias cuentas.
+  const scope = await getUserScope();
+  if (!scope) return;
+  if (scope.tipo === 'SUCURSAL' && c.sucursalId !== scope.sucursalId) return;
+
   await prisma.cuentaCobro.update({ where: { id }, data: { active: !c.active } });
   revalidatePath('/admin/cuentas-cobro');
 }

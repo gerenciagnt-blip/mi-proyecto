@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { CreateCuentaCobroDialog } from './create-dialog';
 import { toggleCuentaCobroAction } from './actions';
 
@@ -31,8 +32,15 @@ export default async function EmpresasCCPage({
   const sucursalFilter = sp.sucursalId?.trim() ?? '';
   const estadoFilter = sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
 
-  const where: Prisma.CuentaCobroWhereInput = {};
-  if (sucursalFilter) where.sucursalId = sucursalFilter;
+  // Scope: SUCURSAL sólo ve (y gestiona) las cuentas de su propia sucursal.
+  // STAFF (ADMIN/SOPORTE) ve todas y puede filtrar por sucursal desde el UI.
+  const scope = await getUserScope();
+  const scopeSucursal =
+    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+
+  const where: Prisma.CuentaCobroWhereInput = { ...scopeSucursal };
+  // Para staff: respetar el filtro del dropdown; para aliado: ya está forzado.
+  if (scope?.tipo !== 'SUCURSAL' && sucursalFilter) where.sucursalId = sucursalFilter;
   if (estadoFilter) where.active = estadoFilter === 'ACTIVA';
   if (q) {
     where.OR = [
@@ -48,14 +56,18 @@ export default async function EmpresasCCPage({
       orderBy: [{ sucursal: { codigo: 'asc' } }, { codigo: 'asc' }],
       include: { sucursal: { select: { codigo: true, nombre: true } } },
     }),
-    prisma.cuentaCobro.count({ where: { active: true } }),
-    prisma.cuentaCobro.count({ where: { active: false } }),
+    prisma.cuentaCobro.count({ where: { active: true, ...scopeSucursal } }),
+    prisma.cuentaCobro.count({ where: { active: false, ...scopeSucursal } }),
     prisma.sucursal.findMany({
-      where: { active: true },
+      where: {
+        active: true,
+        ...(scope?.tipo === 'SUCURSAL' ? { id: scope.sucursalId } : {}),
+      },
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true },
     }),
   ]);
+  const esStaff = scope?.tipo === 'STAFF';
 
   const total = activasCount + inactivasCount;
   const tabs = [
@@ -111,18 +123,20 @@ export default async function EmpresasCCPage({
 
             <form method="GET" action="/admin/cuentas-cobro" className="flex flex-wrap items-center gap-2">
               {estadoFilter && <input type="hidden" name="estado" value={estadoFilter} />}
-              <select
-                name="sucursalId"
-                defaultValue={sucursalFilter}
-                className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm"
-              >
-                <option value="">— Todas las sucursales —</option>
-                {sucursales.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.codigo}
-                  </option>
-                ))}
-              </select>
+              {esStaff && (
+                <select
+                  name="sucursalId"
+                  defaultValue={sucursalFilter}
+                  className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                >
+                  <option value="">— Todas las sucursales —</option>
+                  {sucursales.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.codigo}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
@@ -139,7 +153,7 @@ export default async function EmpresasCCPage({
               >
                 Buscar
               </button>
-              {(q || sucursalFilter) && (
+              {(q || (esStaff && sucursalFilter)) && (
                 <Link
                   href={buildHref({ q: undefined, sucursalId: undefined }, sp)}
                   className="text-xs text-slate-500 hover:text-slate-900"

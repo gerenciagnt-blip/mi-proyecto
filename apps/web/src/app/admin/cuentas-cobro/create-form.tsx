@@ -51,17 +51,29 @@ export function CreateCuentaCobroForm({
       <div className={sectionClass}>
         <h3 className={sectionTitleClass}>Identificación</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div>
-            <Label htmlFor="sucursalId">Sucursal *</Label>
-            <Select id="sucursalId" name="sucursalId" required className="mt-1">
-              <option value="">—</option>
-              {sucursales.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.codigo} — {s.nombre}
-                </option>
-              ))}
-            </Select>
-          </div>
+          {sucursales.length === 1 ? (
+            // Caso aliado (scoped a su única sucursal) o staff con 1 sola:
+            // se pre-selecciona y se muestra como texto en lugar del select.
+            <div>
+              <Label>Sucursal</Label>
+              <input type="hidden" name="sucursalId" value={sucursales[0]!.id} />
+              <p className="mt-1 rounded-md bg-slate-50 px-3 py-2 font-mono text-sm text-slate-700">
+                {sucursales[0]!.codigo} — {sucursales[0]!.nombre}
+              </p>
+            </div>
+          ) : (
+            <div>
+              <Label htmlFor="sucursalId">Sucursal *</Label>
+              <Select id="sucursalId" name="sucursalId" required className="mt-1">
+                <option value="">—</option>
+                {sucursales.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.codigo} — {s.nombre}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           <div>
             <Label htmlFor="codigo">Código interno *</Label>
             <Input
