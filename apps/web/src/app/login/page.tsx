@@ -1,5 +1,6 @@
 import { Clock, ShieldCheck } from 'lucide-react';
 import { PilaLogoInline } from '@/components/brand/pila-logo-inline';
+import { CircuitBackground } from '@/components/brand/circuit-background';
 import { Alert } from '@/components/ui/alert';
 import { LoginForm } from './login-form';
 
@@ -37,6 +38,9 @@ export default async function LoginPage({
         aria-hidden
         className="pointer-events-none absolute -right-24 bottom-1/4 hidden h-80 w-80 rounded-full bg-brand-green/10 blur-3xl sm:block"
       />
+
+      {/* Trazos de circuito en las esquinas (anim. stroke-dasharray) */}
+      <CircuitBackground />
 
       {/* ===== Contenido principal (2 columnas en md+) ===== */}
       <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center gap-8 px-5 py-8 sm:px-8 sm:py-10 md:flex-row md:gap-4 md:py-14 lg:gap-0 lg:py-16 xl:px-12">
