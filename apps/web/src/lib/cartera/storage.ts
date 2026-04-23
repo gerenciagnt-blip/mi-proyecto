@@ -30,10 +30,23 @@ export async function guardarPdfCartera(
   pdf: Buffer,
   originalName: string,
 ): Promise<{ path: string; hash: string; size: number }> {
-  const hash = sha256(pdf);
+  return guardarArchivo(pdf, originalName, 'cartera');
+}
+
+/**
+ * Storage genérico para otros módulos (incapacidades, etc.). `prefix` es
+ * la raíz bajo UPLOADS_DIR (ej. "incapacidades/abc123" para agrupar docs
+ * de una radicación).
+ */
+export async function guardarArchivo(
+  buf: Buffer,
+  originalName: string,
+  prefix: string,
+): Promise<{ path: string; hash: string; size: number }> {
+  const hash = sha256(buf);
   const now = new Date();
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const relDir = join('cartera', ym);
+  const relDir = join(prefix, ym);
   const absDir = join(uploadsRoot(), relDir);
   await mkdir(absDir, { recursive: true });
 
@@ -44,8 +57,8 @@ export async function guardarPdfCartera(
     .slice(0, 80);
   const filename = `${hash.slice(0, 12)}-${safe}`;
   const absPath = join(absDir, filename);
-  await writeFile(absPath, pdf);
+  await writeFile(absPath, buf);
 
   const relPath = join(relDir, filename).replace(/\\/g, '/');
-  return { path: relPath, hash, size: pdf.byteLength };
+  return { path: relPath, hash, size: buf.byteLength };
 }

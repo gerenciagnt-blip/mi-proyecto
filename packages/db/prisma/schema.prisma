@@ -182,6 +182,7 @@ model Sucursal {
   cotizantes         Cotizante[]
   planillas          Planilla[]
   carterasAsignadas  CarteraDetallado[]
+  incapacidades      Incapacidad[]
 
   @@map("sucursales")
 }
@@ -213,6 +214,8 @@ model User {
   planillasCreadas    Planilla[]       @relation("PlanillasCreadas")
   carterasCreadas     CarteraConsolidado[] @relation("CarterasCreadas")
   carterasGestiones   CarteraGestion[]     @relation("CarterasGestionesUser")
+  incapacidadesCreadas    Incapacidad[]        @relation("IncapacidadesCreadas")
+  incapacidadesGestiones  IncapacidadGestion[] @relation("IncapacidadGestionesUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -266,6 +269,7 @@ model Empresa {
   afiliaciones Afiliacion[]
   planillas    Planilla[]
   carterasConsolidado CarteraConsolidado[]
+  incapacidades Incapacidad[] @relation("IncapacidadEmpresa")
 
   @@index([arlId])
   @@index([departamentoId])
@@ -350,6 +354,11 @@ model EntidadSgss {
   afiliacionesComoAfp Afiliacion[] @relation("AfilAfp")
   afiliacionesComoArl Afiliacion[] @relation("AfilArl")
   afiliacionesComoCcf Afiliacion[] @relation("AfilCcf")
+  // Snapshots en incapacidades
+  incapacidadesComoEps Incapacidad[] @relation("IncapacidadEps")
+  incapacidadesComoAfp Incapacidad[] @relation("IncapacidadAfp")
+  incapacidadesComoArl Incapacidad[] @relation("IncapacidadArl")
+  incapacidadesComoCcf Incapacidad[] @relation("IncapacidadCcf")
 
   @@unique([tipo, codigo])
   @@index([tipo])
@@ -601,6 +610,7 @@ model Cotizante {
   gestionesCartera GestionCartera[]
   planillas    Planilla[]
   carterasDetallado CarteraDetallado[]
+  incapacidades Incapacidad[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -1271,4 +1281,154 @@ model CarteraGestion {
   @@index([detalladoId])
   @@index([userId])
   @@map("cartera_gestion")
+}
+
+// ============================================================
+// MÓDULO INCAPACIDADES (Administrativo radica · Soporte gestiona)
+// ============================================================
+// El aliado radica una incapacidad desde /admin/administrativo/incapacidades
+// con los datos del cotizante + adjuntos. Soporte la procesa desde
+// /admin/soporte/incapacidades y actualiza el estado. Todos los documentos
+// se guardan bajo UPLOADS_DIR por 120 días; al día 121 se eliminan del
+// disco pero queda el registro con el hash y metadatos (evidencia).
+
+enum IncapacidadTipo {
+  ENFERMEDAD_GENERAL
+  LICENCIA_MATERNIDAD
+  LICENCIA_PATERNIDAD
+  ACCIDENTE_TRABAJO
+  ACCIDENTE_TRANSITO_SOAT
+}
+
+/**
+ * Estados de una incapacidad — flujo típico:
+ *   RADICADA      aliado envío formulario + documentos
+ *   EN_REVISION   soporte la esta revisando (puede pedir ajustes)
+ *   APROBADA      soporte validó, entidad pagará
+ *   PAGADA        el aliado / cotizante recibió el pago
+ *   RECHAZADA     la entidad la negó definitivamente
+ */
+enum IncapacidadEstado {
+  RADICADA
+  EN_REVISION
+  APROBADA
+  PAGADA
+  RECHAZADA
+}
+
+/** Tipos de adjunto permitidos en una radicación. */
+enum IncapacidadDocumentoTipo {
+  COPIA_CEDULA
+  CERTIFICADO_INCAPACIDAD
+  HISTORIA_CLINICA
+  CERTIFICADO_BANCARIO
+  AUTORIZACION_PAGO_TERCEROS
+  FURIPS_SOAT
+}
+
+/** Quién ejecutó la gestión en la bitácora. */
+enum IncapacidadAccionadaPor {
+  SOPORTE
+  ALIADO
+}
+
+/**
+ * Radicación de incapacidad. Snapshots de empresa/entidades/fecha
+ * afiliación al momento de radicar — si después cambian en la ficha
+ * del cotizante, la incapacidad conserva lo que se reportó.
+ */
+model Incapacidad {
+  id                 String            @id @default(cuid())
+  consecutivo        String            @unique              // INC-000001
+  fechaRadicacion    DateTime          @default(now())
+
+  /** Sucursal que radica (tenant owner). */
+  sucursalId         String
+  /** Cotizante afectado — match por tipoDoc+numDoc al radicar. */
+  cotizanteId        String
+  tipo               IncapacidadTipo
+
+  // --- Fechas del período de incapacidad ---
+  fechaInicio        DateTime
+  fechaFin           DateTime
+  diasIncapacidad    Int
+
+  // --- Snapshots de la afiliación al momento de radicar ---
+  empresaPlanillaId  String?                               // Empresa (si dependiente)
+  empresaPlanillaNombreSnap String?                        // nombre denormalizado
+  epsId              String?
+  afpId              String?
+  arlId              String?
+  ccfId              String?
+  fechaAfiliacionSnap DateTime?                            // fecha de afiliación del cotizante
+
+  estado             IncapacidadEstado @default(RADICADA)
+  observaciones      String?
+  createdById        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  sucursal         Sucursal           @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cotizante        Cotizante          @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
+  empresaPlanilla  Empresa?           @relation("IncapacidadEmpresa", fields: [empresaPlanillaId], references: [id], onDelete: SetNull)
+  eps              EntidadSgss?       @relation("IncapacidadEps", fields: [epsId], references: [id], onDelete: SetNull)
+  afp              EntidadSgss?       @relation("IncapacidadAfp", fields: [afpId], references: [id], onDelete: SetNull)
+  arl              EntidadSgss?       @relation("IncapacidadArl", fields: [arlId], references: [id], onDelete: SetNull)
+  ccf              EntidadSgss?       @relation("IncapacidadCcf", fields: [ccfId], references: [id], onDelete: SetNull)
+  createdBy        User?              @relation("IncapacidadesCreadas", fields: [createdById], references: [id], onDelete: SetNull)
+  documentos       IncapacidadDocumento[]
+  gestiones        IncapacidadGestion[]
+
+  @@index([sucursalId])
+  @@index([cotizanteId])
+  @@index([estado])
+  @@index([tipo])
+  @@index([fechaRadicacion])
+  @@map("incapacidades")
+}
+
+/**
+ * Documento adjunto a una incapacidad. `archivoPath` es relativo a
+ * UPLOADS_DIR. A los 120 días el archivo se elimina del disco y se
+ * marca `eliminado=true` (el registro queda como evidencia).
+ */
+model IncapacidadDocumento {
+  id                   String                    @id @default(cuid())
+  incapacidadId        String
+  tipo                 IncapacidadDocumentoTipo
+  archivoPath          String                                       // relativo a UPLOADS_DIR
+  archivoHash          String                                       // sha-256 hex
+  archivoMime          String                                       // ej. image/jpeg, application/pdf
+  archivoSize          Int                                          // bytes
+  archivoNombreOriginal String                                      // tal como lo subió el usuario
+  /** `true` cuando el archivo físico ya fue eliminado por retención. */
+  eliminado            Boolean                   @default(false)
+  eliminadoEn          DateTime?
+  createdAt            DateTime                  @default(now())
+
+  incapacidad Incapacidad @relation(fields: [incapacidadId], references: [id], onDelete: Cascade)
+
+  @@index([incapacidadId])
+  @@index([tipo])
+  @@index([eliminado])
+  @@map("incapacidad_documentos")
+}
+
+/** Bitácora de gestiones sobre una incapacidad (aliado o soporte). */
+model IncapacidadGestion {
+  id             String                  @id @default(cuid())
+  incapacidadId  String
+  accionadaPor   IncapacidadAccionadaPor
+  nuevoEstado    IncapacidadEstado?
+  descripcion    String
+  userId         String?
+  userName       String?
+  createdAt      DateTime                @default(now())
+
+  incapacidad Incapacidad @relation(fields: [incapacidadId], references: [id], onDelete: Cascade)
+  user        User?       @relation("IncapacidadGestionesUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([incapacidadId])
+  @@index([userId])
+  @@map("incapacidad_gestion")
 }
