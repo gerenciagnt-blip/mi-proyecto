@@ -65,7 +65,12 @@ export function debeFacturarseEnPeriodo(
  *     cae dentro del período (el motor auto daría VINCULACION, pero
  *     queremos emitir mensualidad proporcional).
  *   - `periodoAporte` (año + mes) cuando el aporte SGSS corresponde a un
- *     mes distinto del período contable (indep VENCIDO: mes anterior).
+ *     mes distinto del período contable:
+ *       - indep VENCIDO: mes anterior al período contable.
+ *       - DEPENDIENTE + primera mensualidad: mes de afiliación (que es
+ *         el mes inmediatamente anterior al contable, porque la primera
+ *         mensualidad del dependiente siempre cae el mes siguiente a la
+ *         afiliación).
  *
  * Si el período de aporte coincide con el período contable, no se
  * devuelve — el caller persiste NULL.
@@ -73,6 +78,12 @@ export function debeFacturarseEnPeriodo(
 export function opcionesFacturacion(
   af: AfiliacionMinFact,
   periodo: { anio: number; mes: number },
+  /**
+   * Si es la primera mensualidad del cotizante (no tiene otras mensualidades
+   * procesadas previamente). Se usa para decidir el desfase del dependiente.
+   * Default false para callers que no tengan la info.
+   */
+  esPrimeraMensualidad: boolean = false,
 ): {
   forzarTipo?: 'MENSUALIDAD';
   periodoAporteAnio?: number;
@@ -98,6 +109,20 @@ export function opcionesFacturacion(
   if (
     af.modalidad === 'INDEPENDIENTE' &&
     (af.formaPago === 'VENCIDO' || af.formaPago === null) &&
+    fechaIng.getTime() < firstDay.getTime()
+  ) {
+    const prev = prevPeriodo(periodo);
+    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
+  }
+
+  // DEPENDIENTE + primera mensualidad: el aporte corresponde al mes
+  // anterior al contable (el mes de afiliación). El motor usará ese
+  // mes para decidir días proporcionales si la fecha de ingreso cae
+  // mid-mes (ej. afilió 15/03, primera mensualidad en abril → 16 días
+  // del aporte de marzo).
+  if (
+    af.modalidad === 'DEPENDIENTE' &&
+    esPrimeraMensualidad &&
     fechaIng.getTime() < firstDay.getTime()
   ) {
     const prev = prevPeriodo(periodo);

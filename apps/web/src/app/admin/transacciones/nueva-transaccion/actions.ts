@@ -416,6 +416,7 @@ export async function previsualizarTransaccionAction(
     );
     if (!elegible) continue;
 
+    const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
     const opciones = opcionesFacturacion(
       {
         modalidad: af.modalidad,
@@ -423,9 +424,9 @@ export async function previsualizarTransaccionAction(
         fechaIngreso: af.fechaIngreso,
       },
       { anio: periodo.anio, mes: periodo.mes },
+      esPrimeraMensualidad,
     );
 
-    const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
     const calc = calcularLiquidacion(
       {
         afiliacion: {
@@ -658,6 +659,7 @@ export async function procesarTransaccionAction(
       );
       if (!elegible) continue;
 
+      const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
       const opciones = opcionesFacturacion(
         {
           modalidad: af.modalidad,
@@ -665,9 +667,9 @@ export async function procesarTransaccionAction(
           fechaIngreso: af.fechaIngreso,
         },
         { anio: periodo.anio, mes: periodo.mes },
+        esPrimeraMensualidad,
       );
 
-      const esPrimeraMensualidad = !conMens.has(af.cotizanteId);
       // ARL interna obligatoria si: es primera mensualidad OR hay novedad de retiro
       const aplicaArlObligatoria =
         !!input.aplicaNovedadRetiro || esPrimeraMensualidad;
