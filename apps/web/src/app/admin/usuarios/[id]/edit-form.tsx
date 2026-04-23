@@ -1,8 +1,14 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { updateUserAction, type ActionState } from '../actions';
+import { AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Alert } from '@/components/ui/alert';
 import type { Role } from '@pila/db';
+import { updateUserAction, type ActionState } from '../actions';
 
 type User = {
   id: string;
@@ -17,72 +23,109 @@ type Sucursal = { id: string; codigo: string; nombre: string };
 export function EditUserForm({
   user,
   sucursales,
+  /** ID del usuario actualmente logueado (para proteger auto-cambio). */
+  sessionUserId,
 }: {
   user: User;
   sucursales: Sucursal[];
+  sessionUserId: string;
 }) {
   const bound = updateUserAction.bind(null, user.id);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
   const [role, setRole] = useState<Role>(user.role);
+  const esSelf = user.id === sessionUserId;
 
   return (
     <form action={action} className="space-y-4">
-      <div>
-        <label className="block text-xs font-medium text-slate-600">Nombre</label>
-        <input
-          name="name"
-          required
-          defaultValue={user.name}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-slate-600">Rol</label>
-        <select
-          name="role"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        >
-          <option value="ADMIN">Administrador</option>
-          <option value="ALIADO_OWNER">Dueño Aliado</option>
-          <option value="ALIADO_USER">Usuario Aliado</option>
-        </select>
-      </div>
-      {role !== 'ADMIN' && (
-        <div>
-          <label className="block text-xs font-medium text-slate-600">Sucursal</label>
-          <select
-            name="sucursalId"
-            required
-            defaultValue={user.sucursalId ?? ''}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">— Seleccionar —</option>
-            {sucursales.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.codigo} — {s.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
+      {esSelf && (
+        <Alert variant="info">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Estás editando tu propio usuario — el rol y la sucursal quedan
+            bloqueados para evitar perder tu acceso.
+          </span>
+        </Alert>
       )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Label htmlFor="name">
+            Nombre <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="name"
+            name="name"
+            required
+            defaultValue={user.name}
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="role">
+            Rol <span className="text-red-500">*</span>
+          </Label>
+          <Select
+            id="role"
+            name="role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+            disabled={esSelf}
+            className="mt-1"
+          >
+            <option value="ADMIN">Administrador</option>
+            <option value="ALIADO_OWNER">Dueño Aliado</option>
+            <option value="ALIADO_USER">Usuario Aliado</option>
+          </Select>
+        </div>
+        {role !== 'ADMIN' && (
+          <div>
+            <Label htmlFor="sucursalId">
+              Sucursal <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              id="sucursalId"
+              name="sucursalId"
+              required
+              defaultValue={user.sucursalId ?? ''}
+              disabled={esSelf}
+              className="mt-1"
+            >
+              <option value="" disabled>
+                — Seleccionar —
+              </option>
+              {sucursales.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.codigo} — {s.nombre}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </div>
+
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="active" defaultChecked={user.active} />
-        <span>Activo</span>
+        <input
+          type="checkbox"
+          name="active"
+          defaultChecked={user.active}
+          disabled={esSelf}
+          className="h-4 w-4 rounded border-slate-300"
+        />
+        <span>Usuario activo</span>
       </label>
 
       {state.error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <Alert variant="danger">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{state.error}</span>
+        </Alert>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-brand-blue px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-      >
-        {pending ? 'Guardando…' : 'Guardar cambios'}
-      </button>
+      <div className="flex justify-end">
+        <Button type="submit" disabled={pending}>
+          {pending ? 'Guardando…' : 'Guardar cambios'}
+        </Button>
+      </div>
     </form>
   );
 }

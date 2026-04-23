@@ -61,15 +61,26 @@ export async function updateUserAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  const esSelf = session.user.id === id;
 
-  const role = String(formData.get('role') ?? '');
-  const sucursalRaw = String(formData.get('sucursalId') ?? '');
+  const existing = await prisma.user.findUnique({ where: { id } });
+  if (!existing) return { error: 'Usuario no existe' };
+
+  // Protección auto-cambio: si se está editando el propio usuario, forzar
+  // rol/sucursal/active a los valores actuales (ignorando el form), para
+  // evitar que se quite su propio acceso por accidente o manipulación.
+  const role = esSelf ? existing.role : String(formData.get('role') ?? '');
+  const sucursalRaw = esSelf
+    ? (existing.sucursalId ?? '')
+    : String(formData.get('sucursalId') ?? '');
+  const active = esSelf ? existing.active : formData.get('active') === 'on';
+
   const parsed = UserUpdateSchema.safeParse({
     name: titleCase(String(formData.get('name') ?? '').trim()),
     role,
     sucursalId: role === 'ADMIN' ? null : sucursalRaw || null,
-    active: formData.get('active') === 'on',
+    active,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };

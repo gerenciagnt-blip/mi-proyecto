@@ -5,7 +5,7 @@ import { auth } from '@/auth';
 import { prisma } from '@pila/db';
 import { CreateUserDialog } from './create-dialog';
 import { UsuariosTabs } from './usuarios-tabs';
-import { toggleUserAction } from './actions';
+import { ToggleUserButton } from './toggle-user-button';
 
 export const metadata = { title: 'Usuarios — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -191,14 +191,11 @@ export default async function UsuariosPage({
                         </Link>
                       )}
                       {!isSelf && (
-                        <form action={toggleUserAction.bind(null, u.id)}>
-                          <button
-                            type="submit"
-                            className="text-xs font-medium text-slate-500 hover:text-slate-900"
-                          >
-                            {u.active ? 'Desactivar' : 'Activar'}
-                          </button>
-                        </form>
+                        <ToggleUserButton
+                          userId={u.id}
+                          activo={u.active}
+                          nombre={u.name}
+                        />
                       )}
                     </div>
                   </td>
