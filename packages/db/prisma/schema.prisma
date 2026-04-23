@@ -181,6 +181,7 @@ model Sucursal {
   serviciosAdicionales ServicioAdicional[]
   cotizantes         Cotizante[]
   planillas          Planilla[]
+  carterasAsignadas  CarteraDetallado[]
 
   @@map("sucursales")
 }
@@ -210,6 +211,8 @@ model User {
   empresas            UsuarioEmpresa[]
   comprobantesCreados Comprobante[]    @relation("ComprobantesCreados")
   planillasCreadas    Planilla[]       @relation("PlanillasCreadas")
+  carterasCreadas     CarteraConsolidado[] @relation("CarterasCreadas")
+  carterasGestiones   CarteraGestion[]     @relation("CarterasGestionesUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -262,6 +265,7 @@ model Empresa {
   accesos      UsuarioEmpresa[]
   afiliaciones Afiliacion[]
   planillas    Planilla[]
+  carterasConsolidado CarteraConsolidado[]
 
   @@index([arlId])
   @@index([departamentoId])
@@ -596,6 +600,7 @@ model Cotizante {
   comprobantes Comprobante[]
   gestionesCartera GestionCartera[]
   planillas    Planilla[]
+  carterasDetallado CarteraDetallado[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -1115,4 +1120,155 @@ model PlanillaComprobante {
   @@id([planillaId, comprobanteId])
   @@index([comprobanteId])
   @@map("planillas_comprobantes")
+}
+
+// ============================================================
+// MÓDULO CARTERA (Soporte + Administrativo)
+// ============================================================
+// Estados de cuenta importados desde las entidades SGSS (EPS/AFP/ARL/CCF)
+// vía PDF. El módulo Soporte los carga y los pasa a "CARTERA_REAL" cuando
+// confirma que la deuda es válida; a partir de ese estado aparecen en el
+// módulo Administrativo del aliado dueño de la sucursal asignada.
+
+/** Tipo de entidad SGSS emisora del estado de cuenta. */
+enum CarteraTipoEntidad {
+  EPS
+  AFP
+  ARL
+  CCF
+}
+
+/**
+ * Estado del detallado (por línea) y también del consolidado.
+ *
+ *   - EN_CONCILIACION      recién importado; soporte lo revisa
+ *   - CONCILIADA           soporte respondió a la entidad / descartó la deuda
+ *   - CARTERA_REAL         soporte confirmó: es deuda real → aparece en el aliado
+ *   - PAGADA_CARTERA_REAL  el aliado pagó la cartera real confirmada
+ */
+enum CarteraEstado {
+  EN_CONCILIACION
+  CONCILIADA
+  CARTERA_REAL
+  PAGADA_CARTERA_REAL
+}
+
+/** Origen del PDF — detectado por el parser; MANUAL = el staff lo mapeó a mano. */
+enum CarteraOrigenPdf {
+  PROTECCION
+  SALUD_TOTAL
+  EPS_SOS
+  EPS_SURA
+  EPS_SANITAS
+  MANUAL
+}
+
+/** Quién registró la gestión: staff de soporte o el aliado dueño de la sucursal. */
+enum CarteraAccionadaPor {
+  SOPORTE
+  ALIADO
+}
+
+/**
+ * Cabecera del estado de cuenta importado. Un consolidado agrupa todas
+ * las líneas (CarteraDetallado) de un mismo PDF: la entidad emisora, la
+ * empresa afectada y el período de corte.
+ *
+ * La unique `(empresaNit, entidadNombre, periodoHasta)` bloquea re-imports
+ * silenciosos: si el staff sube dos veces el mismo estado de cuenta, el
+ * action exige confirmación explícita para reemplazar.
+ */
+model CarteraConsolidado {
+  id                  String             @id @default(cuid())
+  consecutivo         String             @unique              // CC-000001 (sequence Postgres)
+  fechaRegistro       DateTime           @default(now())
+  tipoEntidad         CarteraTipoEntidad
+  entidadNombre       String                                   // "Salud Total EPS"
+  entidadNit          String?                                  // NIT de la entidad (si el PDF lo trae)
+  empresaNit          String                                   // NIT empleador reportado en el PDF
+  empresaRazonSocial  String                                   // razón social del PDF (denormalizada)
+  empresaId           String?                                  // match con Empresa en BD (si existe)
+  periodoDesde        String?                                  // "AAAA-MM" — inicio de la ventana reportada
+  periodoHasta        String?                                  // "AAAA-MM" — corte del estado de cuenta
+  cantidadRegistros   Int                @default(0)
+  valorTotalInformado Decimal            @db.Decimal(15, 2)
+  estado              CarteraEstado      @default(EN_CONCILIACION)
+  origenPdf           CarteraOrigenPdf?
+  archivoOrigenPath   String?                                  // ruta relativa al PDF archivado
+  archivoOrigenHash   String?                                  // sha-256 para trazabilidad
+  observaciones       String?
+  createdById         String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  empresa   Empresa?           @relation(fields: [empresaId], references: [id], onDelete: SetNull)
+  createdBy User?              @relation("CarterasCreadas", fields: [createdById], references: [id], onDelete: SetNull)
+  detallado CarteraDetallado[]
+
+  @@unique([empresaNit, entidadNombre, periodoHasta])
+  @@index([empresaId])
+  @@index([estado])
+  @@index([fechaRegistro])
+  @@map("cartera_consolidado")
+}
+
+/**
+ * Una línea del estado de cuenta = un cotizante + un período + un valor.
+ * El estado es por línea (no solo por consolidado) — solo las líneas
+ * marcadas CARTERA_REAL aparecen en el módulo Administrativo del aliado.
+ *
+ * `sucursalAsignadaId` se auto-matchea por cédula contra la BD; queda
+ * editable para que soporte la reasigne si el auto-match falla.
+ */
+model CarteraDetallado {
+  id                 String        @id @default(cuid())
+  consolidadoId      String
+  tipoDocumento      TipoDocumento
+  numeroDocumento    String
+  nombreCompleto     String
+  periodoCobro       String                                   // "AAAA-MM"
+  valorCobro         Decimal       @db.Decimal(15, 2)
+  ibc                Decimal?      @db.Decimal(15, 2)         // IBC reportado (solo algunos formatos)
+  novedad            String?                                   // IGE, NVL, etc. (texto libre)
+  sucursalAsignadaId String?
+  cotizanteId        String?                                   // match con Cotizante en BD (opcional)
+  estado             CarteraEstado @default(EN_CONCILIACION)
+  observaciones      String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  consolidado      CarteraConsolidado @relation(fields: [consolidadoId], references: [id], onDelete: Cascade)
+  sucursalAsignada Sucursal?          @relation(fields: [sucursalAsignadaId], references: [id], onDelete: SetNull)
+  cotizante        Cotizante?         @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
+  gestiones        CarteraGestion[]
+
+  @@index([consolidadoId])
+  @@index([sucursalAsignadaId])
+  @@index([cotizanteId])
+  @@index([estado])
+  @@index([numeroDocumento])
+  @@map("cartera_detallado")
+}
+
+/**
+ * Bitácora de gestiones sobre una línea. Soporte y el aliado registran
+ * sus acciones aquí; el enum `accionadaPor` distingue de qué lado viene.
+ * Si la gestión cambia de estado, `nuevoEstado` lo captura para auditoría.
+ */
+model CarteraGestion {
+  id           String              @id @default(cuid())
+  detalladoId  String
+  accionadaPor CarteraAccionadaPor
+  nuevoEstado  CarteraEstado?                               // si la gestión promovió el estado
+  descripcion  String
+  userId       String?
+  userName     String?
+  createdAt    DateTime            @default(now())
+
+  detallado CarteraDetallado @relation(fields: [detalladoId], references: [id], onDelete: Cascade)
+  user      User?            @relation("CarterasGestionesUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([detalladoId])
+  @@index([userId])
+  @@map("cartera_gestion")
 }
