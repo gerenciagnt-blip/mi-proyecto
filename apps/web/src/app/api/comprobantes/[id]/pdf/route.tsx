@@ -2,6 +2,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { ComprobantePdf, type ComprobantePdfData } from '@/lib/pdf/comprobante-pdf';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +59,7 @@ export async function GET(
         },
       },
       cuentaCobro: { select: { codigo: true, razonSocial: true, nit: true, dv: true, direccion: true, ciudad: true, telefono: true, email: true, sucursalId: true } },
-      asesorComercial: { select: { codigo: true, nombre: true, email: true, telefono: true } },
+      asesorComercial: { select: { codigo: true, nombre: true, email: true, telefono: true, sucursalId: true } },
       medioPago: { select: { codigo: true, nombre: true } },
       liquidaciones: {
         include: {
@@ -83,6 +84,29 @@ export async function GET(
 
   if (!comp) {
     return NextResponse.json({ error: 'Comprobante no encontrado' }, { status: 404 });
+  }
+
+  // Scope: aliado sólo puede descargar PDF de comprobantes de su sucursal.
+  // Un comprobante tiene uno de 3 enlaces (cotizante / cuentaCobro / asesor)
+  // que define la sucursal a la que pertenece.
+  const scope = await getUserScope();
+  if (!scope) {
+    return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
+  }
+  if (scope.tipo === 'SUCURSAL') {
+    const mia = scope.sucursalId;
+    const permitido =
+      (comp.cotizante && comp.cotizante.sucursalId === mia) ||
+      (comp.cuentaCobro && comp.cuentaCobro.sucursalId === mia) ||
+      (comp.asesorComercial &&
+        (comp.asesorComercial.sucursalId === null ||
+          comp.asesorComercial.sucursalId === mia));
+    if (!permitido) {
+      return NextResponse.json(
+        { error: 'No tienes permiso sobre este comprobante' },
+        { status: 403 },
+      );
+    }
   }
 
   if (comp.estado === 'ANULADO') {
