@@ -66,23 +66,26 @@ export function debeFacturarseEnPeriodo(
  *
  * Dependiente:
  *   - Opera SIEMPRE en modo vencido: los aportes del mes N se pagan en
- *     el mes N+1. Por tanto `periodoAporte = periodoContable - 1` en
- *     todas las mensualidades (no sólo la primera).
+ *     el mes N+1. Por tanto `periodoAporte = periodoContable - 1`.
  *   - En la primera mensualidad, la fecha de ingreso cae mid-mes del
- *     período de aporte → el motor liquida días proporcionales
- *     automáticamente (usa periodoReferencia = periodoAporte).
- *   - Desde la 2ª mensualidad en adelante, la fecha de ingreso ya es
- *     anterior al período de aporte → 30 días completos.
+ *     período de aporte → el motor liquida días proporcionales.
+ *   - Desde la 2ª mensualidad en adelante → 30 días completos.
  *
- * Independiente:
- *   - `periodoAporte = periodoContable` siempre (campos 15 y 16 del
- *     plano PILA son el mismo mes para tipo I).
- *   - El mecanismo VIGENTE / VENCIDO sólo cambia cuándo aparece en
- *     cartera (mismo mes de afiliación vs mes siguiente) — no introduce
- *     desfase entre contable y aporte.
- *   - VIGENTE + fecha de ingreso en el mes del período → forzar
- *     MENSUALIDAD proporcional (sin esta forza, el motor auto-daría
- *     VINCULACION).
+ * Independiente VIGENTE:
+ *   - `periodoAporte = periodoContable` (mismo mes).
+ *   - Se factura en el mismo mes de afiliación, por lo que en la 1ª
+ *     mensualidad la fecha de ingreso cae en ese mes → forzar
+ *     MENSUALIDAD proporcional.
+ *   - Siguientes mensualidades: aporte = contable, 30 días.
+ *
+ * Independiente VENCIDO:
+ *   - Se aplaza el primer pago 1 mes (se factura en el mes siguiente al
+ *     de afiliación) PERO los períodos internos del plano PILA siguen
+ *     siendo el mes del aporte (aplica la misma fórmula que vigente).
+ *     Por tanto `periodoAporte = periodoContable - 1` siempre.
+ *   - En la 1ª mensualidad (contable = mes siguiente al de afiliación),
+ *     la fecha de ingreso cae en el período de aporte → proporcional.
+ *   - Siguientes mensualidades → 30 días.
  */
 export function opcionesFacturacion(
   af: AfiliacionMinFact,
@@ -97,14 +100,24 @@ export function opcionesFacturacion(
     fechaIng.getUTCFullYear() === periodo.anio &&
     fechaIng.getUTCMonth() + 1 === periodo.mes;
 
-  // DEPENDIENTE: modo vencido permanente (aporte = mes anterior al contable)
+  // DEPENDIENTE: modo vencido permanente (aporte = mes anterior al contable).
+  // Si la fecha de ingreso cae en ese mes de aporte (1ª mensualidad), el
+  // motor auto-daría VINCULACION — forzar MENSUALIDAD para que liquide
+  // SGSS con días proporcionales.
   if (af.modalidad === 'DEPENDIENTE') {
     const prev = prevPeriodo(periodo);
-    return { periodoAporteAnio: prev.anio, periodoAporteMes: prev.mes };
+    const ingresoEnAporte =
+      fechaIng.getUTCFullYear() === prev.anio &&
+      fechaIng.getUTCMonth() + 1 === prev.mes;
+    return {
+      forzarTipo: ingresoEnAporte ? 'MENSUALIDAD' : undefined,
+      periodoAporteAnio: prev.anio,
+      periodoAporteMes: prev.mes,
+    };
   }
 
   // INDEPENDIENTE VIGENTE + fecha dentro del mes → forzar MENSUALIDAD
-  // proporcional (el motor auto daría VINCULACION si no).
+  // proporcional (sin esto, motor auto-daría VINCULACION).
   if (
     af.modalidad === 'INDEPENDIENTE' &&
     af.formaPago === 'VIGENTE' &&
@@ -113,9 +126,28 @@ export function opcionesFacturacion(
     return { forzarTipo: 'MENSUALIDAD' };
   }
 
-  // INDEPENDIENTE (ambos VIGENTE y VENCIDO fuera del caso arriba): no hay
-  // desfase entre contable y aporte — ambos iguales al período que se
-  // está facturando.
+  // INDEPENDIENTE VENCIDO: aporte = mes anterior al contable. La factura
+  // se emite con retraso de 1 mes, pero los períodos del plano PILA
+  // reportan el mes de cotización real (mes de afiliación en la 1ª,
+  // contable-1 en general). Si fecha de ingreso cae en el mes de aporte,
+  // forzar MENSUALIDAD para que motor no genere VINCULACION.
+  if (
+    af.modalidad === 'INDEPENDIENTE' &&
+    (af.formaPago === 'VENCIDO' || af.formaPago === null)
+  ) {
+    const prev = prevPeriodo(periodo);
+    const ingresoEnAporte =
+      fechaIng.getUTCFullYear() === prev.anio &&
+      fechaIng.getUTCMonth() + 1 === prev.mes;
+    return {
+      forzarTipo: ingresoEnAporte ? 'MENSUALIDAD' : undefined,
+      periodoAporteAnio: prev.anio,
+      periodoAporteMes: prev.mes,
+    };
+  }
+
+  // INDEPENDIENTE VIGENTE fuera del mismo mes (2ª mens en adelante):
+  // sin desfase, aporte = contable.
   return {};
 }
 
