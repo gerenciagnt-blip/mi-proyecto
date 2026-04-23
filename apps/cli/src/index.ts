@@ -3,13 +3,12 @@ import { Command } from 'commander';
 import { APP_NAME, APP_VERSION } from '@pila/core';
 import { adminCreateCommand } from './commands/admin-create.js';
 import { resetPasswordCommand } from './commands/reset-password.js';
+import { retentionRunCommand } from './commands/retention-run.js';
+import { seedTestDataCommand } from './commands/seed-test-data.js';
 
 const program = new Command();
 
-program
-  .name('pila')
-  .description(`CLI de administración — ${APP_NAME}`)
-  .version(APP_VERSION);
+program.name('pila').description(`CLI de administración — ${APP_NAME}`).version(APP_VERSION);
 
 program
   .command('ping')
@@ -46,6 +45,23 @@ program
       }
       throw err;
     }
+  });
+
+program
+  .command('retention:run')
+  .description('Ejecuta el job de retención 120d (incapacidades + soporte-af)')
+  .option('--dry', 'Simula sin borrar archivos (solo cuenta)')
+  .option('--module <modulo>', 'Solo ejecuta un módulo (incapacidades | soporte-af | all)', 'all')
+  .action(async (options: { dry?: boolean; module?: string }) => {
+    await retentionRunCommand(options);
+  });
+
+program
+  .command('seed:test-data')
+  .description('Crea sucursal + aliado + empresa de prueba (idempotente)')
+  .option('--force', 'Actualiza datos aunque existan')
+  .action(async (options: { force?: boolean }) => {
+    await seedTestDataCommand(options);
   });
 
 program.parseAsync();

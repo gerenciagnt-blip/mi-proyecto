@@ -1,0 +1,56 @@
+name: Retention 120d (daily)
+
+# Corre todos los días a las 4 AM UTC (≈ 11 PM Colombia el día anterior)
+# También se puede disparar manualmente desde la UI de Actions.
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry run (solo cuenta, no borra)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  retention:
+    name: Limpieza incapacidades + soporte-af
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UPLOADS_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Run retention job
+        run: |
+          if [ "${{ inputs.dry }}" = "true" ]; then
+            pnpm cli retention:run --dry
+          else
+            pnpm cli retention:run
+          fi

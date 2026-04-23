@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Pre-commit: valida tipos y formato antes de commitear.
+# - pnpm typecheck: rápido en monorepo (~15s) y atrapa errores cruzados
+# - lint-staged: formatea con prettier solo los archivos staged
+# Para saltarse (uso excepcional): git commit --no-verify
+
+echo "→ Validando tipos del workspace..."
+pnpm typecheck || {
+  echo ""
+  echo "❌ Commit abortado: hay errores de tipos. Ejecuta 'pnpm typecheck' para verlos."
+  exit 1
+}
+
+echo "→ Formateando archivos staged..."
+pnpm exec lint-staged || {
+  echo ""
+  echo "❌ Commit abortado por lint-staged."
+  exit 1
+}
+
+echo "✓ Pre-commit OK"

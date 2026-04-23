@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Cancela runs anteriores si hay push nuevo al mismo branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-lint-build:
+    name: Typecheck · Lint · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Variables dummy para que el build pase sin tocar BD real.
+    # El build de Next solo invoca Prisma generate (no queries), así que
+    # basta con una URL válida de Postgres que ni siquiera existe.
+    env:
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db?schema=public'
+      AUTH_SECRET: 'ci-dummy-secret-at-least-32-characters-long-xxxxxxx'
+      AUTH_URL: 'http://localhost:3000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Tests (si existen)
+        run: pnpm test --if-present
+        continue-on-error: false
