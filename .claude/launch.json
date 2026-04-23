@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web (next dev)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@pila/web", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "db (prisma studio)",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@pila/db", "prisma:studio"],
+      "port": 5555
+    }
+  ]
+}

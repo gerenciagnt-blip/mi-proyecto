@@ -13,27 +13,20 @@ import { parseSos } from './parsers/sos';
 import { parseProteccion } from './parsers/proteccion';
 
 /**
- * Extrae texto del PDF con pdf-parse. El import es dinámico porque
- * pdf-parse carga pdfjs-dist (~3MB) y no queremos inflar el bundle del
- * server cuando la ruta no se usa.
+ * Extrae texto del PDF con pdf-parse 1.1.1.
+ *
+ * Importamos desde el subpath `pdf-parse/lib/pdf-parse.js` porque el
+ * `index.js` del paquete tiene un "modo debug" que intenta leer un
+ * archivo de test interno y falla con ENOENT cuando se carga dentro de
+ * Next (bug histórico del paquete). El subpath evita ese bootstrap.
  */
 async function extraerTexto(pdf: Buffer): Promise<string> {
-  const mod = await import('pdf-parse');
-  const { PDFParse } = mod as unknown as {
-    PDFParse: new (opts: { data: Uint8Array }) => {
-      getText(): Promise<{ text: string }>;
-      destroy(): Promise<void>;
-    };
-  };
-  // pdf-parse 2.x requiere Uint8Array, no Buffer.
-  const data = new Uint8Array(pdf.buffer, pdf.byteOffset, pdf.byteLength);
-  const parser = new PDFParse({ data });
-  try {
-    const result = await parser.getText();
-    return result.text;
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
+  // @ts-expect-error — subpath sin tipos declarados
+  const mod = await import('pdf-parse/lib/pdf-parse.js');
+  const pdfParse = (mod as { default?: unknown }).default ?? mod;
+  const fn = pdfParse as (data: Buffer) => Promise<{ text: string }>;
+  const result = await fn(pdf);
+  return result.text;
 }
 
 export async function parseCarteraPdf(pdf: Buffer): Promise<ParseResult> {

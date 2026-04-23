@@ -29,10 +29,11 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@pila/core', '@pila/db'],
-  // @react-pdf/renderer usa internals de Node (fs, Buffer, stream).
-  // Lo marcamos como external en server components para que Next no trate
-  // de empaquetar sus dependencias nativas.
-  serverExternalPackages: ['@react-pdf/renderer'],
+  // Paquetes externos en el runtime server (no los bundlea webpack):
+  //   - @react-pdf/renderer: usa internals de Node (fs, Buffer, stream).
+  //   - pdf-parse: al bundlearse trata de leer un PDF de test en su path
+  //     relativo y falla con "Object.defineProperty called on non-object".
+  serverExternalPackages: ['@react-pdf/renderer', 'pdf-parse'],
   experimental: {
     serverActions: {
       // El upload de logo del comprobante y otros adjuntos pasan por server actions.

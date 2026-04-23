@@ -1,19 +1,24 @@
 /**
- * Parser EPS S.O.S. Layout jerárquico:
+ * Parser EPS S.O.S. Formato pdf-parse 1.x (línea por línea, no aplanado):
  *
- *   ENCABEZADO
- *     "Razón Social:" + "Número Id. : 901,803,655" + "Sede : PEREIRA"
- *     "Periodo Desde : 1995/01 Periodo Hasta : 2026/03"
+ *   CC     31,431,096ALZATE RENDON DIANA LORENA
+ *            52,000        ← valor mora (en su propia línea)
+ *   N                       ← tipoMora
+ *      2202409N             ← <benefVig><periodoAAAAMM><moraSalario>
+ *            52,000
+ *   N
+ *      0202410N
+ *   ...
+ *            260,000        ← subtotal cotizante
  *
- *   POR CADA COTIZANTE:
- *     CC  <númeroId>  <APELLIDOS NOMBRES>
- *     <valorMora>  N  <benefVig>  <periodoYYYYMM>  N
- *     ... más filas similares ...
- *     <subtotalCotizante>
+ * Trabajamos línea por línea detectando:
+ *   1. Cabecera cotizante: `CC <NumId>APELLIDOS NOMBRES` (tipo+numero+nombre pegados)
+ *   2. Línea de valor solo (numérico)
+ *   3. Línea con periodo: `<benefVig><AAAAMM>[NS]` — 7 o 8 caracteres seguidos
+ *      donde los últimos 6 son año+mes y el último char es N/S.
  *
- *   AL FINAL:
- *     "Totales por Empresa : X"
- *     "Totales Generales : Y"
+ * Asociamos (valor previo) + (periodo siguiente) para formar una línea
+ * del detallado. El subtotal al final del bloque cotizante se ignora.
  */
 
 import type { ParsedCartera, ParsedCarteraLinea } from '../types';
@@ -23,97 +28,118 @@ export function parseSos(texto: string): ParsedCartera {
   const advertencias: string[] = [];
 
   // ---- Razón social + NIT ----
-  // En el texto extraído los labels vienen DESPUÉS de los valores:
-  //   "Tipo Id. : NI \t901,803,655 \tPROFESIONALES ESPECIALIZADOS NACIONALES SAS\tNúmero Id. : \tRazón Social:"
+  // "Tipo Id. :\nNI    901,803,655PROFESIONALES ESPECIALIZADOS NACIONALES SAS"
   const razonRe =
-    /Tipo Id\.\s*:\s*NI\s+([\d.,]+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 .&\-,]+?)(?:\s+Número Id\.|\n)/i;
+    /Tipo Id\.\s*:\s*NI\s+([\d.,]+)([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 .&\-,]+?)\s*\n/i;
   const rMatch = texto.match(razonRe);
   const empresaNit = (rMatch?.[1] ?? '').replace(/[^\d]/g, '');
   const empresaRazonSocial = rMatch?.[2]?.trim() ?? '';
 
-  // ---- Período — los labels también van antes:
-  //   "Periodo Desde : \tPeriodo Hasta :\t1995/01 \t2026/03"
-  // Primero intentamos el patrón "label primero", luego el normal.
-  const pLabelsPrimero =
-    /Periodo\s+Desde\s*:?\s+Periodo\s+Hasta\s*:?\s*(\d{4})\/(\d{1,2})\s+(\d{4})\/(\d{1,2})/i;
-  const pNormalDesde = /Periodo\s+Desde\s*:?\s*(\d{4})\/(\d{1,2})/i;
-  const pNormalHasta = /Periodo\s+Hasta\s*:?\s*(\d{4})\/(\d{1,2})/i;
+  // ---- Período ----
+  // "Periodo Desde : Periodo Hasta :1995/012026/03"
+  const pMatch = texto.match(
+    /Periodo\s+Desde\s*:\s*Periodo\s+Hasta\s*:\s*(\d{4})\/(\d{1,2})\s*(\d{4})\/(\d{1,2})/i,
+  );
+  const periodoDesde = pMatch
+    ? `${pMatch[1]}-${String(pMatch[2]).padStart(2, '0')}`
+    : undefined;
+  const periodoHasta = pMatch
+    ? `${pMatch[3]}-${String(pMatch[4]).padStart(2, '0')}`
+    : undefined;
 
-  let periodoDesde: string | undefined;
-  let periodoHasta: string | undefined;
-  const plp = texto.match(pLabelsPrimero);
-  if (plp) {
-    periodoDesde = `${plp[1]}-${String(plp[2]).padStart(2, '0')}`;
-    periodoHasta = `${plp[3]}-${String(plp[4]).padStart(2, '0')}`;
-  } else {
-    const pd = texto.match(pNormalDesde);
-    const ph = texto.match(pNormalHasta);
-    if (pd) periodoDesde = `${pd[1]}-${String(pd[2]).padStart(2, '0')}`;
-    if (ph) periodoHasta = `${ph[1]}-${String(ph[2]).padStart(2, '0')}`;
-  }
-
-  // ---- Total: en el PDF aparece como "Totales por Empresa :\n4,935,792"
-  // o similar con saltos. Probamos varios patrones y caemos a la suma del
-  // detallado si ninguno matchea. ----
+  // ---- Total: en SOS el valor viene ANTES del label "Totales por Empresa :" ----
   let valorTotalInformado = 0;
-  const totalRe1 = /Totales?\s+por\s+Empresa\s*:?[\s\S]{0,80}?([\d.,]{4,})/i;
-  const totalRe2 = /Totales?\s+Generales\s*:?[\s\S]{0,80}?([\d.,]{4,})/i;
-  const tMatch = texto.match(totalRe1) || texto.match(totalRe2);
+  const totalRe = /([\d.,]{4,})\s*Totales?\s+por\s+Empresa\s*:/i;
+  const tMatch = texto.match(totalRe);
   if (tMatch) valorTotalInformado = parsearMonto(tMatch[1]!) ?? 0;
 
-  // ---- Parsing por líneas ----
+  // ---- Líneas ----
   const detallado: ParsedCarteraLinea[] = [];
   const lines = texto.split(/\n/).map((l) => l.trim()).filter(Boolean);
 
-  // Cabecera cotizante: "CC  31,431,096  ALZATE RENDON DIANA LORENA"
-  // (puede haber tabs en lugar de espacios; normalizamos a \s+)
-  const headerCotizanteRe =
-    /^(CC|CE|NIT|TI|RC|PT|PA)\s+([\d.,]+)\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .]+?)\s*$/;
+  // Cabecera cotizante: "CC     31,431,096ALZATE RENDON DIANA LORENA"
+  //   (tipo + número con comas pegado al nombre en mayúsculas)
+  const headerRe =
+    /^(CC|CE|NIT|TI|RC|PT|PA)\s+([\d,.]+)([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .]+)\s*$/;
 
-  // Subfila período: "52,000\tN \t2 \t202409\tN" (reemplazamos tabs)
-  // Orden: <valorMora> <TipoMora(N/S)> <benefVig(0..)> <periodoAAAAMM> <MoraSalario(N/S)>
-  const subfilaRe =
-    /^([\d.,]+)\s+[NS]\s+\d+\s+(\d{6})\s+[NS]\s*$/;
+  // Línea con periodo: "   2202409N" o "0202410N" — benefVig(1+ dígitos) +
+  //   periodo(6 dígitos AAAAMM) + flag N/S
+  const periodoLineRe = /^\d+(\d{6})[NS]\s*$/;
+
+  // Línea con solo un valor numérico (con comas opcionales)
+  const valorLineRe = /^([\d,]+(?:\.\d+)?)\s*$/;
 
   let currentDoc: {
     tipoDocumento: import('@pila/db').TipoDocumento;
     numeroDocumento: string;
     nombreCompleto: string;
   } | null = null;
+  let valorPendiente: number | null = null;
 
   for (const line of lines) {
-    const hMatch = line.match(headerCotizanteRe);
-    if (hMatch) {
-      const tipoDocRaw = hMatch[1]!;
-      const numDoc = hMatch[2]!.replace(/[^\d]/g, '');
-      const nombre = hMatch[3]!.trim().replace(/\s+/g, ' ');
+    const h = line.match(headerRe);
+    if (h) {
+      const tipoDocRaw = h[1]!;
+      const numDoc = h[2]!.replace(/[^\d]/g, '');
+      const nombre = h[3]!.trim().replace(/\s+/g, ' ');
       const tipoDocumento = normalizarTipoDoc(tipoDocRaw);
       if (!tipoDocumento) {
-        advertencias.push(`Tipo documento no reconocido: ${tipoDocRaw}`);
         currentDoc = null;
+        valorPendiente = null;
         continue;
       }
       currentDoc = { tipoDocumento, numeroDocumento: numDoc, nombreCompleto: nombre };
+      valorPendiente = null;
       continue;
     }
 
-    const sMatch = line.match(subfilaRe);
-    if (sMatch && currentDoc) {
-      const valorRaw = sMatch[1]!;
-      const periodoRaw = sMatch[2]!;
+    if (!currentDoc) continue;
+
+    const p = line.match(periodoLineRe);
+    if (p && valorPendiente !== null) {
+      const periodoRaw = p[1]!;
       const periodoCobro = normalizarPeriodo(periodoRaw);
-      const valorCobro = parsearMonto(valorRaw);
-      if (!periodoCobro || valorCobro === null) continue;
-      detallado.push({ ...currentDoc, periodoCobro, valorCobro });
+      if (periodoCobro) {
+        detallado.push({
+          ...currentDoc,
+          periodoCobro,
+          valorCobro: valorPendiente,
+        });
+      }
+      valorPendiente = null;
       continue;
     }
 
-    if (/^Totales?\s+/i.test(line)) currentDoc = null;
+    // Línea con valor (puede ser un valor periódico o el subtotal al final
+    // del cotizante). La diferenciamos porque el subtotal NO va seguido
+    // por una línea de periodo — si aparece un siguiente valor sin periodo
+    // en medio, descartamos el anterior.
+    const v = line.match(valorLineRe);
+    if (v) {
+      const num = parsearMonto(v[1]!);
+      if (num !== null) {
+        if (valorPendiente !== null) {
+          // El valor anterior no se asoció con un periodo — era el subtotal.
+          // No lo agregamos. Tomamos el nuevo como pendiente.
+        }
+        valorPendiente = num;
+      }
+      continue;
+    }
+
+    // Línea con solo "N" o "S" (tipo mora) — la ignoramos.
+    if (/^[NS]$/.test(line)) continue;
+
+    // Cualquier otra cosa → probablemente fin del bloque cotizante.
+    if (/^Totales?\s+/i.test(line)) {
+      currentDoc = null;
+      valorPendiente = null;
+    }
   }
 
   if (detallado.length === 0) {
     advertencias.push(
-      'No se detectaron líneas con el patrón EPS SOS (posible formato actualizado).',
+      'No se detectaron líneas con el patrón EPS SOS (¿formato actualizado?).',
     );
   }
 
