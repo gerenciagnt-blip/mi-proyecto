@@ -316,7 +316,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               >
                 {modalidad === 'DEPENDIENTE' ? 'Dependiente' : 'Independiente'}
               </span>
-              {regimenActual && (
+              {modalidad === 'DEPENDIENTE' && regimenActual && (
                 <span
                   className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
                     regimenActual === 'ORDINARIO'
@@ -547,47 +547,52 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             )}
           </div>
 
-          {/* 2) Régimen — aplica a ambas modalidades. Los independientes
-               también pueden tener plan de Resolución (p.ej. pagos solo ARL
-               bajo ese régimen), así que el selector siempre está presente.
-               El campo formaPago adicional solo aplica a independientes. */}
-          <div>
-            <Label htmlFor="regimen">
-              Régimen <Req />
-            </Label>
-            <select
-              id="regimen"
-              name="regimen"
-              required
-              value={regimenActual}
-              onChange={(e) => setRegimenActual(e.target.value)}
-              disabled={readOnly}
-              className={selectClass}
-            >
-              <option value="ORDINARIO">Ordinario</option>
-              <option value="RESOLUCION">Resolución</option>
-            </select>
-          </div>
-
-          {isIndep ? (
-            <div>
-              <Label htmlFor="formaPago">
-                Forma de pago <Req />
-              </Label>
-              <select
-                id="formaPago"
-                name="formaPago"
-                required
-                defaultValue={initial?.formaPago ?? 'VIGENTE'}
-                disabled={readOnly}
-                className={selectClass}
-              >
-                <option value="VIGENTE">Vigente (paga mes en curso)</option>
-                <option value="VENCIDO">Vencido (paga mes anterior)</option>
-              </select>
-            </div>
+          {/* 2) Régimen (solo DEPENDIENTE) o Forma de pago (solo
+               INDEPENDIENTE). Los independientes siempre operan bajo
+               régimen ORDINARIO — los planes de resolución NO aplican
+               para ellos, por eso el selector queda oculto y el filtro
+               de planes toma ORDINARIO por default. */}
+          {!isIndep ? (
+            <>
+              <div>
+                <Label htmlFor="regimen">
+                  Régimen <Req />
+                </Label>
+                <select
+                  id="regimen"
+                  name="regimen"
+                  required
+                  value={regimenActual}
+                  onChange={(e) => setRegimenActual(e.target.value)}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
+                  <option value="ORDINARIO">Ordinario</option>
+                  <option value="RESOLUCION">Resolución</option>
+                </select>
+              </div>
+              <input type="hidden" name="formaPago" value="" />
+            </>
           ) : (
-            <input type="hidden" name="formaPago" value="" />
+            <>
+              <input type="hidden" name="regimen" value="" />
+              <div>
+                <Label htmlFor="formaPago">
+                  Forma de pago <Req />
+                </Label>
+                <select
+                  id="formaPago"
+                  name="formaPago"
+                  required
+                  defaultValue={initial?.formaPago ?? 'VIGENTE'}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
+                  <option value="VIGENTE">Vigente (paga mes en curso)</option>
+                  <option value="VENCIDO">Vencido (paga mes anterior)</option>
+                </select>
+              </div>
+            </>
           )}
 
           <div>

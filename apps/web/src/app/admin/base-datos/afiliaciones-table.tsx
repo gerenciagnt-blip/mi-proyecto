@@ -61,6 +61,12 @@ type Props = {
   catalogos: Omit<AfiliacionFormProps, 'mode' | 'modalidad' | 'initial' | 'afiliacionId' | 'cotizanteSnapshot' | 'onSuccess'>;
 };
 
+/** Nombre corto para la tabla: solo primer nombre + primer apellido. */
+function shortName(c: AfiliacionRow['cotizante']) {
+  return [c.primerNombre, c.primerApellido].filter(Boolean).join(' ');
+}
+
+/** Nombre completo para el encabezado del modal de detalle/edición. */
 function fullName(c: AfiliacionRow['cotizante']) {
   return [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
     .filter(Boolean)
@@ -101,7 +107,6 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
               <th className="px-4 py-2">Régimen</th>
               <th className="px-4 py-2">Plan</th>
               <th className="px-4 py-2">Empresa</th>
-              <th className="px-4 py-2">Tipo</th>
               <th className="px-4 py-2">Nivel</th>
               <th className="px-4 py-2 text-right">Salario</th>
               <th className="px-4 py-2">Ingreso</th>
@@ -112,7 +117,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={11} className="px-4 py-8 text-center text-slate-400">
                   {emptyMessage}
                 </td>
               </tr>
@@ -126,7 +131,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                     {DOC_LABELS[a.cotizante.tipoDocumento] ?? a.cotizante.tipoDocumento}{' '}
                     {a.cotizante.numeroDocumento}
                   </td>
-                  <td className="px-4 py-3">{fullName(a.cotizante)}</td>
+                  <td className="px-4 py-3">{shortName(a.cotizante)}</td>
                   <td className="px-4 py-3 text-xs">
                     <span
                       className={cn(
@@ -157,12 +162,7 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {a.plan ? (
-                      <div>
-                        <p className="font-medium">{a.plan.nombre}</p>
-                        <p className="font-mono text-[10px] text-slate-500">
-                          {a.plan.codigo}
-                        </p>
-                      </div>
+                      <span className="font-medium">{a.plan.nombre}</span>
                     ) : (
                       <span className="italic text-slate-400">Sin plan</span>
                     )}
@@ -178,10 +178,6 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos }: Props) {
                         — sin empresa (independiente) —
                       </span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    <span className="font-mono text-slate-500">{a.tipoCotizante.codigo}</span>
-                    <span className="ml-2">{a.tipoCotizante.nombre}</span>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">{a.nivelRiesgo}</td>
                   <td className="px-4 py-3 text-right font-mono text-xs">
