@@ -47,17 +47,26 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
-      # Ejecuta tsx directo con el env del runner. Strip defensivo de
-      # comillas dobles por si el secret fue guardado con ellas (común
-      # cuando se copia literal desde un .env donde vienen entre "").
+      - name: Debug secret shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "length=${#DATABASE_URL_RAW}"
+          echo "first_char_codepoint=$(printf '%s' "$DATABASE_URL_RAW" | head -c 1 | od -An -c | tr -d ' ')"
+          echo "starts_with_postgresql=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^postgresql://')"
+          echo "has_leading_quote=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^\"')"
+          echo "has_leading_space=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^ ')"
+
       - name: Run retention job
         working-directory: apps/cli
         env:
           DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
         run: |
           DB="$DATABASE_URL_RAW"
-          DB="${DB%\"}"    # quita " final si existe
-          DB="${DB#\"}"    # quita " inicial si existe
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"   # strip leading space
+          DB="${DB%% }"   # strip trailing space
           export DATABASE_URL="$DB"
           if [ "${{ inputs.dry }}" = "true" ]; then
             pnpm exec tsx src/index.ts retention:run --dry
