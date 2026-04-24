@@ -31,12 +31,17 @@ export function EditUserForm({
   sucursales,
   rolesCustom,
   sessionUserId,
+  tarifaOrdinario,
+  tarifaResolucion,
 }: {
   user: User;
   sucursales: Sucursal[];
   rolesCustom: RolCustomOpt[];
   /** ID del usuario actualmente logueado (para proteger auto-cambio). */
   sessionUserId: string;
+  /** Tarifas actuales de la sucursal del aliado (solo ALIADO_OWNER). */
+  tarifaOrdinario: number | null;
+  tarifaResolucion: number | null;
 }) {
   const bound = updateUserAction.bind(null, user.id);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
@@ -52,8 +57,8 @@ export function EditUserForm({
         <Alert variant="info">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Estás editando tu propio usuario — el rol y la sucursal quedan
-            bloqueados para evitar perder tu acceso.
+            Estás editando tu propio usuario — el rol y la sucursal quedan bloqueados para evitar
+            perder tu acceso.
           </span>
         </Alert>
       )}
@@ -63,13 +68,7 @@ export function EditUserForm({
           <Label htmlFor="name">
             Nombre <span className="text-red-500">*</span>
           </Label>
-          <Input
-            id="name"
-            name="name"
-            required
-            defaultValue={user.name}
-            className="mt-1"
-          />
+          <Input id="name" name="name" required defaultValue={user.name} className="mt-1" />
         </div>
         <div>
           <Label htmlFor="role">
@@ -137,6 +136,52 @@ export function EditUserForm({
           </Select>
         </div>
       </div>
+
+      {/* Tarifas de cobro — solo cuando el usuario es ALIADO_OWNER */}
+      {role === 'ALIADO_OWNER' && (
+        <fieldset className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+            Tarifas de cobro (por período)
+          </legend>
+          <p className="mb-3 text-xs text-slate-500">
+            Valor que la plataforma cobra a este aliado por cada afiliación / mensualidad procesada,
+            según el régimen de la afiliación. Las tarifas se guardan en la sucursal — todos los
+            usuarios de esa sucursal comparten las mismas.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="tarifaOrdinario">Tarifa régimen ORDINARIO (COP)</Label>
+              <Input
+                id="tarifaOrdinario"
+                name="tarifaOrdinario"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="decimal"
+                defaultValue={tarifaOrdinario ?? ''}
+                placeholder="Ej. 25000"
+                disabled={esSelf}
+                className="mt-1 font-mono"
+              />
+            </div>
+            <div>
+              <Label htmlFor="tarifaResolucion">Tarifa régimen RESOLUCIÓN (COP)</Label>
+              <Input
+                id="tarifaResolucion"
+                name="tarifaResolucion"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="decimal"
+                defaultValue={tarifaResolucion ?? ''}
+                placeholder="Ej. 18000"
+                disabled={esSelf}
+                className="mt-1 font-mono"
+              />
+            </div>
+          </div>
+        </fieldset>
+      )}
 
       <label className="flex items-center gap-2 text-sm">
         <input

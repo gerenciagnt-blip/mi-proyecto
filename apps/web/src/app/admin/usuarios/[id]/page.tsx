@@ -9,14 +9,17 @@ import { PasswordForm } from './password-form';
 
 export const metadata = { title: 'Editar usuario — Sistema PILA' };
 
-export default async function EditUserPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [user, sucursales, rolesCustom, session] = await Promise.all([
-    prisma.user.findUnique({ where: { id } }),
+    prisma.user.findUnique({
+      where: { id },
+      include: {
+        sucursal: {
+          select: { id: true, tarifaOrdinario: true, tarifaResolucion: true },
+        },
+      },
+    }),
     prisma.sucursal.findMany({
       where: { active: true },
       orderBy: { codigo: 'asc' },
@@ -31,6 +34,14 @@ export default async function EditUserPage({
   ]);
   if (!user) notFound();
   const sessionUserId = session?.user?.id ?? '';
+
+  // Tarifas actuales de la sucursal (solo aplican si el usuario es ALIADO_OWNER)
+  const tarifaOrdinario = user.sucursal?.tarifaOrdinario
+    ? Number(user.sucursal.tarifaOrdinario)
+    : null;
+  const tarifaResolucion = user.sucursal?.tarifaResolucion
+    ? Number(user.sucursal.tarifaResolucion)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -58,13 +69,13 @@ export default async function EditUserPage({
             sucursales={sucursales}
             rolesCustom={rolesCustom}
             sessionUserId={sessionUserId}
+            tarifaOrdinario={tarifaOrdinario}
+            tarifaResolucion={tarifaResolucion}
           />
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900">
-            Restablecer contraseña
-          </h2>
+          <h2 className="mb-4 text-sm font-semibold text-slate-900">Restablecer contraseña</h2>
           <PasswordForm userId={user.id} />
         </section>
       </div>

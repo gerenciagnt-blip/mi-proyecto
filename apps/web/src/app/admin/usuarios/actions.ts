@@ -5,11 +5,7 @@ import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
-import {
-  UserCreateSchema,
-  UserUpdateSchema,
-  UserPasswordSchema,
-} from '@/lib/validations';
+import { UserCreateSchema, UserUpdateSchema, UserPasswordSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -25,7 +21,9 @@ export async function createUserAction(
   const rolCustomRaw = String(formData.get('rolCustomId') ?? '');
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
   const parsed = UserCreateSchema.safeParse({
-    email: String(formData.get('email') ?? '').toLowerCase().trim(),
+    email: String(formData.get('email') ?? '')
+      .toLowerCase()
+      .trim(),
     name: titleCase(String(formData.get('name') ?? '').trim()),
     password: String(formData.get('password') ?? ''),
     role,
@@ -66,9 +64,10 @@ export async function createUserAction(
       },
     });
   } catch (e) {
-    const msg = e instanceof Error && e.message.includes('Unique')
-      ? 'Ya existe un usuario con ese email'
-      : 'Error al crear usuario';
+    const msg =
+      e instanceof Error && e.message.includes('Unique')
+        ? 'Ya existe un usuario con ese email'
+        : 'Error al crear usuario';
     return { error: msg };
   }
 
@@ -127,8 +126,49 @@ export async function updateUserAction(
     }
   }
 
+  // Si es ALIADO_OWNER y tiene sucursal, intentamos actualizar las tarifas
+  // de cobro de esa sucursal (Decimal nullable — vacío = sin cambio).
+  let tarifaOrdinario: number | null | undefined;
+  let tarifaResolucion: number | null | undefined;
+  if (parsed.data.role === 'ALIADO_OWNER' && parsed.data.sucursalId && !esSelf) {
+    const rawOrd = String(formData.get('tarifaOrdinario') ?? '').trim();
+    const rawRes = String(formData.get('tarifaResolucion') ?? '').trim();
+    if (rawOrd !== '') {
+      const n = Number(rawOrd);
+      if (!Number.isFinite(n) || n < 0) {
+        return { error: 'Tarifa ORDINARIO inválida (debe ser un número ≥ 0)' };
+      }
+      tarifaOrdinario = n;
+    } else {
+      tarifaOrdinario = null; // usuario borró el valor
+    }
+    if (rawRes !== '') {
+      const n = Number(rawRes);
+      if (!Number.isFinite(n) || n < 0) {
+        return { error: 'Tarifa RESOLUCIÓN inválida (debe ser un número ≥ 0)' };
+      }
+      tarifaResolucion = n;
+    } else {
+      tarifaResolucion = null;
+    }
+  }
+
   try {
-    await prisma.user.update({ where: { id }, data: parsed.data });
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: parsed.data });
+
+      // Actualiza tarifas de la sucursal (solo si venimos de form ALIADO_OWNER)
+      if (
+        parsed.data.role === 'ALIADO_OWNER' &&
+        parsed.data.sucursalId &&
+        tarifaOrdinario !== undefined
+      ) {
+        await tx.sucursal.update({
+          where: { id: parsed.data.sucursalId },
+          data: { tarifaOrdinario, tarifaResolucion },
+        });
+      }
+    });
   } catch {
     return { error: 'Error al actualizar usuario' };
   }

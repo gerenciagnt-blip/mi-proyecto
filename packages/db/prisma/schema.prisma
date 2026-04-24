@@ -185,6 +185,18 @@ model Sucursal {
   incapacidades      Incapacidad[]
   soportesAfiliacion SoporteAfiliacion[]
 
+  // Finanzas
+  /**
+   * Tarifa cobrada al aliado por cada afiliación/mensualidad de régimen
+   * ORDINARIO procesada en el período contable. Null = sin configurar (no
+   * se puede generar cobro hasta que staff la defina).
+   */
+  tarifaOrdinario  Decimal?              @db.Decimal(12, 2)
+  /** Tarifa equivalente para régimen RESOLUCION (Decreto 2616 / EPS+ARL). */
+  tarifaResolucion Decimal?              @db.Decimal(12, 2)
+  cobrosAliado     CobroAliado[]
+  movimientosDetalle MovimientoIncDetalle[]
+
   @@map("sucursales")
 }
 
@@ -221,6 +233,10 @@ model User {
   soportesAfGestionados   SoporteAfiliacion[]       @relation("SoporteAfGestor")
   soportesAfGestionesUser SoporteAfGestion[]        @relation("SoporteAfGestionUser")
   soportesAfDocsUser      SoporteAfDocumento[]      @relation("SoporteAfDocUser")
+  cobrosAliadoCreados     CobroAliado[]             @relation("CobroAliadoCreator")
+  cobrosAliadoDocsUser    CobroAliadoDocumento[]    @relation("CobroAliadoDocUser")
+  movimientosIncCreados   MovimientoIncapacidad[]   @relation("MovIncCreator")
+  movimientosDetDocsUser  MovimientoDetalleDocumento[] @relation("MovDetDocUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -275,6 +291,8 @@ model Empresa {
   planillas    Planilla[]
   carterasConsolidado CarteraConsolidado[]
   incapacidades Incapacidad[] @relation("IncapacidadEmpresa")
+  movimientosIncapacidad       MovimientoIncapacidad[]
+  movimientosDetallePagadoCon  MovimientoIncDetalle[] @relation("MovDetallePagadoCon")
 
   @@index([arlId])
   @@index([departamentoId])
@@ -519,6 +537,7 @@ model MedioPago {
 
   sucursal     Sucursal?    @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   comprobantes Comprobante[]
+  cobrosAliado CobroAliado[]
 
   @@unique([sucursalId, codigo])
   @@index([sucursalId])
@@ -617,6 +636,7 @@ model Cotizante {
   carterasDetallado CarteraDetallado[]
   incapacidades Incapacidad[]
   soportesAfiliacion SoporteAfiliacion[]
+  movimientosDetalle MovimientoIncDetalle[]
   municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
@@ -810,6 +830,7 @@ model PeriodoContable {
   gestionesCartera GestionCartera[]
   planillas     Planilla[]
   soportesAfiliacion SoporteAfiliacion[]
+  cobrosAliado  CobroAliado[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -1386,6 +1407,7 @@ model Incapacidad {
   createdBy        User?              @relation("IncapacidadesCreadas", fields: [createdById], references: [id], onDelete: SetNull)
   documentos       IncapacidadDocumento[]
   gestiones        IncapacidadGestion[]
+  movimientosDetalle MovimientoIncDetalle[]
 
   @@index([sucursalId])
   @@index([cotizanteId])
@@ -1574,4 +1596,273 @@ model SoporteAfGestion {
   @@index([soporteAfId])
   @@index([userId])
   @@map("soporte_afiliacion_gestion")
+}
+
+// =========================================================================
+// FINANZAS — Cobro Aliados + Movimientos Incapacidades + Detalle
+// =========================================================================
+
+// --- Cobro Aliados ---------------------------------------------------------
+
+/** Estados del ciclo de cobro al aliado. */
+enum CobroAliadoEstado {
+  PENDIENTE // generado, el aliado no ha pagado
+  PAGADO // el aliado pagó — staff conciliado
+  VENCIDO // pasó el día 15 sin pagar — sucursal bloqueada
+  ANULADO // staff anuló (corrección / error de generación)
+}
+
+/**
+ * Tipo de concepto en un cobro — determina el origen del ítem:
+ *   AFILIACION_PROCESADA  — cada SoporteAfiliacion con estado PROCESADA
+ *                           en el período contable.
+ *   MENSUALIDAD          — cada Comprobante tipo RECIBO/CXC emitido en
+ *                           el período (respeta la regla: si la afiliación
+ *                           tiene retiro con duración ≤5 días no cobra).
+ */
+enum CobroAliadoConceptoTipo {
+  AFILIACION_PROCESADA
+  MENSUALIDAD
+}
+
+/**
+ * Cobro mensual al aliado por uso de la plataforma.
+ * Se genera automáticamente al cerrar el período contable (último día mes
+ * 23:59). Plazo de pago: día 15 del mes siguiente. Día 16 → bloqueo.
+ *
+ * Las tarifas vienen de Sucursal.tarifaOrdinario / tarifaResolucion y se
+ * congelan al momento de generar (por si después cambian, el cobro queda
+ * con los valores históricos).
+ */
+model CobroAliado {
+  id              String    @id @default(cuid())
+  consecutivo     String    @unique // CA-000001
+  sucursalId      String
+  periodoId       String
+  fechaGenerado   DateTime  @default(now())
+  fechaLimite     DateTime // día 15 del mes siguiente (calculado al generar)
+  fechaPagado     DateTime?
+  /** Si se bloqueó la sucursal por falta de pago, cuándo. */
+  fechaBloqueo    DateTime?
+
+  // Conteos del período (denormalizado para reporte rápido)
+  cantAfiliaciones  Int     @default(0)
+  cantMensualidades Int     @default(0)
+
+  // Subtotales por tipo (denormalizado)
+  valorAfiliaciones  Decimal @default(0) @db.Decimal(12, 2)
+  valorMensualidades Decimal @default(0) @db.Decimal(12, 2)
+
+  totalCobro     Decimal @db.Decimal(12, 2)
+
+  estado         CobroAliadoEstado @default(PENDIENTE)
+  medioPagoId    String?
+  referenciaPago String?
+  observaciones  String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sucursal  Sucursal        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  periodo   PeriodoContable @relation(fields: [periodoId], references: [id], onDelete: Restrict)
+  medioPago MedioPago?      @relation(fields: [medioPagoId], references: [id], onDelete: SetNull)
+  createdBy User?           @relation("CobroAliadoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  conceptos  CobroAliadoConcepto[]
+  documentos CobroAliadoDocumento[]
+
+  // Un solo cobro por sucursal + periodo — evita duplicados al re-generar.
+  @@unique([sucursalId, periodoId])
+  @@index([estado])
+  @@index([fechaLimite])
+  @@index([periodoId])
+  @@map("cobro_aliado")
+}
+
+/**
+ * Desglose línea a línea del cobro: cada afiliación procesada + cada
+ * mensualidad facturada. Guarda la referencia al recurso origen (afiliacion
+ * o comprobante) para trazabilidad.
+ */
+model CobroAliadoConcepto {
+  id           String                  @id @default(cuid())
+  cobroId      String
+  tipo         CobroAliadoConceptoTipo
+  descripcion  String? // texto libre (ej. "Mensualidad mayo — Juan Pérez")
+  /** FK informativo: afiliacionId o comprobanteId del registro origen. */
+  referenciaId String?
+  /** Régimen aplicado (ORDINARIO/RESOLUCION) — determina qué tarifa usa. */
+  regimen      Regimen?
+  cantidad     Int                     @default(1)
+  valorUnit    Decimal                 @db.Decimal(12, 2)
+  subtotal     Decimal                 @db.Decimal(12, 2)
+
+  cobro CobroAliado @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+
+  @@index([cobroId])
+  @@index([tipo])
+  @@map("cobro_aliado_concepto")
+}
+
+/**
+ * Documentos soporte del cobro (comprobante de pago del aliado, recibos,
+ * notas de ajuste). Misma forma que el resto de documentos del sistema.
+ */
+model CobroAliadoDocumento {
+  id                    String   @id @default(cuid())
+  cobroId               String
+  archivoPath           String // relativo a UPLOADS_DIR
+  archivoHash           String // sha-256 hex
+  archivoMime           String
+  archivoSize           Int
+  archivoNombreOriginal String
+  userId                String?
+  createdAt             DateTime @default(now())
+
+  cobro CobroAliado @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  user  User?       @relation("CobroAliadoDocUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([cobroId])
+  @@map("cobro_aliado_documento")
+}
+
+// --- Movimientos Incapacidades --------------------------------------------
+
+/** Estados de un movimiento bancario. */
+enum MovimientoIncEstado {
+  PENDIENTE // recién importado, aún no se ha desglosado ni conciliado
+  CONCILIADO // suma de sus detalles = valor total del movimiento
+  ANULADO // staff lo anuló (error de importación, duplicado, etc.)
+}
+
+/**
+ * Movimiento bancario — típicamente una consignación de una entidad
+ * (EPS/ARL) al sistema por incapacidades pagadas. Se carga masivamente
+ * desde Excel/PDF de extractos bancarios.
+ */
+model MovimientoIncapacidad {
+  id           String              @id @default(cuid())
+  consecutivo  String              @unique // MI-000001
+  empresaId    String? // empresa planilla asociada (si se identifica al importar)
+  fechaIngreso DateTime // fecha del movimiento en el banco
+  concepto     String // referencia/descripción del extracto
+  valor        Decimal             @db.Decimal(14, 2)
+  estado       MovimientoIncEstado @default(PENDIENTE)
+  bancoOrigen  String? // "Bancolombia", "Davivienda", etc.
+  /**
+   * Hash del registro en el extracto — previene duplicados al re-importar.
+   * Formato: sha256(banco|fecha|valor|concepto).
+   */
+  hashIdentidad String?              @unique
+  observaciones String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa   Empresa? @relation(fields: [empresaId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("MovIncCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  detalles  MovimientoIncDetalle[]
+
+  @@index([estado])
+  @@index([fechaIngreso])
+  @@index([empresaId])
+  @@map("movimiento_incapacidad")
+}
+
+// --- Detalle de Movimientos -----------------------------------------------
+
+/** Forma en que se liquida el pago de la incapacidad. */
+enum MovimientoFormaPago {
+  PAGO_COTIZANTE // se transfiere al cotizante directamente
+  PAGO_ALIADO // se transfiere al aliado (él lo paga al cotizante)
+  CRUCE_COBRO_ALIADO // se aplica al cobro pendiente del aliado
+}
+
+/** Estado del detalle (registro individual dentro del movimiento). */
+enum MovimientoDetalleEstado {
+  PENDIENTE
+  EN_PROCESO
+  PAGADA
+}
+
+/**
+ * Desglose individual de un movimiento bancario — un registro por cotizante
+ * pagado dentro del depósito. Calcula retenciones automáticas:
+ *   retencion4x1000  = subtotal * 0.4%
+ *   retencionImpuesto = subtotal * 3.5%
+ *   totalPagar       = subtotal - retencion4x1000 - retencionImpuesto
+ *
+ * Si se encuentra match por tipoDocumento+numeroDocumento, se asocia la
+ * incapacidad correspondiente (SoporteIncapacidades).
+ */
+model MovimientoIncDetalle {
+  id           String @id @default(cuid())
+  movimientoId String
+
+  // Datos del cotizante (snapshot — se preservan aunque luego cambien en BD)
+  tipoDocumento   String
+  numeroDocumento String
+  nombreCompleto  String
+
+  // FKs opcionales — se llenan si hay match en la base
+  cotizanteId   String?
+  incapacidadId String? // consecutivo de la incapacidad asociada
+  sucursalId    String? // dueño aliado (se hereda de incapacidad.sucursalId)
+
+  // Fechas de la incapacidad (copiadas al asociar; editable manualmente)
+  fechaInicioInc DateTime?
+  fechaFinInc    DateTime?
+
+  // Montos
+  subtotal          Decimal @db.Decimal(12, 2)
+  retencion4x1000   Decimal @db.Decimal(12, 2) // 0.4% del subtotal
+  retencionImpuesto Decimal @db.Decimal(12, 2) // 3.5% del subtotal
+  totalPagar        Decimal @db.Decimal(12, 2) // subtotal - 4x1000 - impuesto
+
+  // Pago
+  formaPago          MovimientoFormaPago
+  estado             MovimientoDetalleEstado @default(PENDIENTE)
+  fechaPago          DateTime?
+  /** Empresa planilla usada como "pagada mediante". */
+  pagadoConEmpresaId String?
+  observaciones      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movimiento  MovimientoIncapacidad @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  cotizante   Cotizante?            @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
+  incapacidad Incapacidad?          @relation(fields: [incapacidadId], references: [id], onDelete: SetNull)
+  sucursal    Sucursal?             @relation(fields: [sucursalId], references: [id], onDelete: SetNull)
+  pagadoConEmpresa Empresa?         @relation("MovDetallePagadoCon", fields: [pagadoConEmpresaId], references: [id], onDelete: SetNull)
+
+  documentos MovimientoDetalleDocumento[]
+
+  @@index([movimientoId])
+  @@index([estado])
+  @@index([numeroDocumento])
+  @@index([sucursalId])
+  @@index([incapacidadId])
+  @@map("movimiento_inc_detalle")
+}
+
+/** Soportes de pago individual (comprobante de transferencia, etc.). */
+model MovimientoDetalleDocumento {
+  id                    String   @id @default(cuid())
+  detalleId             String
+  archivoPath           String
+  archivoHash           String
+  archivoMime           String
+  archivoSize           Int
+  archivoNombreOriginal String
+  userId                String?
+  createdAt             DateTime @default(now())
+
+  detalle MovimientoIncDetalle @relation(fields: [detalleId], references: [id], onDelete: Cascade)
+  user    User?                @relation("MovDetDocUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([detalleId])
+  @@map("movimiento_det_documento")
 }
