@@ -47,27 +47,15 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
-      # El CLI usa `dotenv -e ../../.env -- tsx ...` en su script `start`;
-      # sin un .env real, dotenv-cli sobrescribe DATABASE_URL con string
-      # vacío y Prisma falla con "URL must start with postgresql://".
-      # Materializamos el .env efímero desde el secret (el runner es de
-      # un solo uso, se destruye al finalizar).
-      #
-      # IMPORTANTE: pasamos el secret por env: y lo escribimos con printf %s
-      # (no con echo + ${{ secrets.X }} inline) para evitar que bash
-      # interprete caracteres especiales como & o '.
-      - name: Materialize .env from secrets
-        env:
-          DB_URL: ${{ secrets.DATABASE_URL }}
-          UP_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
-        run: |
-          printf 'DATABASE_URL=%s\n' "$DB_URL" >  .env
-          printf 'UPLOADS_DIR=%s\n'  "$UP_DIR" >> .env
-
+      # Bypasseamos el script `pnpm cli` porque su wrapper `dotenv -e ../../.env`
+      # no sirve en CI (no hay .env real) y si el secret fue guardado con
+      # comillas, dotenv las interpreta de forma inconsistente. Llamamos a
+      # tsx directamente con el env del runner.
       - name: Run retention job
+        working-directory: apps/cli
         run: |
           if [ "${{ inputs.dry }}" = "true" ]; then
-            pnpm cli retention:run --dry
+            pnpm exec tsx src/index.ts retention:run --dry
           else
-            pnpm cli retention:run
+            pnpm exec tsx src/index.ts retention:run
           fi
