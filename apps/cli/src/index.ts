@@ -64,4 +64,8 @@ program
     await seedTestDataCommand(options);
   });
 
-program.parseAsync();
+// Filtra el '--' que pnpm-filter-run inyecta entre el script y los args
+// reales cuando se ejecuta vía `pnpm cli <comando>`. Sin esto, commander v13
+// lo ve como argumento posicional y falla con "too many arguments".
+const argv = process.argv.filter((a, i) => !(i >= 2 && a === '--'));
+program.parseAsync(argv);
