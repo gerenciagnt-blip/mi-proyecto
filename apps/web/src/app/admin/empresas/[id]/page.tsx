@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@pila/db';
 import { EditEmpresaForm } from './edit-form';
+import { SyncPagosimpleButton } from '../sync-pagosimple-button';
+import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
 export const metadata = { title: 'Editar Empresa — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -55,6 +57,24 @@ export default async function EditEmpresaPage({ params }: { params: Promise<{ id
       <section className="rounded-lg border border-slate-200 bg-white p-6">
         <EditEmpresaForm empresa={empresa} arls={arls} departamentos={departamentosOpts} />
       </section>
+
+      {isPagosimpleEnabled() && (
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
+          <header className="mb-3">
+            <h2 className="text-sm font-semibold text-slate-900">Integración PagoSimple</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Crea o actualiza este aportante en PagoSimple bajo el usuario master. Los planos de
+              esta empresa usarán ese contributor_id.
+            </p>
+          </header>
+          <SyncPagosimpleButton
+            kind="empresa"
+            id={empresa.id}
+            contributorId={empresa.pagosimpleContributorId}
+            syncedAt={empresa.pagosimpleSyncedAt}
+          />
+        </section>
+      )}
     </div>
   );
 }
