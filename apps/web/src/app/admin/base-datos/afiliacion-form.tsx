@@ -1,16 +1,13 @@
 'use client';
 
-import { useActionState, useState, useMemo, useEffect } from 'react';
-import { Save, AlertCircle } from 'lucide-react';
+import { useActionState, useState, useMemo, useEffect, useTransition } from 'react';
+import { Save, AlertCircle, Search, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
-import {
-  createAfiliacionAction,
-  updateAfiliacionAction,
-  type ActionState,
-} from './actions';
+import { createAfiliacionAction, updateAfiliacionAction, type ActionState } from './actions';
+import { consultarBduaRuafAction } from './consulta-bdua-ruaf-action';
 
 const selectClass =
   'mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-base text-brand-text-primary sm:text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600';
@@ -148,10 +145,108 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     return createAfiliacionAction;
   }, [mode, props.afiliacionId]);
 
-  const [state, action, pending] = useActionState<ActionState, FormData>(
-    boundAction,
-    {},
-  );
+  const [state, action, pending] = useActionState<ActionState, FormData>(boundAction, {});
+
+  // === Identificación (controlada) — necesaria para autocompletar BDUA/RUAF ===
+  const [tipoDocumento, setTipoDocumento] = useState<string>('CC');
+  const [numeroDocumento, setNumeroDocumento] = useState<string>('');
+  const [primerNombre, setPrimerNombre] = useState<string>('');
+  const [segundoNombre, setSegundoNombre] = useState<string>('');
+  const [primerApellido, setPrimerApellido] = useState<string>('');
+  const [segundoApellido, setSegundoApellido] = useState<string>('');
+
+  // EPS/AFP controladas para poder autollenar
+  const [epsIdState, setEpsIdState] = useState<string>(initial?.epsId ?? '');
+  const [afpIdState, setAfpIdState] = useState<string>(initial?.afpId ?? '');
+
+  // BDUA/RUAF feedback
+  const [bduaPending, startBduaTransition] = useTransition();
+  const [bduaResult, setBduaResult] = useState<
+    | null
+    | {
+        kind: 'ok';
+        nombres: boolean;
+        eps: string | null;
+        afp: string | null;
+        epsMiss: string | null;
+        afpMiss: string | null;
+        isPensionary?: 'SI' | 'NO';
+      }
+    | { kind: 'empty' }
+    | { kind: 'error'; message: string }
+  >(null);
+
+  const handleConsultarBduaRuaf = () => {
+    if (!numeroDocumento || numeroDocumento.length < 4) return;
+    setBduaResult(null);
+    startBduaTransition(async () => {
+      const res = await consultarBduaRuafAction(tipoDocumento, numeroDocumento);
+      if (!res.ok) {
+        setBduaResult({ kind: 'error', message: res.error });
+        return;
+      }
+      if (!res.item) {
+        setBduaResult({ kind: 'empty' });
+        return;
+      }
+      const i = res.item;
+      // Nombres (solo si los campos están vacíos — no pisar lo que el usuario
+      // ya tecleó manualmente).
+      let nombresRellenados = false;
+      if (!primerNombre && i.first_name) {
+        setPrimerNombre(i.first_name);
+        nombresRellenados = true;
+      }
+      if (!segundoNombre && i.second_name) {
+        setSegundoNombre(i.second_name);
+        nombresRellenados = true;
+      }
+      if (!primerApellido && i.first_last_name) {
+        setPrimerApellido(i.first_last_name);
+        nombresRellenados = true;
+      }
+      if (!segundoApellido && i.second_last_name) {
+        setSegundoApellido(i.second_last_name);
+        nombresRellenados = true;
+      }
+
+      // EPS → buscar en nuestras entidades por código BDUA
+      let epsMatch: string | null = null;
+      let epsMiss: string | null = null;
+      if (i.bdua_eps_code) {
+        const hit = props.eps.find((e) => e.codigo === i.bdua_eps_code);
+        if (hit) {
+          setEpsIdState(hit.id);
+          epsMatch = hit.nombre;
+        } else {
+          epsMiss = i.bdua_eps_code;
+        }
+      }
+
+      // AFP → mismo patrón
+      let afpMatch: string | null = null;
+      let afpMiss: string | null = null;
+      if (i.ruaf_afp_code) {
+        const hit = props.afp.find((a) => a.codigo === i.ruaf_afp_code);
+        if (hit) {
+          setAfpIdState(hit.id);
+          afpMatch = hit.nombre;
+        } else {
+          afpMiss = i.ruaf_afp_code;
+        }
+      }
+
+      setBduaResult({
+        kind: 'ok',
+        nombres: nombresRellenados,
+        eps: epsMatch,
+        afp: afpMatch,
+        epsMiss,
+        afpMiss,
+        isPensionary: i.is_pensionary,
+      });
+    });
+  };
 
   // === Cascadas ===
 
@@ -163,9 +258,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 
   // Régimen seleccionado (solo aplica a dependientes; independiente no tiene
   // régimen, por eso para ellos filtramos contra 'ORDINARIO' por default).
-  const [regimenActual, setRegimenActual] = useState<string>(
-    initial?.regimen ?? 'ORDINARIO',
-  );
+  const [regimenActual, setRegimenActual] = useState<string>(initial?.regimen ?? 'ORDINARIO');
 
   // Planes visibles según régimen del cotizante/afiliación:
   //   - regimen del plan = AMBOS → siempre visible
@@ -173,17 +266,12 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
   //   - regimen del plan = RESOLUCION → visible si régimen actual RESOLUCION
   const planesFiltrados = useMemo(() => {
     const target = regimenActual || 'ORDINARIO';
-    return props.planes.filter(
-      (p) => p.regimen === 'AMBOS' || p.regimen === target,
-    );
+    return props.planes.filter((p) => p.regimen === 'AMBOS' || p.regimen === target);
   }, [props.planes, regimenActual]);
 
   // Plan → requiereArl (necesario para decidir filtros aguas abajo)
   const [planId, setPlanId] = useState(initial?.planSgssId ?? '');
-  const plan = useMemo(
-    () => props.planes.find((p) => p.id === planId),
-    [props.planes, planId],
-  );
+  const plan = useMemo(() => props.planes.find((p) => p.id === planId), [props.planes, planId]);
 
   // Si al cambiar de régimen el plan actual deja de ser compatible → reset
   useEffect(() => {
@@ -209,17 +297,15 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     if (!requiereArl) return props.empresas;
     if (!actividad) return props.empresas;
     return props.empresas.filter(
-      (e) =>
-        e.actividadesIds.includes(actividad.id) ||
-        e.ciiuPrincipal === actividad.codigoCiiu,
+      (e) => e.actividadesIds.includes(actividad.id) || e.ciiuPrincipal === actividad.codigoCiiu,
     );
   }, [requiereArl, actividad, props.empresas]);
 
   const [empresaId, setEmpresaId] = useState(initial?.empresaId ?? '');
-  const empresa = useMemo(() => props.empresas.find((e) => e.id === empresaId), [
-    props.empresas,
-    empresaId,
-  ]);
+  const empresa = useMemo(
+    () => props.empresas.find((e) => e.id === empresaId),
+    [props.empresas, empresaId],
+  );
 
   useEffect(() => {
     if (empresaId && !empresasFiltered.some((e) => e.id === empresaId)) {
@@ -299,12 +385,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className="font-mono text-xs text-slate-500">
-                {props.cotizanteSnapshot.tipoDocumento}{' '}
-                {props.cotizanteSnapshot.numeroDocumento}
+                {props.cotizanteSnapshot.tipoDocumento} {props.cotizanteSnapshot.numeroDocumento}
               </p>
-              <p className="font-medium text-slate-900">
-                {props.cotizanteSnapshot.nombreCompleto}
-              </p>
+              <p className="font-medium text-slate-900">{props.cotizanteSnapshot.nombreCompleto}</p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span
@@ -356,7 +439,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   id="tipoDocumento"
                   name="tipoDocumento"
                   required
-                  defaultValue="CC"
+                  value={tipoDocumento}
+                  onChange={(e) => setTipoDocumento(e.target.value)}
                   className={selectClass}
                 >
                   <option value="CC">CC</option>
@@ -367,11 +451,34 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   <option value="NIP">NIP</option>
                 </select>
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <Label htmlFor="numeroDocumento">
                   Número <Req />
                 </Label>
-                <Input id="numeroDocumento" name="numeroDocumento" required className="mt-1" />
+                <div className="mt-1 flex gap-2">
+                  <Input
+                    id="numeroDocumento"
+                    name="numeroDocumento"
+                    required
+                    value={numeroDocumento}
+                    onChange={(e) => setNumeroDocumento(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleConsultarBduaRuaf}
+                    disabled={bduaPending || numeroDocumento.length < 4}
+                    title="Consulta EPS, AFP y nombres en BDUA/RUAF vía PagoSimple"
+                  >
+                    {bduaPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    <span>BDUA/RUAF</span>
+                  </Button>
+                </div>
               </div>
               <div>
                 <Label htmlFor="fechaExpedicionDoc">Fecha expedición</Label>
@@ -399,40 +506,119 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 <Label htmlFor="primerNombre">
                   Primer nombre <Req />
                 </Label>
-                <Input id="primerNombre" name="primerNombre" required className="mt-1" />
+                <Input
+                  id="primerNombre"
+                  name="primerNombre"
+                  required
+                  value={primerNombre}
+                  onChange={(e) => setPrimerNombre(e.target.value)}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label htmlFor="segundoNombre">Segundo nombre</Label>
-                <Input id="segundoNombre" name="segundoNombre" className="mt-1" />
+                <Input
+                  id="segundoNombre"
+                  name="segundoNombre"
+                  value={segundoNombre}
+                  onChange={(e) => setSegundoNombre(e.target.value)}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label htmlFor="primerApellido">
                   Primer apellido <Req />
                 </Label>
-                <Input id="primerApellido" name="primerApellido" required className="mt-1" />
+                <Input
+                  id="primerApellido"
+                  name="primerApellido"
+                  required
+                  value={primerApellido}
+                  onChange={(e) => setPrimerApellido(e.target.value)}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label htmlFor="segundoApellido">Segundo apellido</Label>
-                <Input id="segundoApellido" name="segundoApellido" className="mt-1" />
+                <Input
+                  id="segundoApellido"
+                  name="segundoApellido"
+                  value={segundoApellido}
+                  onChange={(e) => setSegundoApellido(e.target.value)}
+                  className="mt-1"
+                />
               </div>
 
               <div>
                 <Label htmlFor="genero">
                   Género <Req />
                 </Label>
-                <select
-                  id="genero"
-                  name="genero"
-                  required
-                  defaultValue="M"
-                  className={selectClass}
-                >
+                <select id="genero" name="genero" required defaultValue="M" className={selectClass}>
                   <option value="M">Masculino</option>
                   <option value="F">Femenino</option>
                   <option value="O">Otro</option>
                 </select>
               </div>
             </div>
+
+            {/* Banner de resultado BDUA/RUAF */}
+            {bduaResult && (
+              <div className="mt-3">
+                {bduaResult.kind === 'ok' && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <div className="space-y-0.5">
+                        <p className="font-medium">BDUA/RUAF · consulta OK</p>
+                        <ul className="space-y-0.5">
+                          {bduaResult.nombres && <li>✓ Nombres/apellidos completados</li>}
+                          {bduaResult.eps && <li>✓ EPS: {bduaResult.eps}</li>}
+                          {bduaResult.afp && <li>✓ AFP: {bduaResult.afp}</li>}
+                          {bduaResult.epsMiss && (
+                            <li className="text-amber-800">
+                              ⚠ EPS código {bduaResult.epsMiss} no está en el catálogo local
+                            </li>
+                          )}
+                          {bduaResult.afpMiss && (
+                            <li className="text-amber-800">
+                              ⚠ AFP código {bduaResult.afpMiss} no está en el catálogo local
+                            </li>
+                          )}
+                          {bduaResult.isPensionary === 'SI' && (
+                            <li className="text-violet-800">
+                              ℹ Cotizante marcado como <strong>pensionado</strong> en RUAF
+                            </li>
+                          )}
+                          {!bduaResult.nombres && !bduaResult.eps && !bduaResult.afp && (
+                            <li className="text-slate-600">Sin datos nuevos para autollenar.</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {bduaResult.kind === 'empty' && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                      <div>
+                        <p className="font-medium">Sin registros en BDUA/RUAF</p>
+                        <p className="text-slate-500">
+                          La persona no aparece afiliada al SGSS con ese documento. Continúa
+                          llenando el formulario manualmente.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {bduaResult.kind === 'error' && (
+                  <Alert variant="danger">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{bduaResult.message}</span>
+                  </Alert>
+                )}
+              </div>
+            )}
           </section>
 
           {/* Contacto */}
@@ -469,7 +655,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
                 />
                 <datalist id="depto-list">
-                  {props.departamentos.map((d) => <option key={d.id} value={d.nombre} />)}
+                  {props.departamentos.map((d) => (
+                    <option key={d.id} value={d.nombre} />
+                  ))}
                 </datalist>
                 <input type="hidden" name="departamentoId" value={depto?.id ?? ''} />
               </div>
@@ -485,7 +673,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm disabled:opacity-50"
                 />
                 <datalist id="muni-list">
-                  {depto?.municipios.map((m) => <option key={m.id} value={m.nombre} />)}
+                  {depto?.municipios.map((m) => (
+                    <option key={m.id} value={m.nombre} />
+                  ))}
                 </datalist>
                 <input type="hidden" name="municipioId" value={municipio?.id ?? ''} />
               </div>
@@ -520,8 +710,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             {props.planes.length > planesFiltrados.length && (
               <p className="mt-1 text-[10px] text-slate-400">
                 Se ocultaron {props.planes.length - planesFiltrados.length}{' '}
-                {props.planes.length - planesFiltrados.length === 1 ? 'plan' : 'planes'}{' '}
-                de otro régimen.
+                {props.planes.length - planesFiltrados.length === 1 ? 'plan' : 'planes'} de otro
+                régimen.
               </p>
             )}
             {plan && (
@@ -539,8 +729,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 </p>
                 {!plan.incluyeArl && (
                   <p className="mt-1 text-[10px] text-amber-700">
-                    Sin ARL — se oculta actividad económica y nivel de riesgo.
-                    Empresa planilla sin filtro.
+                    Sin ARL — se oculta actividad económica y nivel de riesgo. Empresa planilla sin
+                    filtro.
                   </p>
                 )}
               </>
@@ -758,11 +948,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           ) : (
             // El nivel sigue siendo obligatorio en BD. Cuando el plan no
             // incluye ARL se envía el valor previo o 'I' como mínimo.
-            <input
-              type="hidden"
-              name="nivelRiesgo"
-              value={initial?.nivelRiesgo ?? 'I'}
-            />
+            <input type="hidden" name="nivelRiesgo" value={initial?.nivelRiesgo ?? 'I'} />
           )}
 
           <div>
@@ -851,13 +1037,12 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {showEps && (
             <div>
-              <Label htmlFor="epsId">
-                EPS {plan?.incluyeEps && <Req />}
-              </Label>
+              <Label htmlFor="epsId">EPS {plan?.incluyeEps && <Req />}</Label>
               <select
                 id="epsId"
                 name="epsId"
-                defaultValue={initial?.epsId ?? ''}
+                value={epsIdState}
+                onChange={(e) => setEpsIdState(e.target.value)}
                 required={!!plan?.incluyeEps}
                 disabled={readOnly}
                 className={selectClass}
@@ -873,13 +1058,12 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           )}
           {showAfp && (
             <div>
-              <Label htmlFor="afpId">
-                AFP {plan?.incluyeAfp && <Req />}
-              </Label>
+              <Label htmlFor="afpId">AFP {plan?.incluyeAfp && <Req />}</Label>
               <select
                 id="afpId"
                 name="afpId"
-                defaultValue={initial?.afpId ?? ''}
+                value={afpIdState}
+                onChange={(e) => setAfpIdState(e.target.value)}
                 required={!!plan?.incluyeAfp}
                 disabled={readOnly}
                 className={selectClass}
@@ -895,9 +1079,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           )}
           {showCcf && (
             <div>
-              <Label htmlFor="ccfId">
-                Caja Compensación {plan?.incluyeCcf && <Req />}
-              </Label>
+              <Label htmlFor="ccfId">Caja Compensación {plan?.incluyeCcf && <Req />}</Label>
               <select
                 id="ccfId"
                 name="ccfId"
@@ -918,9 +1100,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           {/* ARL — sólo para INDEPENDIENTE */}
           {isIndep && (
             <div>
-              <Label htmlFor="arlId">
-                ARL {plan?.incluyeArl && <Req />}
-              </Label>
+              <Label htmlFor="arlId">ARL {plan?.incluyeArl && <Req />}</Label>
               <select
                 id="arlId"
                 name="arlId"
@@ -968,8 +1148,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 />
                 <div className="flex-1">
                   <p className="font-medium">
-                    <span className="font-mono text-xs text-slate-500">{s.codigo}</span>{' '}
-                    {s.nombre}
+                    <span className="font-mono text-xs text-slate-500">{s.codigo}</span> {s.nombre}
                   </p>
                   <p className="text-[11px] text-slate-500">{copFmt.format(s.precio)}</p>
                 </div>
@@ -984,8 +1163,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         <section className={sectionCls}>
           <h3 className={sectionTitle}>Soportes adjuntos</h3>
           <p className="mb-2 text-[11px] text-slate-500">
-            Opcional. PDF, JPG, PNG o WebP hasta 5 MB cada uno. Se enviarán a
-            soporte junto con la solicitud generada automáticamente.
+            Opcional. PDF, JPG, PNG o WebP hasta 5 MB cada uno. Se enviarán a soporte junto con la
+            solicitud generada automáticamente.
           </p>
           <input
             type="file"
@@ -1032,5 +1211,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 }
 
 function Req() {
-  return <span className="text-red-600" aria-label="campo obligatorio">*</span>;
+  return (
+    <span className="text-red-600" aria-label="campo obligatorio">
+      *
+    </span>
+  );
 }
