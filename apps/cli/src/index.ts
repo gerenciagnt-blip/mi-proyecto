@@ -6,6 +6,7 @@ import { resetPasswordCommand } from './commands/reset-password.js';
 import { retentionRunCommand } from './commands/retention-run.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
+import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
 
 const program = new Command();
 
@@ -78,6 +79,13 @@ program
   .description('Marca VENCIDO y bloquea sucursales con cobros fuera de plazo')
   .action(async () => {
     await cobrosBloquearMorososCommand();
+  });
+
+program
+  .command('pagosimple:ping')
+  .description('Verifica credenciales del usuario master de PagoSimple (login + auth_token)')
+  .action(async () => {
+    await pagosimplePingCommand();
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args

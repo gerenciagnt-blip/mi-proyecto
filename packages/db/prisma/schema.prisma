@@ -276,6 +276,12 @@ model Empresa {
   departamentoRef  Departamento? @relation("EmpresaDepto", fields: [departamentoId], references: [id], onDelete: SetNull)
   municipioRef     Municipio?    @relation("EmpresaMuni", fields: [municipioId], references: [id], onDelete: SetNull)
 
+  // PagoSimple — sincronización con operador PILA
+  /** ID del aportante creado en PagoSimple bajo el usuario master. */
+  pagosimpleContributorId String?
+  /** Última vez que se sincronizaron datos con el operador. */
+  pagosimpleSyncedAt      DateTime?
+
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos   EmpresaNivelRiesgo[]
   actividadesPermitidas EmpresaActividad[]
@@ -625,6 +631,10 @@ model Cotizante {
   direccion          String?
   municipioId        String?
   departamentoId     String?
+  /** ID del aportante INDEPENDIENTE creado en PagoSimple (aplica solo a
+      cotizantes con modalidad independiente; null para dependientes). */
+  pagosimpleContributorId String?
+  pagosimpleSyncedAt      DateTime?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -1123,6 +1133,19 @@ model Planilla {
   pagadoEn           DateTime?
   createdById        String?
   observaciones      String?
+
+  // PagoSimple — integración con operador PILA
+  /** payroll_number devuelto por POST /payroll/validate. */
+  pagosimpleNumero             String?
+  /** PIN asignado en marcación asistida (si aplica). */
+  pagosimplePin                String?
+  /** Estado de la última validación: OK, CON_ERRORES, etc. */
+  pagosimpleEstadoValidacion   String?
+  /** URL PSE de pago (se cachea al generarla). */
+  pagosimplePaymentUrl         String?
+  /** Última vez que se sincronizaron datos con el operador. */
+  pagosimpleSyncedAt           DateTime?
+
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
