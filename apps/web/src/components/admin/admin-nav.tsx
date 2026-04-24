@@ -23,6 +23,7 @@ import {
   FileSignature,
   ChevronRight,
   LogOut,
+  DollarSign,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -71,6 +72,7 @@ const NAV: NavItem[] = [
       { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet },
       { label: 'Afiliaciones', href: '/admin/soporte/afiliaciones', icon: FileCheck },
       { label: 'Incapacidades', href: '/admin/soporte/incapacidades', icon: FileText },
+      { label: 'Finanzas', href: '/admin/soporte/finanzas', icon: DollarSign },
     ],
   },
   { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive },
@@ -200,9 +202,7 @@ function NavGroup({
           aria-label={open ? 'Contraer' : 'Expandir'}
           className="flex items-center rounded-r-lg px-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
         >
-          <ChevronRight
-            className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')}
-          />
+          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
         </button>
       </div>
 
