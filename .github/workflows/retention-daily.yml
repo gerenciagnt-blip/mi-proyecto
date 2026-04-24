@@ -47,15 +47,18 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
-      - name: Debug secret shape
+      # Verificación temprana: si el secret DATABASE_URL no empieza con
+      # postgresql:// (porque fue guardado mal), falla con mensaje claro
+      # en vez de dejar que Prisma tire un error críptico de schema.
+      - name: Validate DATABASE_URL shape
         env:
           DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
         run: |
-          echo "length=${#DATABASE_URL_RAW}"
-          echo "first_char_codepoint=$(printf '%s' "$DATABASE_URL_RAW" | head -c 1 | od -An -c | tr -d ' ')"
-          echo "starts_with_postgresql=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^postgresql://')"
-          echo "has_leading_quote=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^\"')"
-          echo "has_leading_space=$(printf '%s' "$DATABASE_URL_RAW" | grep -c '^ ')"
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql:// (longitud=${#DATABASE_URL_RAW}). Re-edita el secret en GitHub → Settings → Secrets."
+            exit 1
+          fi
+          echo "✓ DATABASE_URL tiene forma válida (longitud=${#DATABASE_URL_RAW})"
 
       - name: Run retention job
         working-directory: apps/cli
