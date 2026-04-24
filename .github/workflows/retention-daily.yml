@@ -47,13 +47,18 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
-      # Bypasseamos el script `pnpm cli` porque su wrapper `dotenv -e ../../.env`
-      # no sirve en CI (no hay .env real) y si el secret fue guardado con
-      # comillas, dotenv las interpreta de forma inconsistente. Llamamos a
-      # tsx directamente con el env del runner.
+      # Ejecuta tsx directo con el env del runner. Strip defensivo de
+      # comillas dobles por si el secret fue guardado con ellas (común
+      # cuando se copia literal desde un .env donde vienen entre "").
       - name: Run retention job
         working-directory: apps/cli
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
         run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"    # quita " final si existe
+          DB="${DB#\"}"    # quita " inicial si existe
+          export DATABASE_URL="$DB"
           if [ "${{ inputs.dry }}" = "true" ]; then
             pnpm exec tsx src/index.ts retention:run --dry
           else
