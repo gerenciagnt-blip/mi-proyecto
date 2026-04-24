@@ -52,12 +52,17 @@ jobs:
       # vacío y Prisma falla con "URL must start with postgresql://".
       # Materializamos el .env efímero desde el secret (el runner es de
       # un solo uso, se destruye al finalizar).
+      #
+      # IMPORTANTE: pasamos el secret por env: y lo escribimos con printf %s
+      # (no con echo + ${{ secrets.X }} inline) para evitar que bash
+      # interprete caracteres especiales como & o '.
       - name: Materialize .env from secrets
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+          UP_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
         run: |
-          {
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}"
-            echo "UPLOADS_DIR=${{ secrets.UPLOADS_DIR || './uploads' }}"
-          } > .env
+          printf 'DATABASE_URL=%s\n' "$DB_URL" >  .env
+          printf 'UPLOADS_DIR=%s\n'  "$UP_DIR" >> .env
 
       - name: Run retention job
         run: |
