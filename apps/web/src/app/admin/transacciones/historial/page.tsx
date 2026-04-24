@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { HistorialRow, type HistorialRowData } from './historial-row';
+import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
 export const metadata = { title: 'Historial de transacciones — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -58,11 +59,7 @@ const AGRUPACION_LABEL: Record<string, string> = {
   ASESOR_COMERCIAL: 'Asesor',
 };
 
-export default async function HistorialPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function HistorialPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
   const skip = (page - 1) * PAGE_SIZE;
@@ -72,8 +69,7 @@ export default async function HistorialPage({
   });
 
   const q = sp.q?.trim() ?? '';
-  const tipoFilter =
-    sp.tipo === 'AFILIACION' || sp.tipo === 'MENSUALIDAD' ? sp.tipo : undefined;
+  const tipoFilter = sp.tipo === 'AFILIACION' || sp.tipo === 'MENSUALIDAD' ? sp.tipo : undefined;
   const agrupacionFilter =
     sp.agrupacion === 'INDIVIDUAL' ||
     sp.agrupacion === 'EMPRESA_CC' ||
@@ -198,11 +194,7 @@ export default async function HistorialPage({
     //   numeroPlanilla → procesado
     //   resto         → en proceso
     const estadoDerivado: HistorialRowData['estadoDerivado'] =
-      c.estado === 'ANULADO'
-        ? 'ANULADO'
-        : c.numeroPlanilla
-          ? 'PROCESADO'
-          : 'EN_PROCESO';
+      c.estado === 'ANULADO' ? 'ANULADO' : c.numeroPlanilla ? 'PROCESADO' : 'EN_PROCESO';
 
     // Desglose consolidado de conceptos (suma por tipo de concepto)
     const mapaConceptos = new Map<
@@ -253,12 +245,8 @@ export default async function HistorialPage({
         if (!todasIguales) return null;
         return `${a}-${String(m).padStart(2, '0')}`;
       })(),
-      fechaPago: c.fechaPago
-        ? new Date(c.fechaPago).toLocaleDateString('es-CO')
-        : null,
-      procesadoEn: c.procesadoEn
-        ? new Date(c.procesadoEn).toLocaleString('es-CO')
-        : null,
+      fechaPago: c.fechaPago ? new Date(c.fechaPago).toLocaleDateString('es-CO') : null,
+      procesadoEn: c.procesadoEn ? new Date(c.procesadoEn).toLocaleString('es-CO') : null,
       destinatario,
       destinatarioSub: sub,
       formaPago: c.formaPago,
@@ -269,8 +257,7 @@ export default async function HistorialPage({
       totalGeneral: Number(c.totalGeneral),
       estado: c.estado,
       aplicaNovedadRetiro: c.aplicaNovedadRetiro,
-      valorAdminOverride:
-        c.valorAdminOverride == null ? null : Number(c.valorAdminOverride),
+      valorAdminOverride: c.valorAdminOverride == null ? null : Number(c.valorAdminOverride),
       estadoDerivado,
       conceptos,
       planillas: c.planillas.map((cp) => ({
@@ -405,7 +392,7 @@ export default async function HistorialPage({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {rows.map((r) => (
-                    <HistorialRow key={r.id} row={r} />
+                    <HistorialRow key={r.id} row={r} pagosimpleEnabled={isPagosimpleEnabled()} />
                   ))}
                 </tbody>
               </table>
@@ -415,8 +402,8 @@ export default async function HistorialPage({
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-5 py-2.5">
                 <p className="text-xs text-slate-500">
-                  Página <strong>{pageSafe}</strong> de <strong>{totalPages}</strong>{' '}
-                  · {total} {total === 1 ? 'transacción' : 'transacciones'}
+                  Página <strong>{pageSafe}</strong> de <strong>{totalPages}</strong> · {total}{' '}
+                  {total === 1 ? 'transacción' : 'transacciones'}
                 </p>
                 <div className="flex items-center gap-1">
                   <PageLink
@@ -473,9 +460,7 @@ function PageLink({
       aria-label={ariaLabel}
       className={cn(
         'flex h-7 min-w-7 items-center justify-center rounded px-2 text-xs font-medium',
-        active
-          ? 'bg-brand-blue text-white'
-          : 'text-slate-700 hover:bg-slate-200',
+        active ? 'bg-brand-blue text-white' : 'text-slate-700 hover:bg-slate-200',
       )}
     >
       {children}
@@ -483,15 +468,7 @@ function PageLink({
   );
 }
 
-function PageRange({
-  current,
-  total,
-  sp,
-}: {
-  current: number;
-  total: number;
-  sp: SP;
-}) {
+function PageRange({ current, total, sp }: { current: number; total: number; sp: SP }) {
   // Ventana de 5 páginas alrededor de la actual
   const pages: number[] = [];
   const start = Math.max(1, current - 2);
@@ -501,11 +478,7 @@ function PageRange({
   return (
     <>
       {pages.map((p) => (
-        <PageLink
-          key={p}
-          href={buildHref({ page: String(p) }, sp)}
-          active={p === current}
-        >
+        <PageLink key={p} href={buildHref({ page: String(p) }, sp)} active={p === current}>
           {p}
         </PageLink>
       ))}
