@@ -19,6 +19,8 @@ import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
 import { MarcarPagadaDialog } from './marcar-pagada-dialog';
+import { PagosimpleCell } from './pagosimple-cell';
+import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
 export const metadata = { title: 'Planos PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -61,15 +63,10 @@ const ESTADO_LABEL: Record<EstadoPlanilla, string> = {
   ANULADA: 'Anulada',
 };
 
-export default async function PlanosPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function PlanosPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const tabRaw = sp.tab;
-  const tab: Tab =
-    tabRaw === 'guardado' || tabRaw === 'pagadas' ? tabRaw : 'consolidado';
+  const tab: Tab = tabRaw === 'guardado' || tabRaw === 'pagadas' ? tabRaw : 'consolidado';
   const sucursalFilter = sp.sucursalId?.trim() || '';
 
   // Período vigente = mes en curso
@@ -109,9 +106,7 @@ export default async function PlanosPage({
         ? sucursalFilter
         : null;
 
-  const planillaScope = sucursalAplicada
-    ? { sucursalId: sucursalAplicada }
-    : {};
+  const planillaScope = sucursalAplicada ? { sucursalId: sucursalAplicada } : {};
   const compScopeOR: Prisma.ComprobanteWhereInput[] = sucursalAplicada
     ? [
         { cotizante: { sucursalId: sucursalAplicada } },
@@ -160,9 +155,7 @@ export default async function PlanosPage({
     }),
   ]);
 
-  const qs = sucursalFilter
-    ? `&sucursalId=${encodeURIComponent(sucursalFilter)}`
-    : '';
+  const qs = sucursalFilter ? `&sucursalId=${encodeURIComponent(sucursalFilter)}` : '';
 
   return (
     <div className="space-y-6">
@@ -198,21 +191,13 @@ export default async function PlanosPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
           Período contable en curso:{' '}
-          <span className="font-medium text-slate-700">
-            {mesLabel(periodo.anio, periodo.mes)}
-          </span>
+          <span className="font-medium text-slate-700">{mesLabel(periodo.anio, periodo.mes)}</span>
         </p>
 
         {esStaff && (
-          <form
-            method="get"
-            className="flex flex-wrap items-center gap-2 text-xs"
-          >
+          <form method="get" className="flex flex-wrap items-center gap-2 text-xs">
             <input type="hidden" name="tab" value={tab} />
-            <label
-              htmlFor="sucursalId"
-              className="font-medium text-slate-600"
-            >
+            <label htmlFor="sucursalId" className="font-medium text-slate-600">
               Sucursal / dueño aliado:
             </label>
             <select
@@ -262,9 +247,7 @@ export default async function PlanosPage({
         />
       )}
       {tab === 'pagadas' && (
-        <TabPagadas
-          staffSucursalFilter={esStaff ? sucursalFilter || null : null}
-        />
+        <TabPagadas staffSucursalFilter={esStaff ? sucursalFilter || null : null} />
       )}
     </div>
   );
@@ -280,8 +263,8 @@ function Header({ tab: _tab }: { tab: Tab }) {
         Planos PILA
       </h1>
       <p className="mt-1 text-sm text-slate-500">
-        Agrupa los comprobantes facturados en planillas por empresa (tipo E)
-        o por independiente (tipo I), listas para generar el archivo plano.
+        Agrupa los comprobantes facturados en planillas por empresa (tipo E) o por independiente
+        (tipo I), listas para generar el archivo plano.
       </p>
     </header>
   );
@@ -318,9 +301,7 @@ function TabLink({
         <span
           className={cn(
             'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-            active
-              ? 'bg-brand-blue/10 text-brand-blue'
-              : 'bg-slate-100 text-slate-600',
+            active ? 'bg-brand-blue/10 text-brand-blue' : 'bg-slate-100 text-slate-600',
           )}
         >
           {count}
@@ -343,9 +324,7 @@ async function TabConsolidado({
   // Staff puede filtrar explícitamente por sucursal.
   const scope = await getUserScope();
   const sucursalAplicada: string | null =
-    scope?.tipo === 'SUCURSAL'
-      ? scope.sucursalId
-      : staffSucursalFilter;
+    scope?.tipo === 'SUCURSAL' ? scope.sucursalId : staffSucursalFilter;
   const compScopeOR: Prisma.ComprobanteWhereInput[] = sucursalAplicada
     ? [
         { cotizante: { sucursalId: sucursalAplicada } },
@@ -402,9 +381,11 @@ async function TabConsolidado({
       <Alert variant="info">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          No hay comprobantes pendientes de planilla en este período.
-          Factura cotizantes en <Link href="/admin/transacciones" className="underline">Transacción</Link>
-          {' '}y vuelve aquí cuando estén listos.
+          No hay comprobantes pendientes de planilla en este período. Factura cotizantes en{' '}
+          <Link href="/admin/transacciones" className="underline">
+            Transacción
+          </Link>{' '}
+          y vuelve aquí cuando estén listos.
         </span>
       </Alert>
     );
@@ -518,20 +499,15 @@ async function TabConsolidado({
       </div>
 
       {/* Botón generar */}
-      <GenerarPlanillasButton
-        periodoId={periodoId}
-        disabled={gruposOrdenados.length === 0}
-      />
+      <GenerarPlanillasButton periodoId={periodoId} disabled={gruposOrdenados.length === 0} />
 
       {/* Tabla preview */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 bg-slate-50 px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-700">
-            Preview de agrupación
-          </h2>
+          <h2 className="text-sm font-semibold text-slate-700">Preview de agrupación</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Al generar se crearán {gruposOrdenados.length} planillas.
-            Los comprobantes quedarán enlazados y pasarán a la pestaña Guardado.
+            Al generar se crearán {gruposOrdenados.length} planillas. Los comprobantes quedarán
+            enlazados y pasarán a la pestaña Guardado.
           </p>
         </header>
 
@@ -554,31 +530,26 @@ async function TabConsolidado({
                     <TipoBadge tipo={g.tipo} />
                   </td>
                   <td className="px-4 py-2.5">
-                    <p className="font-medium text-slate-900">
-                      {g.aportanteLabel}
-                    </p>
+                    <p className="font-medium text-slate-900">{g.aportanteLabel}</p>
                     {g.aportanteSub && (
-                      <p className="font-mono text-[10px] text-slate-500">
-                        {g.aportanteSub}
-                      </p>
+                      <p className="font-mono text-[10px] text-slate-500">{g.aportanteSub}</p>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-600">
                     {mesLabel(g.periodoAporteAnio, g.periodoAporteMes)}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs">
-                    {g.cotizantes.size}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs">
-                    {g.count}
-                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{g.cotizantes.size}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{g.count}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
                     {formatCOP(g.total)}
                   </td>
                 </tr>
               ))}
               <tr className="bg-slate-50 font-medium">
-                <td colSpan={5} className="px-4 py-2.5 text-right text-xs uppercase tracking-wider text-slate-600">
+                <td
+                  colSpan={5}
+                  className="px-4 py-2.5 text-right text-xs uppercase tracking-wider text-slate-600"
+                >
                   Total general
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono text-base font-bold text-brand-blue-dark">
@@ -613,18 +584,8 @@ async function TabGuardado({
 
 // ================== Tab Pagadas =====================
 
-async function TabPagadas({
-  staffSucursalFilter,
-}: {
-  staffSucursalFilter: string | null;
-}) {
-  return (
-    <PlanillasTable
-      estado="PAGADA"
-      showPeriodo
-      staffSucursalFilter={staffSucursalFilter}
-    />
-  );
+async function TabPagadas({ staffSucursalFilter }: { staffSucursalFilter: string | null }) {
+  return <PlanillasTable estado="PAGADA" showPeriodo staffSucursalFilter={staffSucursalFilter} />;
 }
 
 // ================== Planillas table =====================
@@ -644,12 +605,8 @@ async function PlanillasTable({
   // Staff puede filtrar explícitamente por sucursal.
   const scope = await getUserScope();
   const sucursalAplicada: string | null =
-    scope?.tipo === 'SUCURSAL'
-      ? scope.sucursalId
-      : staffSucursalFilter;
-  const planillaScope = sucursalAplicada
-    ? { sucursalId: sucursalAplicada }
-    : {};
+    scope?.tipo === 'SUCURSAL' ? scope.sucursalId : staffSucursalFilter;
+  const planillaScope = sucursalAplicada ? { sucursalId: sucursalAplicada } : {};
 
   const planillas = await prisma.planilla.findMany({
     where: {
@@ -672,6 +629,8 @@ async function PlanillasTable({
       _count: { select: { comprobantes: true } },
     },
   });
+
+  const psEnabled = isPagosimpleEnabled();
 
   if (planillas.length === 0) {
     return (
@@ -702,6 +661,9 @@ async function PlanillasTable({
               <th className="px-4 py-2 text-right">Total</th>
               <th className="px-4 py-2">Estado</th>
               {estado === 'PAGADA' && <th className="px-4 py-2">N° planilla</th>}
+              {psEnabled && estado === 'CONSOLIDADO' && (
+                <th className="px-4 py-2 text-right">PagoSimple</th>
+              )}
               <th className="px-4 py-2 text-right">Acciones</th>
             </tr>
           </thead>
@@ -718,20 +680,14 @@ async function PlanillasTable({
               }
               return (
                 <tr key={p.id}>
-                  <td className="px-4 py-2.5 font-mono text-xs font-semibold">
-                    {p.consecutivo}
-                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs font-semibold">{p.consecutivo}</td>
                   <td className="px-4 py-2.5">
                     <TipoBadge tipo={p.tipoPlanilla} />
                   </td>
                   <td className="px-4 py-2.5">
-                    <p className="font-medium text-slate-900">
-                      {aportanteLabel}
-                    </p>
+                    <p className="font-medium text-slate-900">{aportanteLabel}</p>
                     {aportanteSub && (
-                      <p className="font-mono text-[10px] text-slate-500">
-                        {aportanteSub}
-                      </p>
+                      <p className="font-mono text-[10px] text-slate-500">{aportanteSub}</p>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-600">
@@ -759,6 +715,16 @@ async function PlanillasTable({
                       {p.numeroPlanillaExt ?? '—'}
                     </td>
                   )}
+                  {psEnabled && estado === 'CONSOLIDADO' && (
+                    <td className="px-4 py-2.5">
+                      <PagosimpleCell
+                        planillaId={p.id}
+                        pagosimpleNumero={p.pagosimpleNumero}
+                        pagosimpleEstadoValidacion={p.pagosimpleEstadoValidacion}
+                        pagosimplePaymentUrl={p.pagosimplePaymentUrl}
+                      />
+                    </td>
+                  )}
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-2">
                       <a
@@ -771,10 +737,7 @@ async function PlanillasTable({
                       </a>
                       {estado === 'CONSOLIDADO' && (
                         <>
-                          <MarcarPagadaDialog
-                            planillaId={p.id}
-                            consecutivo={p.consecutivo}
-                          />
+                          <MarcarPagadaDialog planillaId={p.id} consecutivo={p.consecutivo} />
                           <AnularPlanillaButton planillaId={p.id} />
                         </>
                       )}
@@ -792,20 +755,10 @@ async function PlanillasTable({
 
 // ================== Stats helpers =====================
 
-function StatBox({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
+function StatBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
       <p className="mt-1 font-mono text-xl font-bold text-slate-900">{value}</p>
       {sub && <p className="mt-0.5 text-[10px] text-slate-500">{sub}</p>}
     </div>
