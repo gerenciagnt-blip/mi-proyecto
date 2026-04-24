@@ -1,0 +1,56 @@
+name: Cobros — bloqueo diario de morosos
+
+# Corre cada día a las 05:00 UTC (≈ 00:00 Colombia — inicio del día).
+# A partir del día 16 del mes, los cobros con fechaLimite < now pasan a
+# VENCIDO y bloquean la sucursal (bloqueadaPorMora=true).
+# Disparable manualmente para pruebas.
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  bloquear-morosos:
+    name: Bloquear sucursales con cobros vencidos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no es válido."
+            exit 1
+          fi
+
+      - name: Run bloquear-morosos
+        working-directory: apps/cli
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"; DB="${DB#\"}"; DB="${DB## }"; DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          pnpm exec tsx src/index.ts cobros:bloquear-morosos

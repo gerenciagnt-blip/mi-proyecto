@@ -5,6 +5,7 @@ import { adminCreateCommand } from './commands/admin-create.js';
 import { resetPasswordCommand } from './commands/reset-password.js';
 import { retentionRunCommand } from './commands/retention-run.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
+import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 
 const program = new Command();
 
@@ -62,6 +63,21 @@ program
   .option('--force', 'Actualiza datos aunque existan')
   .action(async (options: { force?: boolean }) => {
     await seedTestDataCommand(options);
+  });
+
+program
+  .command('cobros:generar')
+  .description('Genera CobroAliado del período (default: mes anterior)')
+  .option('--periodo <yyyy-mm>', 'Período explícito (ej. 2026-03)')
+  .action(async (options: { periodo?: string }) => {
+    await cobrosGenerarCommand(options);
+  });
+
+program
+  .command('cobros:bloquear-morosos')
+  .description('Marca VENCIDO y bloquea sucursales con cobros fuera de plazo')
+  .action(async () => {
+    await cobrosBloquearMorososCommand();
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args

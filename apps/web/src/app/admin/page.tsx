@@ -19,6 +19,7 @@ import { auth } from '@/auth';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { esStaff } from '@/lib/auth-helpers';
 import { formatCOP } from '@/lib/format';
+import { CobrosPendientesBanner } from './cobros-pendientes-banner';
 
 export const metadata = { title: 'Administración — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -124,7 +125,10 @@ async function StaffHub() {
         <ul className="mt-3 space-y-1 text-sm text-slate-700">
           <li>• Cargar los catálogos base (ARL, CIIU, tipos cotizante) antes de crear empresas</li>
           <li>• Crear sucursales y sus usuarios aliados</li>
-          <li>• Configurar la pestaña PILA de cada empresa (niveles, actividades, cotizantes permitidos)</li>
+          <li>
+            • Configurar la pestaña PILA de cada empresa (niveles, actividades, cotizantes
+            permitidos)
+          </li>
         </ul>
       </section>
     </div>
@@ -145,6 +149,7 @@ async function AliadoDashboard() {
     incapacidadesPendientes,
     incapacidadesPagadas,
     sucursal,
+    cobrosPendientes,
   ] = await Promise.all([
     prisma.cotizante.count({
       where: { sucursalId, afiliaciones: { some: { estado: 'ACTIVA' } } },
@@ -165,7 +170,15 @@ async function AliadoDashboard() {
     }),
     prisma.sucursal.findUnique({
       where: { id: sucursalId },
-      select: { codigo: true, nombre: true },
+      select: { codigo: true, nombre: true, bloqueadaPorMora: true },
+    }),
+    // Cobros PENDIENTES o VENCIDOS del aliado (para el banner)
+    prisma.cobroAliado.findMany({
+      where: { sucursalId, estado: { in: ['PENDIENTE', 'VENCIDO'] } },
+      orderBy: { fechaLimite: 'asc' },
+      include: {
+        periodo: { select: { anio: true, mes: true } },
+      },
     }),
   ]);
 
@@ -243,6 +256,22 @@ async function AliadoDashboard() {
         </p>
       </header>
 
+      {/* Banner de cobros pendientes / vencidos */}
+      {cobrosPendientes.length > 0 && (
+        <CobrosPendientesBanner
+          cobros={cobrosPendientes.map((c) => ({
+            id: c.id,
+            consecutivo: c.consecutivo,
+            total: Number(c.totalCobro),
+            fechaLimite: c.fechaLimite,
+            estado: c.estado as 'PENDIENTE' | 'VENCIDO',
+            periodoAnio: c.periodo.anio,
+            periodoMes: c.periodo.mes,
+          }))}
+          bloqueadaPorMora={sucursal?.bloqueadaPorMora ?? false}
+        />
+      )}
+
       {/* Stats aliado */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => {
@@ -303,8 +332,14 @@ async function AliadoDashboard() {
         </h2>
         <ul className="mt-3 space-y-1 text-sm text-slate-700">
           <li>• Revisa cartera real para evitar intereses de mora con las entidades SGSS.</li>
-          <li>• Radica la incapacidad adjuntando al menos el certificado original; los demás documentos son deseables.</li>
-          <li>• Los documentos de incapacidad se conservan 120 días en el sistema; después queda el registro como evidencia.</li>
+          <li>
+            • Radica la incapacidad adjuntando al menos el certificado original; los demás
+            documentos son deseables.
+          </li>
+          <li>
+            • Los documentos de incapacidad se conservan 120 días en el sistema; después queda el
+            registro como evidencia.
+          </li>
         </ul>
       </section>
     </div>

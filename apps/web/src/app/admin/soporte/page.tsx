@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { LifeBuoy, Wallet, HeartPulse, FileText, ArrowRight } from 'lucide-react';
+import { LifeBuoy, Wallet, HeartPulse, FileText, DollarSign, ArrowRight } from 'lucide-react';
 
 export const metadata = { title: 'Soporte — Sistema PILA' };
 
@@ -26,6 +26,13 @@ export default function SoportePage() {
       description: 'Radicaciones de incapacidad enviadas por los aliados.',
       tone: 'text-emerald-700 bg-emerald-50',
     },
+    {
+      href: '/admin/soporte/finanzas',
+      icon: DollarSign,
+      label: 'Finanzas',
+      description: 'Cobros a aliados + movimientos bancarios + detalle pagos.',
+      tone: 'text-amber-700 bg-amber-50',
+    },
   ];
 
   return (
@@ -47,12 +54,12 @@ export default function SoportePage() {
             href={it.href}
             className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue hover:shadow-brand"
           >
-            <div className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${it.tone}`}>
+            <div
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${it.tone}`}
+            >
               <it.icon className="h-5 w-5" />
             </div>
-            <h2 className="mt-3 font-heading text-lg font-semibold text-slate-900">
-              {it.label}
-            </h2>
+            <h2 className="mt-3 font-heading text-lg font-semibold text-slate-900">{it.label}</h2>
             <p className="mt-1 text-xs text-slate-500">{it.description}</p>
             <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-blue transition group-hover:gap-2">
               Abrir <ArrowRight className="h-3.5 w-3.5" />
