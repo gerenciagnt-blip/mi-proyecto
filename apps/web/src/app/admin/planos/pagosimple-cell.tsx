@@ -3,31 +3,27 @@
 /**
  * Celda compacta que se muestra en la tabla de planillas tab "Guardado":
  *
- *   - Sin enviar         → botón [Subir a PagoSimple]
- *   - Enviada pendiente  → badge "N° 12345 · pendiente" + botón [Validar]
+ *   - Sin validar        → botón [Validar en PagoSimple]
+ *                          (sube el plano y valida en una sola llamada)
  *   - Validada OK        → badge verde + botón [Pagar PSE]
- *   - Con errores        → badge ámbar "Con errores" + botón [Ver errores]
- *   - Re-ejecutar        → cada acción es reintentable
+ *   - Con errores        → badge ámbar + botón [Revalidar]
  *
- * Los tres server actions son secuenciales; esta celda orquesta la
- * progresión visual sin recargar la página (useTransition + revalidate
- * implícito del router-action).
+ * Cada acción es reintentable.
  */
 
 import { useState, useTransition } from 'react';
 import {
-  Upload,
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
   ExternalLink,
   Loader2,
   RefreshCw,
+  CloudUpload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  subirPlanillaPagosimpleAction,
   validarPlanillaPagosimpleAction,
   obtenerPagoPsePagosimpleAction,
 } from './pagosimple-action';
@@ -59,32 +55,20 @@ export function PagosimpleCell(props: PagosimpleCellProps) {
     setTimeout(() => setFlash(null), 6000);
   };
 
-  const handleSubir = () => {
-    startTransition(async () => {
-      const res = await subirPlanillaPagosimpleAction(props.planillaId);
-      if (res.ok) {
-        setNumero(res.payrollNumber);
-        setEstado('PENDIENTE');
-        setPayUrl(null);
-        say(`Subida OK · N° ${res.payrollNumber}`);
-      } else {
-        say(res.error, 'err');
-      }
-    });
-  };
-
   const handleValidar = () => {
     startTransition(async () => {
       const res = await validarPlanillaPagosimpleAction(props.planillaId);
       if (res.ok) {
+        setNumero(res.payrollNumber);
         setEstado(res.validationStatus);
+        setPayUrl(null);
         const errs =
           res.response.payroll_validations?.reduce(
             (s, p) => s + (p.number_errors_company ?? 0) + (p.number_errors_contributor ?? 0),
             0,
           ) ?? 0;
-        if (res.validationStatus === 'OK') say('Validación OK');
-        else if (errs > 0) say(`Validación con ${errs} errores — revisa en PagoSimple`, 'err');
+        if (res.validationStatus === 'OK') say(`Validación OK · N° ${res.payrollNumber}`);
+        else if (errs > 0) say(`${errs} errores — N° ${res.payrollNumber}`, 'err');
         else say(`Validación: ${res.validationStatus}`, 'err');
       } else {
         say(res.error, 'err');
@@ -105,55 +89,29 @@ export function PagosimpleCell(props: PagosimpleCellProps) {
   };
 
   // ------ Render según estado ------
-  const sinEnviar = !numero;
-  const enviada = numero && !estado;
-  const pendiente = numero && estado === 'PENDIENTE';
+  const sinValidar = !numero;
   const validadaOk = numero && estado === 'OK';
-  const conErrores =
-    numero && estado && estado !== 'OK' && estado !== 'PENDIENTE' && estado.toUpperCase() !== 'OK';
+  const conErrores = numero && estado && estado !== 'OK' && estado.toUpperCase() !== 'OK';
 
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-1.5">
-        {sinEnviar && (
+        {sinValidar && (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleSubir}
+            onClick={handleValidar}
             disabled={pending}
-            title="Sube el plano a PagoSimple bajo el usuario master"
+            title="Sube el plano a PagoSimple y dispara las validaciones SGSS"
           >
             {pending ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Upload className="h-3.5 w-3.5" />
+              <CloudUpload className="h-3.5 w-3.5" />
             )}
-            <span>Subir</span>
+            <span>Validar en PagoSimple</span>
           </Button>
-        )}
-
-        {(enviada || pendiente) && (
-          <>
-            <Badge kind="pendiente">
-              N° {numero} · {estado === 'PENDIENTE' ? 'sin validar' : 'enviada'}
-            </Badge>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleValidar}
-              disabled={pending}
-              title="Dispara las validaciones del operador sobre esta planilla"
-            >
-              {pending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              )}
-              <span>Validar</span>
-            </Button>
-          </>
         )}
 
         {validadaOk && (

@@ -141,14 +141,15 @@ export async function pagosimplePingCommand(): Promise<void> {
   console.log(`      session_token: ${truncate(login.session_token)}`);
   console.log('');
 
-  // Paso 2 · auth_token del master
+  // Paso 2 · auth_token del master (opcional, puede no existir aún como aportante)
   const authPath =
     `/auth/${encodeURIComponent(cfg.masterNit)}` +
     `/${encodeURIComponent(cfg.masterDocumentType)}` +
     `/${encodeURIComponent(cfg.masterDocument)}`;
-  console.log(`→ GET ${authPath}`);
+  console.log(`→ GET ${authPath}  (opcional)`);
   const t1 = Date.now();
-  let auth: AuthData;
+  let auth: AuthData | null = null;
+  let authError: string | null = null;
   try {
     auth = await apiCall<AuthData>(cfg.baseUrl, authPath, {
       method: 'GET',
@@ -159,15 +160,25 @@ export async function pagosimplePingCommand(): Promise<void> {
       },
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`   ❌ fallo en auth: ${msg}`);
-    process.exit(1);
+    authError = err instanceof Error ? err.message : String(err);
   }
   const dtAuth = Date.now() - t1;
-  console.log(`   ✅ OK (${dtAuth} ms)`);
-  console.log(`      auth_token: ${truncate(auth.auth_token)}`);
-  console.log('');
+  if (auth) {
+    console.log(`   ✅ OK (${dtAuth} ms)`);
+    console.log(`      auth_token: ${truncate(auth.auth_token)}`);
+    console.log('');
+    console.log(`🎉 PagoSimple responde correctamente (total ${dtLogin + dtAuth} ms).`);
+    console.log('   El master ya está creado como aportante — listo para todo.');
+    return;
+  }
 
-  console.log(`🎉 PagoSimple responde correctamente (total ${dtLogin + dtAuth} ms).`);
-  console.log('   El usuario master está listo para consumir el resto de APIs.');
+  console.log(`   ⚠  ${authError ?? 'falló'}`);
+  console.log('');
+  console.log(`✅ Login OK (${dtLogin} ms). El master se autentica correctamente.`);
+  console.log('');
+  console.log('ℹ  El master aún NO está creado como aportante en PagoSimple.');
+  console.log('   Esto es normal en una integración nueva. Próximo paso:');
+  console.log('     1. Crear una empresa en /admin/empresas con los datos del master');
+  console.log('     2. Sincronizarla con PagoSimple desde el botón en el detalle');
+  console.log('   Una vez creado el aportante, el resto de endpoints funcionarán.');
 }

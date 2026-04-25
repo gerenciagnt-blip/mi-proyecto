@@ -85,14 +85,38 @@ export async function pagosimpleRequest<T>(
   }
   clearTimeout(timeout);
 
+  // Leemos el body como texto primero — así podemos hacer diagnóstico aun
+  // cuando el response no es JSON o tiene una shape distinta a la estándar.
+  const rawBody = await resp.text().catch(() => '');
+
   let json: PagosimpleResponse<T> | null = null;
   try {
-    json = (await resp.json()) as PagosimpleResponse<T>;
+    json = JSON.parse(rawBody) as PagosimpleResponse<T>;
   } catch {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[pagosimple] ${method} ${path} — non-JSON HTTP ${resp.status}: ${rawBody.slice(0, 300)}`,
+    );
     throw new PagosimpleError(
       resp.status,
       `Respuesta no-JSON de PagoSimple (HTTP ${resp.status})`,
-      await resp.text().catch(() => ''),
+      rawBody.slice(0, 500),
+      path,
+    );
+  }
+
+  // Validamos que la respuesta tenga el envelope estándar. Si no lo tiene
+  // (success undefined), la API está devolviendo un error con otra shape
+  // (típicamente Spring boot / 4xx con {message, status, error, ...}).
+  if (typeof json?.success !== 'boolean') {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[pagosimple] ${method} ${path} — HTTP ${resp.status} unexpected shape: ${JSON.stringify(json).slice(0, 400)}`,
+    );
+    throw new PagosimpleError(
+      resp.status,
+      `PagoSimple respondió con HTTP ${resp.status} y formato inesperado: ${JSON.stringify(json).slice(0, 200)}`,
+      rawBody.slice(0, 500),
       path,
     );
   }
@@ -100,7 +124,7 @@ export async function pagosimpleRequest<T>(
   if (!json.success) {
     // eslint-disable-next-line no-console
     console.error(
-      `[pagosimple] ${method} ${path} — success=false code=${json.code} msg="${json.message}"`,
+      `[pagosimple] ${method} ${path} — success=false code=${json.code} msg="${json.message}" desc="${json.description}"`,
     );
     throw new PagosimpleError(json.code, json.message, json.description, path);
   }

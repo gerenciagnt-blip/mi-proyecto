@@ -1,12 +1,13 @@
 /**
- * Integración PagoSimple — comprobantes oficiales (API 5 · Vouchers).
+ * Integración PagoSimple — comprobantes oficiales (API Vouchers).
  *
  * Tras pagar una planilla en PSE, el operador genera el comprobante
  * oficial como PDF. Este módulo pide ese PDF por número de documento +
  * periodo para mostrarlo al usuario desde el historial de transacciones.
  *
- * Endpoint usado:
- *   POST /voucher/report-types
+ * Endpoint (Swagger oficial):
+ *   POST /vouchers/report-types  (vouchers en plural)
+ *     headers: nit + token  (NO session_token ni auth_token)
  *     body: { document_type, document, quote_period, report_type, payroll_number? }
  *     data: string (PDF en base64, sin el prefijo `data:`)
  *
@@ -21,7 +22,8 @@
 
 import { prisma } from '@pila/db';
 import { pagosimpleRequest } from './client';
-import { getFullAuthHeaders } from './auth';
+import { getSessionTokens } from './auth';
+import { requirePagosimpleConfig } from './config';
 import type { VoucherPdfBase64, VoucherReportTypesRequest } from './types';
 
 export type VoucherFetchResult =
@@ -120,10 +122,12 @@ export async function fetchComprobantePagoSimple(
     report_type: reportType,
   };
 
-  const headers = await getFullAuthHeaders();
+  const { token } = await getSessionTokens();
+  const cfg = requirePagosimpleConfig();
+  const headers = { nit: cfg.masterNit, token };
 
   try {
-    const base64 = await pagosimpleRequest<VoucherPdfBase64>('/voucher/report-types', {
+    const base64 = await pagosimpleRequest<VoucherPdfBase64>('/vouchers/report-types', {
       method: 'POST',
       headers,
       body,

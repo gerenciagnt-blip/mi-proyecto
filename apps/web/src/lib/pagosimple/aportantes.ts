@@ -26,7 +26,7 @@
 import { prisma } from '@pila/db';
 import type { TipoDocumento } from '@pila/db';
 import { pagosimpleRequest } from './client';
-import { getFullAuthHeaders } from './auth';
+import { getBaseAuthHeaders, getFullAuthHeaders } from './auth';
 import type {
   ContactInformation,
   ContributorIndependentRequest,
@@ -200,11 +200,18 @@ export async function syncEmpresaAsContributor(empresaId: string): Promise<SyncE
     extra_validation: EXTRA_VALIDATION_DEFAULT,
   };
 
-  const headers = await getFullAuthHeaders();
+  // Swagger PagoSimple — corporate:
+  //   POST /contributor/corporate    (crear)  → headers: nit+token+session
+  //   PUT  /contributor/corporate    (actualizar) → +auth_token, id va en body
   const isUpdate = Boolean(empresa.pagosimpleContributorId);
-  const path = isUpdate
-    ? `/contributor/corporate/${encodeURIComponent(empresa.pagosimpleContributorId!)}`
-    : '/contributor/corporate';
+  const path = '/contributor/corporate';
+  const headers = isUpdate
+    ? await getFullAuthHeaders({
+        id: empresa.nit,
+        documentType: 'NI',
+        document: empresa.nit,
+      })
+    : await getBaseAuthHeaders();
 
   try {
     const data = await pagosimpleRequest<{ id?: string } | string>(path, {
@@ -331,11 +338,19 @@ export async function syncCotizanteIndependienteAsContributor(
     extra_validation: EXTRA_VALIDATION_DEFAULT,
   };
 
-  const headers = await getFullAuthHeaders();
+  // Swagger PagoSimple — independent:
+  //   POST /contributor      (crear, NO /independent en el path; el body
+  //                          discrimina por type_person_id=1 / legal_nature)
+  //   PUT  /contributor      (actualizar; +auth_token, id va en body)
   const isUpdate = Boolean(cot.pagosimpleContributorId);
-  const path = isUpdate
-    ? `/contributor/independent/${encodeURIComponent(cot.pagosimpleContributorId!)}`
-    : '/contributor/independent';
+  const path = '/contributor';
+  const headers = isUpdate
+    ? await getFullAuthHeaders({
+        id: cot.numeroDocumento,
+        documentType: mapTipoDocumento(cot.tipoDocumento),
+        document: cot.numeroDocumento,
+      })
+    : await getBaseAuthHeaders();
 
   try {
     const data = await pagosimpleRequest<{ id?: string } | string>(path, {

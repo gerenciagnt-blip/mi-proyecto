@@ -3,11 +3,7 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
-import {
-  getUserScope,
-  scopeWhereOpt,
-  scopeWhereViaCotizante,
-} from '@/lib/sucursal-scope';
+import { getUserScope, scopeWhereOpt, scopeWhereViaCotizante } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { NuevaAfiliacionButton } from './afiliacion-dialog';
 import { AfiliacionesTable, type AfiliacionRow } from './afiliaciones-table';
@@ -36,28 +32,19 @@ function dateInput(d: Date | null | undefined) {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function BaseDatosPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function BaseDatosPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  const estadoFilter =
-    sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
+  const estadoFilter = sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
   const modalidadFilter =
-    sp.modalidad === 'DEPENDIENTE' || sp.modalidad === 'INDEPENDIENTE'
-      ? sp.modalidad
-      : undefined;
+    sp.modalidad === 'DEPENDIENTE' || sp.modalidad === 'INDEPENDIENTE' ? sp.modalidad : undefined;
   const q = sp.q?.trim() ?? '';
 
   // Scope por sucursal: SUCURSAL sólo ve afiliaciones cuyo cotizante
   // pertenece a su sucursal; STAFF (ADMIN/SOPORTE) ve todo.
   const scope = await getUserScope();
   const scopeOpt = await scopeWhereOpt();
-  const cotizanteScopeSolo =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
-  const cuentaCobroScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cotizanteScopeSolo = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cuentaCobroScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
 
   const whereAfiliaciones: Prisma.AfiliacionWhereInput = {};
   if (estadoFilter) whereAfiliaciones.estado = estadoFilter;
@@ -115,17 +102,13 @@ export default async function BaseDatosPage({
     prisma.afiliacion.count({
       where: {
         estado: 'ACTIVA',
-        ...(Object.keys(cotizanteScopeSolo).length > 0
-          ? { cotizante: cotizanteScopeSolo }
-          : {}),
+        ...(Object.keys(cotizanteScopeSolo).length > 0 ? { cotizante: cotizanteScopeSolo } : {}),
       },
     }),
     prisma.afiliacion.count({
       where: {
         estado: 'INACTIVA',
-        ...(Object.keys(cotizanteScopeSolo).length > 0
-          ? { cotizante: cotizanteScopeSolo }
-          : {}),
+        ...(Object.keys(cotizanteScopeSolo).length > 0 ? { cotizante: cotizanteScopeSolo } : {}),
       },
     }),
     prisma.cotizante.count({ where: cotizanteScopeSolo }),
@@ -162,7 +145,7 @@ export default async function BaseDatosPage({
     prisma.entidadSgss.findMany({
       where: { active: true },
       orderBy: [{ tipo: 'asc' }, { codigo: 'asc' }],
-      select: { id: true, tipo: true, codigo: true, nombre: true },
+      select: { id: true, tipo: true, codigo: true, nombre: true, codigoMinSalud: true },
     }),
     prisma.cuentaCobro.findMany({
       where: { active: true, ...cuentaCobroScope },
@@ -223,16 +206,36 @@ export default async function BaseDatosPage({
 
   const eps = entidades
     .filter((e) => e.tipo === 'EPS')
-    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+    .map((e) => ({
+      id: e.id,
+      codigo: e.codigo,
+      nombre: e.nombre,
+      codigoMinSalud: e.codigoMinSalud,
+    }));
   const afp = entidades
     .filter((e) => e.tipo === 'AFP')
-    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+    .map((e) => ({
+      id: e.id,
+      codigo: e.codigo,
+      nombre: e.nombre,
+      codigoMinSalud: e.codigoMinSalud,
+    }));
   const arl = entidades
     .filter((e) => e.tipo === 'ARL')
-    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+    .map((e) => ({
+      id: e.id,
+      codigo: e.codigo,
+      nombre: e.nombre,
+      codigoMinSalud: e.codigoMinSalud,
+    }));
   const ccf = entidades
     .filter((e) => e.tipo === 'CCF')
-    .map((e) => ({ id: e.id, codigo: e.codigo, nombre: e.nombre }));
+    .map((e) => ({
+      id: e.id,
+      codigo: e.codigo,
+      nombre: e.nombre,
+      codigoMinSalud: e.codigoMinSalud,
+    }));
 
   const serviciosOpts = servicios.map((s) => ({
     id: s.id,
@@ -347,7 +350,11 @@ export default async function BaseDatosPage({
   const modalidadChips: { label: string; value: SP['modalidad']; active: boolean }[] = [
     { label: 'Todas', value: undefined, active: !modalidadFilter },
     { label: 'Dependientes', value: 'DEPENDIENTE', active: modalidadFilter === 'DEPENDIENTE' },
-    { label: 'Independientes', value: 'INDEPENDIENTE', active: modalidadFilter === 'INDEPENDIENTE' },
+    {
+      label: 'Independientes',
+      value: 'INDEPENDIENTE',
+      active: modalidadFilter === 'INDEPENDIENTE',
+    },
   ];
 
   const emptyMessage =
@@ -368,11 +375,7 @@ export default async function BaseDatosPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <NuevaAfiliacionButton modalidad="DEPENDIENTE" {...catalogos} />
-          <NuevaAfiliacionButton
-            modalidad="INDEPENDIENTE"
-            variant="secondary"
-            {...catalogos}
-          />
+          <NuevaAfiliacionButton modalidad="INDEPENDIENTE" variant="secondary" {...catalogos} />
         </div>
       </header>
 
@@ -419,8 +422,7 @@ export default async function BaseDatosPage({
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
                     )}
                   >
-                    {t.label}{' '}
-                    <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+                    {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
                   </Link>
                 ))}
               </div>
@@ -450,9 +452,7 @@ export default async function BaseDatosPage({
             {/* Search form (GET) */}
             <form method="GET" action="/admin/base-datos" className="flex items-center gap-2">
               {estadoFilter && <input type="hidden" name="estado" value={estadoFilter} />}
-              {modalidadFilter && (
-                <input type="hidden" name="modalidad" value={modalidadFilter} />
-              )}
+              {modalidadFilter && <input type="hidden" name="modalidad" value={modalidadFilter} />}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input

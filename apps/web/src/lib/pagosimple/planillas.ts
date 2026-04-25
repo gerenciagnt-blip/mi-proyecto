@@ -1,32 +1,32 @@
 /**
- * Integración PagoSimple — flujo de planillas (API 3).
+ * Integración PagoSimple — flujo de planillas (Swagger oficial).
  *
- * Tres pasos secuenciales que consume la UI:
+ * Solo DOS pasos (no tres como pensábamos al inicio):
  *
- *   1. `uploadPlanillaToPagosimple(planillaId)`
- *      Sube el archivo plano generado localmente (`generarPlano`) vía
- *      multipart al endpoint `/payroll/upload`. PagoSimple devuelve un
- *      `payroll_number` que guardamos en `planilla.pagosimpleNumero`.
+ *   1. `validatePlanillaInPagosimple(planillaId, opts)`
+ *      POST /payroll/validate (multipart): sube el archivo plano
+ *      generado localmente + execution_params como JSON string.
+ *      Devuelve validation_status (OK/WARNING/ERROR) y el payroll_code
+ *      que se persiste en `planilla.pagosimpleNumero`. Una sola llamada
+ *      que cubre lo que originalmente pensábamos como upload+validate.
  *
- *   2. `validatePlanillaInPagosimple(planillaId, opts)`
- *      Llama `/payroll/validate` con el `payroll_code` para que el
- *      operador corra sus validaciones SGSS. Guarda el estado en
- *      `planilla.pagosimpleEstadoValidacion` (OK / WARNING / ERROR).
- *
- *   3. `getPlanillaPaymentUrlFromPagosimple(planillaId)`
- *      GET `/payroll/payment/{payroll_number}` → URL PSE. Se cachea en
+ *   2. `getPlanillaPaymentUrlFromPagosimple(planillaId)`
+ *      GET /payroll/payment/{payroll_number} → URL PSE. Se cachea en
  *      `planilla.pagosimplePaymentUrl` para no re-consultar.
  *
- * Endpoints usados (referencia Swagger PagoSimple):
- *   POST /payroll/upload        multipart, headers: nit+token+session+auth
- *   POST /payroll/validate      body: { payroll_code, execution_params }
- *   GET  /payroll/payment/{no}  devuelve URL PSE (string)
- *   GET  /payroll/inconsistencies/{no}?limit=&init_record=
+ * Endpoints (referencia Swagger):
+ *   POST /payroll/validate                     multipart, headers: nit+token+session+auth
+ *     fields: payroll_file (binary), execution_params (JSON string)
+ *   GET  /payroll/payment/{payroll_number}     URL PSE
+ *   GET  /payroll/inconsistencies/{code}/{init_record}
+ *   GET  /payroll/total/{payroll_number}
+ *   POST /payroll/correction
  */
 
 import { prisma } from '@pila/db';
-import { pagosimpleRequest, pagosimpleMultipart } from './client';
+import { pagosimpleRequest } from './client';
 import { getFullAuthHeaders } from './auth';
+import { requirePagosimpleConfig } from './config';
 import { generarPlano } from '@/lib/planos/generar';
 import type {
   PayrollInconsistenciesResponse,
@@ -35,18 +35,19 @@ import type {
   PaymentUrlData,
 } from './types';
 
-// ============== Response de /payroll/upload ================================
+// ============== Helper: extrae payroll_number del response =================
 
-/**
- * Respuesta observada del upload. PagoSimple puede devolver el número
- * directamente o anidado bajo `payroll_number` / `payroll_code`. Se
- * normaliza en `extractPayrollNumber`.
- */
-type UploadResponse = { payroll_number?: string; payroll_code?: string; load_id?: string } | string;
-
-function extractPayrollNumber(resp: UploadResponse): string | null {
-  if (typeof resp === 'string') return resp || null;
-  return resp?.payroll_number ?? resp?.payroll_code ?? null;
+function extractPayrollNumber(
+  resp: PayrollValidateResponse & { payroll_code?: string; payroll_number?: string },
+): string | null {
+  // El validate devuelve principalmente payroll_validations[]; el código
+  // puede venir en payroll_code o dentro del array como payroll_code.
+  if (resp.payroll_code) return resp.payroll_code;
+  if (resp.payroll_number) return resp.payroll_number;
+  const first = resp.payroll_validations?.[0];
+  if (first?.payroll_code) return String(first.payroll_code);
+  if (first?.payroll_number) return String(first.payroll_number);
+  return null;
 }
 
 // ============== Helper: genera el contenido del plano ======================
@@ -171,84 +172,42 @@ async function obtenerContenidoPlano(
   return { contenido, filename };
 }
 
-// ============== 1) Upload ==================================================
-
-export type UploadPlanillaResult =
-  | { ok: true; payrollNumber: string }
-  | { ok: false; error: string; code?: number };
-
-export async function uploadPlanillaToPagosimple(
-  planillaId: string,
-): Promise<UploadPlanillaResult> {
-  const archivo = await obtenerContenidoPlano(planillaId);
-  if ('error' in archivo) return { ok: false, error: archivo.error };
-
-  const headers = await getFullAuthHeaders();
-
-  try {
-    const resp = await pagosimpleMultipart<UploadResponse>(
-      '/payroll/upload',
-      'file',
-      {
-        buffer: Buffer.from(archivo.contenido, 'utf-8'),
-        filename: archivo.filename,
-      },
-      {},
-      { headers },
-    );
-    const payrollNumber = extractPayrollNumber(resp);
-    if (!payrollNumber) {
-      return {
-        ok: false,
-        error: 'PagoSimple respondió sin payroll_number — no se pudo vincular la planilla.',
-      };
-    }
-    await prisma.planilla.update({
-      where: { id: planillaId },
-      data: {
-        pagosimpleNumero: payrollNumber,
-        pagosimpleSyncedAt: new Date(),
-        pagosimpleEstadoValidacion: 'PENDIENTE',
-      },
-    });
-    return { ok: true, payrollNumber };
-  } catch (err) {
-    const e = err as { code?: number; message?: string };
-    return {
-      ok: false,
-      error: e.message ?? 'Error desconocido al subir el plano a PagoSimple',
-      code: e.code,
-    };
-  }
-}
-
-// ============== 2) Validate ================================================
+// ============== 1) Validate (sube + valida en una sola llamada) ============
 
 export type ValidatePlanillaResult =
-  | { ok: true; validationStatus: string; response: PayrollValidateResponse }
+  | {
+      ok: true;
+      validationStatus: string;
+      payrollNumber: string;
+      response: PayrollValidateResponse;
+    }
   | { ok: false; error: string; code?: number };
 
+/**
+ * POST /payroll/validate (multipart):
+ *   - field `payroll_file`: binary del plano
+ *   - field `execution_params`: JSON string con {is_UGPP, is_novelties_planillaN, file_type}
+ *
+ * Response devuelve `validation_status` + `payroll_validations[]` con
+ * el `payroll_code`/`payroll_number` que persistimos para usar en pago.
+ */
 export async function validatePlanillaInPagosimple(
   planillaId: string,
   opts?: Partial<PayrollValidationExecutionParams>,
 ): Promise<ValidatePlanillaResult> {
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { pagosimpleNumero: true, tipoPlanilla: true },
+    select: { tipoPlanilla: true, empresa: true, cotizante: true },
   });
   if (!planilla) return { ok: false, error: 'Planilla no encontrada.' };
-  if (!planilla.pagosimpleNumero) {
-    return {
-      ok: false,
-      error: 'La planilla aún no ha sido enviada a PagoSimple. Hazlo primero con el botón "Subir".',
-    };
-  }
+
+  const archivo = await obtenerContenidoPlano(planillaId);
+  if ('error' in archivo) return { ok: false, error: archivo.error };
 
   const execution_params: PayrollValidationExecutionParams = {
     is_UGPP: opts?.is_UGPP ?? false,
     is_novelties_planillaN: opts?.is_novelties_planillaN ?? false,
     // `file_type` usa el código de tipo de planilla PILA (E, I, N, A, ...)
-    // Por si el tipo local no coincide 1:1 con los permitidos, default a 'E'.
     file_type:
       opts?.file_type ??
       (['I', 'E', 'Y', 'N', 'A', 'K', 'S'].includes(planilla.tipoPlanilla)
@@ -256,31 +215,103 @@ export async function validatePlanillaInPagosimple(
         : 'E'),
   };
 
-  const headers = await getFullAuthHeaders();
+  // Para validar, PagoSimple exige auth_token del aportante (el que paga)
+  // — no del usuario master. Se obtiene contra el contributor que ya
+  // existe en PagoSimple (sync de Empresa o Cotizante-Indep).
+  const cfg = requirePagosimpleConfig();
+  let auth: { id: string; documentType: string; document: string };
+  if (planilla.empresa) {
+    auth = { id: planilla.empresa.nit, documentType: 'NI', document: planilla.empresa.nit };
+  } else if (planilla.cotizante) {
+    auth = {
+      id: planilla.cotizante.numeroDocumento,
+      documentType: planilla.cotizante.tipoDocumento,
+      document: planilla.cotizante.numeroDocumento,
+    };
+  } else {
+    auth = {
+      id: cfg.masterNit,
+      documentType: cfg.masterDocumentType,
+      document: cfg.masterDocument,
+    };
+  }
+  const headers = await getFullAuthHeaders(auth);
+
+  // Multipart manual — pagosimpleMultipart no soporta múltiples campos
+  // de string + file; usamos fetch directo con FormData.
+  const url = `${cfg.baseUrl}/payroll/validate`;
+  const fd = new FormData();
+  fd.append(
+    'payroll_file',
+    new Blob([new Uint8Array(Buffer.from(archivo.contenido, 'utf-8'))]),
+    archivo.filename,
+  );
+  fd.append('execution_params', JSON.stringify(execution_params));
 
   try {
-    const resp = await pagosimpleRequest<PayrollValidateResponse>('/payroll/validate', {
+    const resp = await fetch(url, {
       method: 'POST',
-      headers,
-      body: {
-        payroll_code: planilla.pagosimpleNumero,
-        execution_params,
-      },
+      headers, // sin Content-Type — fetch lo asigna con boundary
+      body: fd,
     });
+    const raw = await resp.text();
+    let json: {
+      success?: boolean;
+      code?: number;
+      message?: string;
+      description?: string;
+      data?: PayrollValidateResponse;
+    } | null = null;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      return {
+        ok: false,
+        error: `Respuesta no-JSON HTTP ${resp.status}: ${raw.slice(0, 200)}`,
+        code: resp.status,
+      };
+    }
+    if (typeof json?.success !== 'boolean') {
+      return {
+        ok: false,
+        error: `HTTP ${resp.status} formato inesperado: ${JSON.stringify(json).slice(0, 200)}`,
+        code: resp.status,
+      };
+    }
+    if (!json.success || !json.data) {
+      return {
+        ok: false,
+        error: json.message ?? `PagoSimple respondió code=${json.code}`,
+        code: json.code,
+      };
+    }
+    const data = json.data;
+    const payrollNumber = extractPayrollNumber(data);
+    if (!payrollNumber) {
+      return {
+        ok: false,
+        error: 'PagoSimple validó pero no devolvió payroll_number — verifica el plano.',
+      };
+    }
     await prisma.planilla.update({
       where: { id: planillaId },
       data: {
-        pagosimpleEstadoValidacion: resp.validation_status,
+        pagosimpleNumero: payrollNumber,
+        pagosimpleEstadoValidacion: data.validation_status,
         pagosimpleSyncedAt: new Date(),
       },
     });
-    return { ok: true, validationStatus: resp.validation_status, response: resp };
+    return {
+      ok: true,
+      payrollNumber,
+      validationStatus: data.validation_status,
+      response: data,
+    };
   } catch (err) {
-    const e = err as { code?: number; message?: string };
+    const msg = err instanceof Error ? err.message : 'Error de red';
     return {
       ok: false,
-      error: e.message ?? 'Error validando la planilla en PagoSimple',
-      code: e.code,
+      error: `Error validando planilla en PagoSimple: ${msg}`,
     };
   }
 }
@@ -362,9 +393,9 @@ export async function getPlanillaInconsistenciesFromPagosimple(
   }
 
   const headers = await getFullAuthHeaders();
-  const limit = opts?.limit ?? 50;
+  // Swagger: GET /payroll/inconsistencies/{payroll_code}/{init_record}
   const init = opts?.init_record ?? 0;
-  const path = `/payroll/inconsistencies/${encodeURIComponent(planilla.pagosimpleNumero)}?limit=${limit}&init_record=${init}`;
+  const path = `/payroll/inconsistencies/${encodeURIComponent(planilla.pagosimpleNumero)}/${init}`;
 
   try {
     const data = await pagosimpleRequest<PayrollInconsistenciesResponse>(path, {

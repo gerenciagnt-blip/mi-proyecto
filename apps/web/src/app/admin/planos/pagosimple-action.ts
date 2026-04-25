@@ -17,11 +17,9 @@ import { revalidatePath } from 'next/cache';
 import { requireStaff } from '@/lib/auth-helpers';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 import {
-  uploadPlanillaToPagosimple,
   validatePlanillaInPagosimple,
   getPlanillaPaymentUrlFromPagosimple,
   getPlanillaInconsistenciesFromPagosimple,
-  type UploadPlanillaResult,
   type ValidatePlanillaResult,
   type PaymentUrlResult,
   type InconsistenciesResult,
@@ -34,23 +32,8 @@ const CONFIG_ERR = {
 };
 
 /**
- * Paso 1/3: sube el plano al operador. Persiste el `payroll_number`
- * devuelto en `planilla.pagosimpleNumero`.
- */
-export async function subirPlanillaPagosimpleAction(
-  planillaId: string,
-): Promise<UploadPlanillaResult> {
-  await requireStaff();
-  if (!isPagosimpleEnabled()) return CONFIG_ERR;
-
-  const res = await uploadPlanillaToPagosimple(planillaId);
-  if (res.ok) revalidatePath('/admin/planos');
-  return res;
-}
-
-/**
- * Paso 2/3: dispara las validaciones del operador sobre el plano ya
- * subido. Guarda el `validation_status` (OK/WARNING/ERROR).
+ * Paso 1/2: sube el plano + dispara validaciones en una sola llamada
+ * (POST /payroll/validate multipart). Persiste payroll_number y status.
  */
 export async function validarPlanillaPagosimpleAction(
   planillaId: string,
@@ -64,7 +47,7 @@ export async function validarPlanillaPagosimpleAction(
 }
 
 /**
- * Paso 3/3: obtiene la URL PSE para que el usuario pague en una nueva
+ * Paso 2/2: obtiene la URL PSE para que el usuario pague en una nueva
  * pestaña. Si ya la pedimos antes, retorna la cacheada.
  */
 export async function obtenerPagoPsePagosimpleAction(

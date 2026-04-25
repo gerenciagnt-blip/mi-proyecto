@@ -60,7 +60,14 @@ export type PlanOpt = {
   regimen: 'ORDINARIO' | 'RESOLUCION' | 'AMBOS';
 };
 
-export type EntidadOpt = { id: string; codigo: string; nombre: string };
+export type EntidadOpt = {
+  id: string;
+  codigo: string;
+  nombre: string;
+  /** Código oficial PILA / MinSalud — el que devuelve BDUA/RUAF.
+   * Es el campo correcto para hacer matching con respuestas del operador. */
+  codigoMinSalud: string | null;
+};
 export type CuentaCobroOpt = {
   id: string;
   codigo: string;
@@ -210,11 +217,12 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         nombresRellenados = true;
       }
 
-      // EPS → buscar en nuestras entidades por código BDUA
+      // EPS → buscar por Cód. MinSalud (es el código que devuelve BDUA,
+      // no nuestro código interno EPS-XXXX).
       let epsMatch: string | null = null;
       let epsMiss: string | null = null;
       if (i.bdua_eps_code) {
-        const hit = props.eps.find((e) => e.codigo === i.bdua_eps_code);
+        const hit = props.eps.find((e) => e.codigoMinSalud === i.bdua_eps_code);
         if (hit) {
           setEpsIdState(hit.id);
           epsMatch = hit.nombre;
@@ -223,11 +231,11 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         }
       }
 
-      // AFP → mismo patrón
+      // AFP → mismo patrón con codigoMinSalud
       let afpMatch: string | null = null;
       let afpMiss: string | null = null;
       if (i.ruaf_afp_code) {
-        const hit = props.afp.find((a) => a.codigo === i.ruaf_afp_code);
+        const hit = props.afp.find((a) => a.codigoMinSalud === i.ruaf_afp_code);
         if (hit) {
           setAfpIdState(hit.id);
           afpMatch = hit.nombre;
