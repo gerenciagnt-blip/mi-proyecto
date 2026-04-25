@@ -58,6 +58,16 @@ type InconsistenciasResponse = {
   detail_warnings?: unknown[];
 };
 
+type PayrollTotalSubsystem = {
+  total_without_arrear?: number | string;
+  arrear_value?: number | string;
+};
+
+type PayrollTotalResponse = {
+  administrator_total_value?: PayrollTotalSubsystem[];
+  total_to_pay?: number | string;
+};
+
 const REQUIRED_VARS = [
   'PAGOSIMPLE_BASE_URL',
   'PAGOSIMPLE_MASTER_NIT',
@@ -182,27 +192,8 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
   }
   console.log('   ✅ login OK');
 
-  // Cache de auth_token por aportante (NIT del master, NIT empresa, etc.)
-  const authCache = new Map<string, string>();
-  async function getAuth(idCotizante: string, tipoDoc: string, doc: string) {
-    const key = `${idCotizante}|${tipoDoc}|${doc}`;
-    const hit = authCache.get(key);
-    if (hit) return hit;
-    const data = await apiCall<AuthData>(
-      cfg.baseUrl,
-      `/auth/${encodeURIComponent(idCotizante)}/${encodeURIComponent(tipoDoc)}/${encodeURIComponent(doc)}`,
-      {
-        method: 'GET',
-        headers: {
-          nit: cfg.masterNit,
-          token: login.token,
-          session_token: login.session_token,
-        },
-      },
-    );
-    authCache.set(key, data.auth_token);
-    return data.auth_token;
-  }
+  // El payroll_code en el path identifica al aportante; basta con
+  // headers base del master (sin auth_token específico).
 
   let actualizadas = 0;
   let sinCambio = 0;
@@ -210,23 +201,6 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
 
   for (const p of planillas) {
     try {
-      // Determinar el aportante para auth_token
-      let id: string, tipoDoc: string, doc: string;
-      if (p.empresa) {
-        id = p.empresa.nit;
-        tipoDoc = 'NI';
-        doc = p.empresa.nit;
-      } else if (p.cotizante) {
-        id = p.cotizante.numeroDocumento;
-        tipoDoc = p.cotizante.tipoDocumento;
-        doc = p.cotizante.numeroDocumento;
-      } else {
-        console.warn(`   ⚠ ${p.consecutivo}: sin empresa ni cotizante, saltando`);
-        continue;
-      }
-
-      const authToken = await getAuth(id, tipoDoc, doc);
-
       const data = await apiCall<InconsistenciasResponse>(
         cfg.baseUrl,
         `/payroll/inconsistencies/${encodeURIComponent(p.pagosimpleNumero!)}/0`,
@@ -236,22 +210,69 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
             nit: cfg.masterNit,
             token: login.token,
             session_token: login.session_token,
-            auth_token: authToken,
           },
         },
       );
 
       const nuevoEstado = calcularEstado(data);
-      if (nuevoEstado !== p.pagosimpleEstadoValidacion) {
+
+      // Para planillas validadas OK, traemos también los totales para
+      // actualizar la columna SGSS/Mora/Total en la tabla Guardado.
+      let totales: { totalSgss: number; totalMora: number; totalPagar: number } | null = null;
+      if (nuevoEstado === 'OK') {
+        try {
+          const totalResp = await apiCall<PayrollTotalResponse>(
+            cfg.baseUrl,
+            `/payroll/total/${encodeURIComponent(p.pagosimpleNumero!)}`,
+            {
+              method: 'GET',
+              headers: {
+                nit: cfg.masterNit,
+                token: login.token,
+                session_token: login.session_token,
+              },
+            },
+          );
+          const totalSgss = (totalResp.administrator_total_value ?? []).reduce(
+            (s, a) => s + (Number(a.total_without_arrear) || 0),
+            0,
+          );
+          const totalMora = (totalResp.administrator_total_value ?? []).reduce(
+            (s, a) => s + (Number(a.arrear_value) || 0),
+            0,
+          );
+          const totalPagar = Number(totalResp.total_to_pay) || totalSgss + totalMora;
+          totales = { totalSgss, totalMora, totalPagar };
+        } catch (totErr) {
+          console.warn(
+            `   ⚠ ${p.consecutivo}: totales no disponibles — ${
+              totErr instanceof Error ? totErr.message : totErr
+            }`,
+          );
+        }
+      }
+
+      if (nuevoEstado !== p.pagosimpleEstadoValidacion || totales) {
         await prisma.planilla.update({
           where: { id: p.id },
           data: {
             pagosimpleEstadoValidacion: nuevoEstado,
             pagosimpleSyncedAt: new Date(),
+            ...(totales
+              ? {
+                  pagosimpleTotalSgss: totales.totalSgss,
+                  pagosimpleTotalMora: totales.totalMora,
+                  pagosimpleTotalPagar: totales.totalPagar,
+                }
+              : {}),
           },
         });
         console.log(
-          `   🔁 ${p.consecutivo}: ${p.pagosimpleEstadoValidacion ?? 'null'} → ${nuevoEstado}`,
+          `   🔁 ${p.consecutivo}: ${p.pagosimpleEstadoValidacion ?? 'null'} → ${nuevoEstado}${
+            totales
+              ? ` · mora=${totales.totalMora.toFixed(0)} total=${totales.totalPagar.toFixed(0)}`
+              : ''
+          }`,
         );
         actualizadas++;
       } else {

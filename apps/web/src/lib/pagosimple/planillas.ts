@@ -25,11 +25,12 @@
 
 import { prisma } from '@pila/db';
 import { pagosimpleRequest } from './client';
-import { getFullAuthHeaders } from './auth';
+import { getBaseAuthHeaders } from './auth';
 import { requirePagosimpleConfig } from './config';
 import { generarPlano } from '@/lib/planos/generar';
 import type {
   PayrollInconsistenciesResponse,
+  PayrollTotalResponse,
   PayrollValidateResponse,
   PayrollValidationExecutionParams,
   PaymentUrlData,
@@ -215,27 +216,11 @@ export async function validatePlanillaInPagosimple(
         : 'E'),
   };
 
-  // Para validar, PagoSimple exige auth_token del aportante (el que paga)
-  // — no del usuario master. Se obtiene contra el contributor que ya
-  // existe en PagoSimple (sync de Empresa o Cotizante-Indep).
+  // Para /payroll/validate NO se necesita auth_token del aportante:
+  // el TXT plano ya lleva la identificación del aportante en su
+  // estructura interna. El endpoint solo requiere los headers de
+  // sesión del operador master (nit + token + session_token).
   const cfg = requirePagosimpleConfig();
-  let auth: { id: string; documentType: string; document: string };
-  if (planilla.empresa) {
-    auth = { id: planilla.empresa.nit, documentType: 'NI', document: planilla.empresa.nit };
-  } else if (planilla.cotizante) {
-    auth = {
-      id: planilla.cotizante.numeroDocumento,
-      documentType: planilla.cotizante.tipoDocumento,
-      document: planilla.cotizante.numeroDocumento,
-    };
-  } else {
-    auth = {
-      id: cfg.masterNit,
-      documentType: cfg.masterDocumentType,
-      document: cfg.masterDocument,
-    };
-  }
-  const headers = await getFullAuthHeaders(auth);
 
   // Multipart manual — pagosimpleMultipart no soporta múltiples campos
   // de string + file; usamos fetch directo con FormData.
@@ -247,6 +232,14 @@ export async function validatePlanillaInPagosimple(
     archivo.filename,
   );
   fd.append('execution_params', JSON.stringify(execution_params));
+
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
 
   try {
     const resp = await fetch(url, {
@@ -279,6 +272,10 @@ export async function validatePlanillaInPagosimple(
       };
     }
     if (!json.success || !json.data) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[pagosimple] POST /payroll/validate — code=${json.code} msg="${json.message}" desc="${json.description}"`,
+      );
       return {
         ok: false,
         error: json.message ?? `PagoSimple respondió code=${json.code}`,
@@ -288,6 +285,10 @@ export async function validatePlanillaInPagosimple(
     const data = json.data;
     const payrollNumber = extractPayrollNumber(data);
     if (!payrollNumber) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[pagosimple] POST /payroll/validate — success pero sin payroll_number. data keys: ${Object.keys(data).join(',')}`,
+      );
       return {
         ok: false,
         error: 'PagoSimple validó pero no devolvió payroll_number — verifica el plano.',
@@ -301,6 +302,27 @@ export async function validatePlanillaInPagosimple(
         pagosimpleSyncedAt: new Date(),
       },
     });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[pagosimple] POST /payroll/validate — OK payroll_number=${payrollNumber} status=${data.validation_status}`,
+    );
+
+    // Best-effort: si la validación pasó, traer también los totales
+    // (sin mora / mora / a pagar) para mostrar en la tabla. Si falla,
+    // no rompe el resultado del validate.
+    if (data.validation_status === 'OK') {
+      try {
+        await getPlanillaTotalsFromPagosimple(planillaId);
+      } catch (totErr) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[pagosimple] No se pudieron traer totales tras validate: ${
+            totErr instanceof Error ? totErr.message : totErr
+          }`,
+        );
+      }
+    }
+
     return {
       ok: true,
       payrollNumber,
@@ -312,6 +334,79 @@ export async function validatePlanillaInPagosimple(
     return {
       ok: false,
       error: `Error validando planilla en PagoSimple: ${msg}`,
+    };
+  }
+}
+
+// ============== 2½) Totales (con mora) =====================================
+
+export type PlanillaTotalsResult =
+  | {
+      ok: true;
+      totalSgss: number;
+      totalMora: number;
+      totalPagar: number;
+      response: PayrollTotalResponse;
+    }
+  | { ok: false; error: string; code?: number };
+
+/**
+ * GET /payroll/total/{payroll_number}: devuelve los totales por
+ * subsistema con `total_without_arrear`, `arrear_value` y el `total`
+ * por administradora. Sumamos los 3 globales y los persistimos en la
+ * Planilla para mostrar en la tabla Guardado.
+ */
+export async function getPlanillaTotalsFromPagosimple(
+  planillaId: string,
+): Promise<PlanillaTotalsResult> {
+  const planilla = await prisma.planilla.findUnique({
+    where: { id: planillaId },
+    select: { pagosimpleNumero: true },
+  });
+  if (!planilla) return { ok: false, error: 'Planilla no encontrada.' };
+  if (!planilla.pagosimpleNumero) {
+    return { ok: false, error: 'La planilla no tiene payroll_number.' };
+  }
+
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
+
+  try {
+    const data = await pagosimpleRequest<PayrollTotalResponse>(
+      `/payroll/total/${encodeURIComponent(planilla.pagosimpleNumero)}`,
+      { method: 'GET', headers },
+    );
+    const totalSgss = data.administrator_total_value.reduce(
+      (s, a) => s + (Number(a.total_without_arrear) || 0),
+      0,
+    );
+    const totalMora = data.administrator_total_value.reduce(
+      (s, a) => s + (Number(a.arrear_value) || 0),
+      0,
+    );
+    const totalPagar = Number(data.total_to_pay) || totalSgss + totalMora;
+
+    await prisma.planilla.update({
+      where: { id: planillaId },
+      data: {
+        pagosimpleTotalSgss: totalSgss,
+        pagosimpleTotalMora: totalMora,
+        pagosimpleTotalPagar: totalPagar,
+        pagosimpleSyncedAt: new Date(),
+      },
+    });
+    return { ok: true, totalSgss, totalMora, totalPagar, response: data };
+  } catch (err) {
+    const e = err as { code?: number; message?: string };
+    return {
+      ok: false,
+      error: e.message ?? 'Error obteniendo totales',
+      code: e.code,
     };
   }
 }
@@ -342,7 +437,15 @@ export async function getPlanillaPaymentUrlFromPagosimple(
     return { ok: true, url: planilla.pagosimplePaymentUrl, cached: true };
   }
 
-  const headers = await getFullAuthHeaders();
+  // El payroll_number en el path identifica al aportante; basta con
+  // headers base del master.
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
 
   try {
     const url = await pagosimpleRequest<PaymentUrlData>(
@@ -392,7 +495,16 @@ export async function getPlanillaInconsistenciesFromPagosimple(
     return { ok: false, error: 'La planilla no tiene payroll_number asociado.' };
   }
 
-  const headers = await getFullAuthHeaders();
+  // El payroll_code en el path identifica al aportante; basta con
+  // headers base del master.
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
+
   // Swagger: GET /payroll/inconsistencies/{payroll_code}/{init_record}
   const init = opts?.init_record ?? 0;
   const path = `/payroll/inconsistencies/${encodeURIComponent(planilla.pagosimpleNumero)}/${init}`;

@@ -1146,6 +1146,13 @@ model Planilla {
   pagosimpleEstadoValidacion   String?
   /** URL PSE de pago (se cachea al generarla). */
   pagosimplePaymentUrl         String?
+  /** Totales calculados por el operador (GET /payroll/total). Pueden
+   * diferir de los locales por ajustes de validación o mora.
+   * `pagosimpleTotalSgss` = total sin mora; `pagosimpleTotalMora` =
+   * intereses por días vencidos; `pagosimpleTotalPagar` = total a girar. */
+  pagosimpleTotalSgss          Decimal?  @db.Decimal(14, 2)
+  pagosimpleTotalMora          Decimal?  @db.Decimal(14, 2)
+  pagosimpleTotalPagar         Decimal?  @db.Decimal(14, 2)
   /** Última vez que se sincronizaron datos con el operador. */
   pagosimpleSyncedAt           DateTime?
 

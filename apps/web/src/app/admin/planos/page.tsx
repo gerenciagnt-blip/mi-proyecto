@@ -738,16 +738,14 @@ async function PlanillasTable({
               <th className="px-4 py-2">Consecutivo</th>
               <th className="px-4 py-2">Tipo</th>
               <th className="px-4 py-2">Aportante</th>
-              <th className="px-4 py-2">Período aporte</th>
-              {showPeriodo && <th className="px-4 py-2">Período contable</th>}
+              <th className="px-4 py-2">Período</th>
+              {showPeriodo && <th className="px-4 py-2">Contable</th>}
               <th className="px-4 py-2 text-right">Cotizantes</th>
-              <th className="px-4 py-2 text-right">Comprobantes</th>
+              <th className="px-4 py-2">N° planilla</th>
+              <th className="px-4 py-2 text-right">Mora</th>
+              <th className="px-4 py-2 text-right">SGSS</th>
               <th className="px-4 py-2 text-right">Total</th>
               <th className="px-4 py-2">Estado</th>
-              {estado === 'PAGADA' && <th className="px-4 py-2">N° planilla</th>}
-              {psEnabled && estado === 'CONSOLIDADO' && (
-                <th className="px-4 py-2 text-right">PagoSimple</th>
-              )}
               <th className="px-4 py-2 text-right">Acciones</th>
             </tr>
           </thead>
@@ -762,6 +760,17 @@ async function PlanillasTable({
                 aportanteLabel = fullName(p.cotizante);
                 aportanteSub = `${p.cotizante.tipoDocumento} ${p.cotizante.numeroDocumento}`;
               }
+              // Valores que se muestran: si PagoSimple ya devolvió totales,
+              // los usamos (incluyen mora). Si no, fallback a los locales
+              // (mora=0 hasta que PagoSimple los calcule).
+              const valSgss = p.pagosimpleTotalSgss
+                ? Number(p.pagosimpleTotalSgss)
+                : Number(p.totalGeneral);
+              const valMora = p.pagosimpleTotalMora ? Number(p.pagosimpleTotalMora) : 0;
+              const valTotal = p.pagosimpleTotalPagar
+                ? Number(p.pagosimpleTotalPagar)
+                : Number(p.totalGeneral);
+              const numeroExt = p.pagosimpleNumero ?? p.numeroPlanillaExt ?? null;
               return (
                 <tr key={p.id}>
                   <td className="px-4 py-2.5 font-mono text-xs font-semibold">{p.consecutivo}</td>
@@ -785,39 +794,46 @@ async function PlanillasTable({
                   <td className="px-4 py-2.5 text-right font-mono text-xs">
                     {p.cantidadCotizantes}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs">
-                    {p._count.comprobantes}
+                  <td className="px-4 py-2.5 font-mono text-xs">
+                    {numeroExt ?? <span className="text-slate-300">—</span>}
                   </td>
+                  <td
+                    className={cn(
+                      'px-4 py-2.5 text-right font-mono text-xs',
+                      valMora > 0 ? 'text-amber-700 font-semibold' : 'text-slate-400',
+                    )}
+                  >
+                    {formatCOP(valMora)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{formatCOP(valSgss)}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
-                    {formatCOP(Number(p.totalGeneral))}
+                    {formatCOP(valTotal)}
                   </td>
                   <td className="px-4 py-2.5">
                     <EstadoBadge estado={p.estado} />
+                    {psEnabled && p.pagosimpleEstadoValidacion && (
+                      <p className="mt-1 font-mono text-[10px] text-slate-500">
+                        PS: {p.pagosimpleEstadoValidacion}
+                      </p>
+                    )}
                   </td>
-                  {estado === 'PAGADA' && (
-                    <td className="px-4 py-2.5 font-mono text-xs text-slate-700">
-                      {p.numeroPlanillaExt ?? '—'}
-                    </td>
-                  )}
-                  {psEnabled && estado === 'CONSOLIDADO' && (
-                    <td className="px-4 py-2.5">
-                      <PagosimpleCell
-                        planillaId={p.id}
-                        pagosimpleNumero={p.pagosimpleNumero}
-                        pagosimpleEstadoValidacion={p.pagosimpleEstadoValidacion}
-                        pagosimplePaymentUrl={p.pagosimplePaymentUrl}
-                      />
-                    </td>
-                  )}
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-2">
+                      {psEnabled && estado === 'CONSOLIDADO' && (
+                        <PagosimpleCell
+                          planillaId={p.id}
+                          pagosimpleNumero={p.pagosimpleNumero}
+                          pagosimpleEstadoValidacion={p.pagosimpleEstadoValidacion}
+                          pagosimplePaymentUrl={p.pagosimplePaymentUrl}
+                        />
+                      )}
                       <a
                         href={`/api/planos/${p.id}/plano.txt`}
                         className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
                         title="Descargar archivo plano"
                       >
                         <Download className="h-3.5 w-3.5" />
-                        Descargar
+                        TXT
                       </a>
                       {estado === 'CONSOLIDADO' && (
                         <>

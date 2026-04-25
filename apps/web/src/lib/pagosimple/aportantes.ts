@@ -256,13 +256,19 @@ export async function syncEmpresaAsContributor(empresaId: string): Promise<SyncE
   //   PUT  /contributor/pyme   (actualizar) → +auth_token, id en body
   const isUpdate = Boolean(empresa.pagosimpleContributorId);
   const path = '/contributor/pyme';
-  const headers = isUpdate
-    ? await getFullAuthHeaders({
-        id: empresa.nit,
-        documentType: 'NI',
-        document: empresa.nit,
-      })
-    : await getBaseAuthHeaders();
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = isUpdate
+      ? await getFullAuthHeaders({
+          id: empresa.nit,
+          documentType: 'NI',
+          document: empresa.nit,
+        })
+      : await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
 
   // PENDIENTE: el backend de /contributor/pyme rechaza con
   //   "Debe registrar una fecha de inicio de actividades"
@@ -417,13 +423,19 @@ export async function syncCotizanteIndependienteAsContributor(
   //   PUT  /contributor      (actualizar; +auth_token, id va en body)
   const isUpdate = Boolean(cot.pagosimpleContributorId);
   const path = '/contributor';
-  const headers = isUpdate
-    ? await getFullAuthHeaders({
-        id: cot.numeroDocumento,
-        documentType: mapTipoDocumento(cot.tipoDocumento),
-        document: cot.numeroDocumento,
-      })
-    : await getBaseAuthHeaders();
+  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  try {
+    headers = isUpdate
+      ? await getFullAuthHeaders({
+          id: cot.numeroDocumento,
+          documentType: mapTipoDocumento(cot.tipoDocumento),
+          document: cot.numeroDocumento,
+        })
+      : await getBaseAuthHeaders();
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
 
   try {
     const data = await pagosimpleRequest<{ id?: string } | string>(path, {
