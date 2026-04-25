@@ -1,29 +1,17 @@
-import { Wallet, Clock3, CheckCircle2, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Wallet, Clock3, CheckCircle2, AlertCircle, UserCircle2 } from 'lucide-react';
 import type { Prisma, CarteraEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { ESTADO_LINEA_LABEL, ESTADO_TONE, ESTADOS_VISIBLE_ALIADO } from '@/lib/cartera/labels';
 import { GestionarAliadoButton } from './gestion-dialog';
 import { VerGestionesButton } from '../../soporte/cartera/ver-gestiones-dialog';
 
 export const metadata = { title: 'Cartera · Administrativo — Sistema PILA' };
 export const dynamic = 'force-dynamic';
-
-const ESTADO_LABEL: Record<CarteraEstado, string> = {
-  EN_CONCILIACION: 'En conciliación',
-  CONCILIADA: 'Conciliada',
-  CARTERA_REAL: 'Cartera real',
-  PAGADA_CARTERA_REAL: 'Pagada',
-};
-
-const ESTADO_TONE: Record<CarteraEstado, string> = {
-  EN_CONCILIACION: 'bg-amber-50 text-amber-700 ring-amber-200',
-  CONCILIADA: 'bg-sky-50 text-sky-700 ring-sky-200',
-  CARTERA_REAL: 'bg-violet-50 text-violet-700 ring-violet-200',
-  PAGADA_CARTERA_REAL: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-};
 
 type SP = { estado?: string; q?: string };
 
@@ -34,7 +22,7 @@ export default async function AdministrativoCarteraPage({
 }) {
   const sp = await searchParams;
   const estadoFilter =
-    sp.estado === 'CARTERA_REAL' || sp.estado === 'PAGADA_CARTERA_REAL'
+    sp.estado === 'MORA_REAL' || sp.estado === 'CARTERA_REAL' || sp.estado === 'PAGADA_CARTERA_REAL'
       ? (sp.estado as CarteraEstado)
       : undefined;
   const q = sp.q?.trim() ?? '';
@@ -44,16 +32,13 @@ export default async function AdministrativoCarteraPage({
   // abierto para staff por si quieren revisar.
   const scope = await getUserScope();
   const scopeWhere: Prisma.CarteraDetalladoWhereInput =
-    scope?.tipo === 'SUCURSAL'
-      ? { sucursalAsignadaId: scope.sucursalId }
-      : {};
+    scope?.tipo === 'SUCURSAL' ? { sucursalAsignadaId: scope.sucursalId } : {};
 
-  // El módulo Administrativo SÓLO muestra líneas confirmadas como cartera real.
+  // El módulo Administrativo SÓLO muestra líneas que soporte ya marcó
+  // como cartera o mora real (más las pagadas, para historial).
   const whereBase: Prisma.CarteraDetalladoWhereInput = {
     ...scopeWhere,
-    estado: estadoFilter
-      ? estadoFilter
-      : { in: ['CARTERA_REAL', 'PAGADA_CARTERA_REAL'] },
+    estado: estadoFilter ? estadoFilter : { in: ESTADOS_VISIBLE_ALIADO },
   };
 
   if (q) {
@@ -64,7 +49,7 @@ export default async function AdministrativoCarteraPage({
     ];
   }
 
-  const [lineas, carteraRealStats, pagadaStats] = await Promise.all([
+  const [lineas, moraRealStats, carteraRealStats, pagadaStats] = await Promise.all([
     prisma.carteraDetallado.findMany({
       where: whereBase,
       orderBy: [{ consolidado: { fechaRegistro: 'desc' } }, { periodoCobro: 'desc' }],
@@ -83,6 +68,11 @@ export default async function AdministrativoCarteraPage({
         },
         _count: { select: { gestiones: true } },
       },
+    }),
+    prisma.carteraDetallado.aggregate({
+      where: { ...scopeWhere, estado: 'MORA_REAL' },
+      _count: { _all: true },
+      _sum: { valorCobro: true },
     }),
     prisma.carteraDetallado.aggregate({
       where: { ...scopeWhere, estado: 'CARTERA_REAL' },
@@ -104,12 +94,26 @@ export default async function AdministrativoCarteraPage({
           Cartera
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Líneas de cartera real confirmadas por Soporte para tu sucursal.
-          Registra el pago o una nota; Soporte lo verá en su consolidado.
+          Líneas de cartera real o mora real confirmadas por Soporte para tu sucursal. Registra el
+          pago o una nota; Soporte lo verá en su consolidado.
         </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-orange-200 bg-white p-4 shadow-sm">
+          <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-50 text-orange-700">
+            <AlertCircle className="h-4 w-4" />
+          </div>
+          <p className="mt-3 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            Mora real pendiente
+          </p>
+          <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-slate-900">
+            {moraRealStats._count._all}
+          </p>
+          <p className="mt-0.5 font-mono text-xs text-slate-500">
+            {formatCOP(Number(moraRealStats._sum.valorCobro ?? 0))}
+          </p>
+        </div>
         <div className="rounded-xl border border-violet-200 bg-white p-4 shadow-sm">
           <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
             <AlertCircle className="h-4 w-4" />
@@ -143,13 +147,18 @@ export default async function AdministrativoCarteraPage({
       {/* Filtros + buscador */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-          <form method="GET" action="/admin/administrativo/cartera" className="flex flex-wrap items-center gap-2">
+          <form
+            method="GET"
+            action="/admin/administrativo/cartera"
+            className="flex flex-wrap items-center gap-2"
+          >
             <select
               name="estado"
               defaultValue={estadoFilter ?? ''}
               className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm"
             >
-              <option value="">Todas (real + pagadas)</option>
+              <option value="">Todas (mora + cartera + pagadas)</option>
+              <option value="MORA_REAL">Solo mora real</option>
               <option value="CARTERA_REAL">Solo cartera real</option>
               <option value="PAGADA_CARTERA_REAL">Solo pagadas</option>
             </select>
@@ -176,8 +185,8 @@ export default async function AdministrativoCarteraPage({
           <Alert variant="info" className="m-5">
             <Clock3 className="h-4 w-4 shrink-0" />
             <span>
-              No hay líneas de cartera real en este momento. Cuando Soporte
-              marque una deuda como <strong>Cartera real</strong> aparecerá aquí.
+              No hay líneas pendientes en este momento. Cuando Soporte marque una deuda como{' '}
+              <strong>Mora real</strong> o <strong>Cartera real</strong> aparecerá aquí.
             </span>
           </Alert>
         ) : (
@@ -224,11 +233,21 @@ export default async function AdministrativoCarteraPage({
                           ESTADO_TONE[l.estado],
                         )}
                       >
-                        {ESTADO_LABEL[l.estado]}
+                        {ESTADO_LINEA_LABEL[l.estado]}
                       </span>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">
+                        {l.cotizanteId && (
+                          <Link
+                            href={`/admin/base-datos?q=${encodeURIComponent(l.numeroDocumento)}`}
+                            target="_blank"
+                            title="Ver formulario de afiliación completo del cotizante"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-brand-blue"
+                          >
+                            <UserCircle2 className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
                         <VerGestionesButton
                           detalladoId={l.id}
                           gestionesCount={l._count.gestiones}

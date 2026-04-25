@@ -88,9 +88,7 @@ function GestionarForm({
         descripcion,
         nuevoEstado: nuevoEstado !== estadoActual ? nuevoEstado : undefined,
         sucursalAsignadaId:
-          sucursalId !== (sucursalActualId ?? '')
-            ? sucursalId || null
-            : undefined,
+          sucursalId !== (sucursalActualId ?? '') ? sucursalId || null : undefined,
       });
       if (r.error) {
         setError(r.error);
@@ -114,13 +112,13 @@ function GestionarForm({
         >
           <option value="EN_CONCILIACION">En conciliación</option>
           <option value="CONCILIADA">Conciliada</option>
+          <option value="MORA_REAL">Mora real</option>
           <option value="CARTERA_REAL">Cartera real</option>
           <option value="PAGADA_CARTERA_REAL">Pagada (cartera real)</option>
         </Select>
         <p className="mt-1 text-[10px] text-slate-500">
-          Estado actual: <strong>{estadoActual}</strong>. Al pasar a{' '}
-          <strong>Cartera real</strong> la línea aparece en el
-          Administrativo del aliado.
+          Estado actual: <strong>{estadoActual}</strong>. Al pasar a <strong>Mora real</strong> o{' '}
+          <strong>Cartera real</strong> la línea aparece en el Administrativo del aliado.
         </p>
       </div>
 

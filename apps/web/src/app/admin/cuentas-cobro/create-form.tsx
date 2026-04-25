@@ -74,25 +74,17 @@ export function CreateCuentaCobroForm({
               </Select>
             </div>
           )}
-          <div>
-            <Label htmlFor="codigo">Código interno *</Label>
-            <Input
-              id="codigo"
-              name="codigo"
-              required
-              placeholder="CCB-001"
-              className="mt-1 uppercase"
-            />
-          </div>
-          <div className="sm:col-span-2">
+          {/* El código (CCB-NNNNNN) lo asigna el server al crear — no se expone en el form. */}
+          <div className="sm:col-span-3">
             <Label htmlFor="razonSocial">Razón social *</Label>
             <Input id="razonSocial" name="razonSocial" required className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="nit">NIT</Label>
+            <Label htmlFor="nit">NIT *</Label>
             <Input
               id="nit"
               name="nit"
+              required
               value={nit}
               onChange={(e) => setNit(e.target.value.replace(/\D/g, ''))}
               placeholder="900123456"
@@ -100,10 +92,11 @@ export function CreateCuentaCobroForm({
             />
           </div>
           <div>
-            <Label htmlFor="dv">DV</Label>
+            <Label htmlFor="dv">DV *</Label>
             <Input
               id="dv"
               name="dv"
+              required
               maxLength={1}
               value={dv}
               onChange={(e) => {
@@ -112,14 +105,14 @@ export function CreateCuentaCobroForm({
               }}
               className="mt-1"
             />
-            <p className="mt-1 text-[10px] text-slate-400">
-              {dvAuto ? 'Auto' : 'Manual'}
-            </p>
+            <p className="mt-1 text-[10px] text-slate-400">{dvAuto ? 'Auto' : 'Manual'}</p>
           </div>
           <div>
-            <Label htmlFor="tipoPersona">Tipo persona</Label>
-            <Select id="tipoPersona" name="tipoPersona" defaultValue="" className="mt-1">
-              <option value="">—</option>
+            <Label htmlFor="tipoPersona">Tipo persona *</Label>
+            <Select id="tipoPersona" name="tipoPersona" required defaultValue="" className="mt-1">
+              <option value="" disabled>
+                —
+              </option>
               <option value="JURIDICA">Jurídica</option>
               <option value="NATURAL">Natural</option>
             </Select>
@@ -129,17 +122,20 @@ export function CreateCuentaCobroForm({
 
       {/* Rep legal */}
       <div className={sectionClass}>
-        <h3 className={sectionTitleClass}>Representante legal (opcional)</h3>
+        <h3 className={sectionTitleClass}>Representante legal</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div>
-            <Label htmlFor="repLegalTipoDoc">Tipo doc.</Label>
+            <Label htmlFor="repLegalTipoDoc">Tipo doc. *</Label>
             <Select
               id="repLegalTipoDoc"
               name="repLegalTipoDoc"
+              required
               defaultValue=""
               className="mt-1"
             >
-              <option value="">—</option>
+              <option value="" disabled>
+                —
+              </option>
               <option value="CC">CC</option>
               <option value="CE">CE</option>
               <option value="NIT">NIT</option>
@@ -150,39 +146,39 @@ export function CreateCuentaCobroForm({
             </Select>
           </div>
           <div>
-            <Label htmlFor="repLegalNumeroDoc">Número doc.</Label>
-            <Input id="repLegalNumeroDoc" name="repLegalNumeroDoc" className="mt-1" />
+            <Label htmlFor="repLegalNumeroDoc">Número doc. *</Label>
+            <Input id="repLegalNumeroDoc" name="repLegalNumeroDoc" required className="mt-1" />
           </div>
           <div className="sm:col-span-2">
-            <Label htmlFor="repLegalNombre">Nombre completo</Label>
-            <Input id="repLegalNombre" name="repLegalNombre" className="mt-1" />
+            <Label htmlFor="repLegalNombre">Nombre completo *</Label>
+            <Input id="repLegalNombre" name="repLegalNombre" required className="mt-1" />
           </div>
         </div>
       </div>
 
       {/* Contacto */}
       <div className={sectionClass}>
-        <h3 className={sectionTitleClass}>Contacto (opcional)</h3>
+        <h3 className={sectionTitleClass}>Contacto</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
-            <Label htmlFor="direccion">Dirección</Label>
-            <Input id="direccion" name="direccion" className="mt-1" />
+            <Label htmlFor="direccion">Dirección *</Label>
+            <Input id="direccion" name="direccion" required className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="ciudad">Ciudad</Label>
-            <Input id="ciudad" name="ciudad" className="mt-1" />
+            <Label htmlFor="ciudad">Ciudad *</Label>
+            <Input id="ciudad" name="ciudad" required className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="departamento">Departamento</Label>
-            <Input id="departamento" name="departamento" className="mt-1" />
+            <Label htmlFor="departamento">Departamento *</Label>
+            <Input id="departamento" name="departamento" required className="mt-1" />
           </div>
           <div>
-            <Label htmlFor="telefono">Teléfono</Label>
-            <Input id="telefono" name="telefono" className="mt-1" />
+            <Label htmlFor="telefono">Teléfono *</Label>
+            <Input id="telefono" name="telefono" required className="mt-1" />
           </div>
           <div className="sm:col-span-3">
-            <Label htmlFor="email">Correo</Label>
-            <Input id="email" name="email" type="email" className="mt-1" />
+            <Label htmlFor="email">Correo *</Label>
+            <Input id="email" name="email" type="email" required className="mt-1" />
           </div>
         </div>
       </div>

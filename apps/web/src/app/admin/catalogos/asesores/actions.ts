@@ -3,11 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
-import {
-  getUserScope,
-  validarSucursalIdAsignable,
-} from '@/lib/sucursal-scope';
+import { getUserScope, validarSucursalIdAsignable } from '@/lib/sucursal-scope';
 import { AsesorSchema } from '@/lib/validations';
+import { nextAsesorCodigo } from '@/lib/consecutivo';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -25,42 +23,45 @@ export async function createAsesorAction(
 ): Promise<ActionState> {
   await requireAuth();
 
-  const sucursalId = await resolverSucursalId(
-    String(formData.get('sucursalId') ?? ''),
-  );
+  const sucursalId = await resolverSucursalId(String(formData.get('sucursalId') ?? ''));
   const errSuc = await validarSucursalIdAsignable(sucursalId);
   if (errSuc) return { error: errSuc };
 
-  const parsed = AsesorSchema.safeParse({
-    codigo: String(formData.get('codigo') ?? '').toUpperCase().trim(),
+  const baseRaw = {
     nombre: String(formData.get('nombre') ?? '').trim(),
     email: String(formData.get('email') ?? '').trim(),
     telefono: String(formData.get('telefono') ?? '').trim(),
     sucursalId,
-  });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  };
 
-  try {
-    await prisma.asesorComercial.create({
-      data: {
-        codigo: parsed.data.codigo,
-        nombre: parsed.data.nombre,
-        email: parsed.data.email,
-        telefono: parsed.data.telefono,
-        sucursalId: parsed.data.sucursalId ?? null,
-      },
-    });
-  } catch (e) {
-    return {
-      error:
-        e instanceof Error && e.message.includes('Unique')
-          ? 'Código duplicado en la sucursal'
-          : 'Error al crear',
-    };
+  // Código consecutivo global AS-NNNN — lo asigna el server. Reintentamos
+  // una vez por si dos peticiones colisionan en el @unique.
+  let attempt = 0;
+  while (attempt < 3) {
+    attempt += 1;
+    const codigo = await nextAsesorCodigo();
+    const parsed = AsesorSchema.safeParse({ ...baseRaw, codigo });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+
+    try {
+      await prisma.asesorComercial.create({
+        data: {
+          codigo: parsed.data.codigo,
+          nombre: parsed.data.nombre,
+          email: parsed.data.email,
+          telefono: parsed.data.telefono,
+          sucursalId: parsed.data.sucursalId ?? null,
+        },
+      });
+      revalidatePath('/admin/catalogos/asesores');
+      return { ok: true };
+    } catch (e) {
+      const isUnique = e instanceof Error && e.message.includes('Unique');
+      if (isUnique && attempt < 3) continue;
+      return { error: isUnique ? 'Conflicto de código, intente de nuevo' : 'Error al crear' };
+    }
   }
-
-  revalidatePath('/admin/catalogos/asesores');
-  return { ok: true };
+  return { error: 'No se pudo asignar un código único, intente de nuevo' };
 }
 
 export async function toggleAsesorAction(id: string) {

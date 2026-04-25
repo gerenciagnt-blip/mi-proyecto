@@ -18,7 +18,6 @@ import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
-import { MarcarPagadaDialog } from './marcar-pagada-dialog';
 import { PagosimpleCell } from './pagosimple-cell';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
@@ -682,6 +681,7 @@ async function PlanillasTable({
   // Scope: aliado sólo ve sus propias planillas.
   // Staff puede filtrar explícitamente por sucursal.
   const scope = await getUserScope();
+  const esStaff = scope?.tipo === 'STAFF';
   const sucursalAplicada: string | null =
     scope?.tipo === 'SUCURSAL' ? scope.sucursalId : staffSucursalFilter;
   const planillaScope = sucursalAplicada ? { sucursalId: sucursalAplicada } : {};
@@ -851,19 +851,23 @@ async function PlanillasTable({
                           pagosimplePaymentUrl={p.pagosimplePaymentUrl}
                         />
                       )}
-                      <a
-                        href={`/api/planos/${p.id}/plano.txt`}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-                        title="Descargar archivo plano"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        TXT
-                      </a>
-                      {estado === 'CONSOLIDADO' && (
-                        <>
-                          <MarcarPagadaDialog planillaId={p.id} consecutivo={p.consecutivo} />
-                          <AnularPlanillaButton planillaId={p.id} />
-                        </>
+                      {/* La descarga del TXT es solo para staff (ADMIN/SOPORTE).
+                          Los aliados no operan el plano directamente. */}
+                      {esStaff && (
+                        <a
+                          href={`/api/planos/${p.id}/plano.txt`}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                          title="Descargar archivo plano"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          TXT
+                        </a>
+                      )}
+                      {/* "Marcar pagada" se eliminó del UI: el estado lo
+                          actualiza el sync automático con PagoSimple cada
+                          15 minutos en horario laboral. */}
+                      {estado === 'CONSOLIDADO' && esStaff && (
+                        <AnularPlanillaButton planillaId={p.id} />
                       )}
                     </div>
                   </td>

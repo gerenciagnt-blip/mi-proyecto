@@ -455,6 +455,11 @@ export async function generarPlanillasAction(periodoId: string): Promise<ActionS
  * propaga el `numeroPlanilla` a todos los comprobantes enlazados.
  *
  * Una vez pagada, la planilla no puede anularse.
+ *
+ * NOTA: este action ya NO está expuesto en el UI. La transición a PAGADA
+ * la hace el sync automático con PagoSimple (cron cada 15 min en horario
+ * laboral) cuando detecta que el operador confirmó el pago. Se conserva
+ * como utility por si se necesita marcar manualmente desde un script.
  */
 export async function marcarPlanillaPagadaAction(
   planillaId: string,

@@ -28,6 +28,9 @@ import { pagosimpleRequest } from './client';
 import { getBaseAuthHeaders, getFullAuthHeaders } from './auth';
 import { requirePagosimpleConfig } from './config';
 import { generarPlano } from '@/lib/planos/generar';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('pagosimple:planillas');
 import type {
   PayrollInconsistenciesResponse,
   PayrollTotalResponse,
@@ -328,9 +331,9 @@ export async function validatePlanillaInPagosimple(
       };
     }
     if (!json.success || !json.data) {
-      // eslint-disable-next-line no-console
-      console.error(
-        `[pagosimple] POST /payroll/validate — code=${json.code} msg="${json.message}" desc="${json.description}"`,
+      log.error(
+        { code: json.code, msg: json.message, description: json.description },
+        'POST /payroll/validate falló',
       );
       return {
         ok: false,
@@ -359,10 +362,7 @@ export async function validatePlanillaInPagosimple(
       const todosAutocorregibles = errs1.length > 0 && errs1.every((e) => e.autocorrect === 'Si');
 
       if (todosAutocorregibles && payrollCode) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[pagosimple] auto-corrección disparada (${errs1.length} errores autocorregibles)`,
-        );
+        log.info({ payrollCode, errores: errs1.length }, 'auto-corrección disparada');
         try {
           const correctionResp = await fetch(`${cfg.baseUrl}/payroll/correction`, {
             method: 'POST',
@@ -383,16 +383,13 @@ export async function validatePlanillaInPagosimple(
             payrollNumber = ids.payrollNumber;
             payrollCode = ids.payrollCode;
           } else {
-            // eslint-disable-next-line no-console
-            console.warn(
-              `[pagosimple] /payroll/correction respondió success=false: ${corrJson?.message}`,
+            log.warn(
+              { payrollCode, msg: corrJson?.message },
+              '/payroll/correction respondió success=false',
             );
           }
         } catch (corrErr) {
-          // eslint-disable-next-line no-console
-          console.error(
-            `[pagosimple] /payroll/correction falló: ${corrErr instanceof Error ? corrErr.message : corrErr}`,
-          );
+          log.error({ payrollCode, err: corrErr }, '/payroll/correction falló');
         }
       }
     }
@@ -402,9 +399,9 @@ export async function validatePlanillaInPagosimple(
     const planillaGuardadaOk = payrollNumber !== null && numErrors === 0;
 
     if (!payrollCode && !payrollNumber) {
-      // eslint-disable-next-line no-console
-      console.error(
-        `[pagosimple] POST /payroll/validate — sin code ni number. data: ${JSON.stringify(data).slice(0, 300)}`,
+      log.error(
+        { dataPreview: JSON.stringify(data).slice(0, 300) },
+        'POST /payroll/validate sin code ni number',
       );
       return {
         ok: false,
@@ -429,9 +426,14 @@ export async function validatePlanillaInPagosimple(
         pagosimpleSyncedAt: new Date(),
       },
     });
-    // eslint-disable-next-line no-console
-    console.log(
-      `[pagosimple] POST /payroll/validate — code=${payrollCode} number=${payrollNumber ?? '0 (no guardada)'} errors=${numErrors} → ${estadoInterno}`,
+    log.info(
+      {
+        payrollCode,
+        payrollNumber: payrollNumber ?? null,
+        errors: numErrors,
+        estado: estadoInterno,
+      },
+      'POST /payroll/validate completado',
     );
 
     // Best-effort: si la validación pasó, traer también los totales
@@ -441,12 +443,7 @@ export async function validatePlanillaInPagosimple(
       try {
         await getPlanillaTotalsFromPagosimple(planillaId);
       } catch (totErr) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[pagosimple] No se pudieron traer totales tras validate: ${
-            totErr instanceof Error ? totErr.message : totErr
-          }`,
-        );
+        log.warn({ err: totErr }, 'no se pudieron traer totales tras validate');
       }
     }
 

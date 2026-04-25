@@ -10,6 +10,7 @@ import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
 import { pagosimpleSyncPlanillasCommand } from './commands/pagosimple-sync-planillas.js';
 import { divipolaSeedCommand } from './commands/divipola-seed.js';
 import { entidadesPilaSeedCommand } from './commands/entidades-pila-seed.js';
+import { dbBackupCommand } from './commands/db-backup.js';
 
 const program = new Command();
 
@@ -113,6 +114,15 @@ program
   .option('--include-pagadas', 'Incluir también planillas PAGADA')
   .action(async (options: { includePagadas?: boolean }) => {
     await pagosimpleSyncPlanillasCommand({ includePagadas: options.includePagadas });
+  });
+
+program
+  .command('db:backup')
+  .description('Genera un backup local de la BD (formato custom de pg_dump)')
+  .option('--out <ruta>', 'Ruta del archivo de salida (default: ./backups/<stamp>.dump)')
+  .option('--schema-only', 'Solo estructura, sin datos')
+  .action(async (options: { out?: string; schemaOnly?: boolean }) => {
+    await dbBackupCommand(options);
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args

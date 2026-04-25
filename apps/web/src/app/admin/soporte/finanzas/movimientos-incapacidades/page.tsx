@@ -7,6 +7,7 @@ import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { UploadExtractoForm } from './upload-form';
+import { RegistroManualButton } from './manual-dialog';
 
 export const metadata = { title: 'Movimientos Incapacidades · Finanzas' };
 export const dynamic = 'force-dynamic';
@@ -120,6 +121,7 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
             Consignaciones bancarias de entidades SGSS importadas desde extractos.
           </p>
         </div>
+        <RegistroManualButton />
       </header>
 
       {/* Stats */}
@@ -160,7 +162,7 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
                 Importar extracto
               </h2>
               <p className="mt-0.5 text-[11px] text-slate-500">
-                Acepta Excel (.xlsx) o CSV. Se auto-detectan las columnas fecha/concepto/valor.
+                Acepta Excel (.xlsx), CSV o PDF. Se auto-detectan las columnas fecha/concepto/valor.
               </p>
             </header>
             <div className="px-5 py-4">

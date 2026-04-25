@@ -88,9 +88,7 @@ export function EditUserForm({
             <option value="ADMIN">Administrador</option>
             <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
-            {user.role === 'ALIADO_USER' && (
-              <option value="ALIADO_USER">Usuario Aliado (legado)</option>
-            )}
+            <option value="ALIADO_USER">Usuario Aliado</option>
           </Select>
         </div>
         {!esStaff && (

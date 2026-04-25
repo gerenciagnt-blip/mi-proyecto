@@ -32,8 +32,6 @@ import { logoutAction } from '@/app/dashboard/actions';
 
 /** Conjuntos de roles (para dejar intención clara en la matriz). */
 const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
-const ADMIN_ONLY: Role[] = ['ADMIN'];
-const ALL: Role[] = ['ADMIN', 'SOPORTE', 'ALIADO_OWNER', 'ALIADO_USER'];
 
 type NavItem = {
   label: string;
@@ -56,12 +54,13 @@ const NAV: NavItem[] = [
     children: [
       { label: 'Empresas planilla', href: '/admin/empresas', icon: Building, roles: STAFF },
       { label: 'Empresa CC', href: '/admin/cuentas-cobro', icon: Receipt },
+      // Usuarios incluye una tab interna a /admin/sucursales — no
+      // exponemos "Sucursales" como entrada separada del nav.
       { label: 'Usuarios', href: '/admin/usuarios', icon: Users, roles: STAFF },
       { label: 'Parametrización', href: '/admin/catalogos', icon: Database, roles: STAFF },
       { label: 'Asesor comercial', href: '/admin/catalogos/asesores', icon: Users2 },
       { label: 'Servicios adicionales', href: '/admin/catalogos/servicios', icon: Sparkles },
       { label: 'Formato comprobante', href: '/admin/catalogos/comprobantes', icon: FileSignature },
-      { label: 'Sucursales', href: '/admin/sucursales', icon: Building, roles: ADMIN_ONLY },
     ],
   },
   {

@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { createHash } from 'node:crypto';
 
 /**
- * Parser genérico de extractos bancarios (Excel o CSV).
+ * Parser genérico de extractos bancarios (Excel/CSV/PDF).
  *
  * Reconoce automáticamente columnas típicas por nombre (es-insensitive):
  *   - fecha | fecha ingreso | fecha valor    → fechaIngreso
@@ -13,6 +13,11 @@ import { createHash } from 'node:crypto';
  * Los extractos de cada banco tienen pequeñas diferencias, pero casi todos
  * exportan estas columnas en Excel. Cuando el usuario comparta ejemplos
  * específicos, se pueden agregar parsers dedicados que extiendan este genérico.
+ *
+ * Para PDF intentamos extraer líneas con patrón
+ *   <fecha> ... <concepto> ... <valor>
+ * usando regex. Si el extracto tiene formato no estándar, se devuelve
+ * `ok=false` con preview del texto para que el usuario use registro manual.
  *
  * Cada fila se normaliza a un registro candidato. El hash identidad evita
  * duplicados al re-importar el mismo archivo.
@@ -218,4 +223,118 @@ export function parseExtractoBancario(
       banco: bancoKey,
     },
   };
+}
+
+// ============================================================
+// Parser de PDF
+// ============================================================
+
+/**
+ * Extrae texto de un PDF usando pdf-parse. Mismo subpath que en cartera
+ * para evitar el bug de bootstrap del paquete dentro de Next.
+ */
+async function extraerTextoPdf(buf: Buffer): Promise<string> {
+  // @ts-expect-error — subpath sin tipos declarados
+  const mod = await import('pdf-parse/lib/pdf-parse.js');
+  const pdfParse = (mod.default ?? mod) as (b: Buffer) => Promise<{ text: string }>;
+  const result = await pdfParse(buf);
+  return result.text ?? '';
+}
+
+/**
+ * Intenta extraer movimientos de un texto plano de extracto bancario.
+ *
+ * Patrón heurístico por línea:
+ *   <fecha dd/mm/aaaa o dd-mm-aaaa> <concepto largo> <valor con $ o ,>
+ *
+ * Reconoce valores con formato colombiano (`$1.234.567,89` o `1.234.567`)
+ * y descarta líneas obviamente de header/footer.
+ *
+ * Si una línea no cumple el patrón, se ignora silenciosamente — el usuario
+ * verá el conteo de líneas leídas para validar que el parser detectó todo.
+ */
+export function parseExtractoBancarioFromTexto(
+  texto: string,
+  opts: { bancoDefault?: string } = {},
+): ParseResult {
+  const errores: string[] = [];
+  const registros: MovimientoCandidato[] = [];
+
+  // Línea: fecha + texto + valor al final
+  // Ejemplo: "15/04/2026 ABONO INCAPACIDAD EPS SURA 1.234.567,89"
+  const lineaRe =
+    /^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})\s+(.+?)\s+\$?\s*([\d.,]+)\s*$/;
+
+  const lineas = texto
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  for (const linea of lineas) {
+    const m = lineaRe.exec(linea);
+    if (!m) continue;
+    const [, fechaRaw, conceptoRaw, valorRaw] = m;
+    const fecha = parseDateLoose(fechaRaw);
+    const valor = parseValorLoose(valorRaw);
+    const concepto = (conceptoRaw ?? '').trim();
+    if (!fecha || valor === null || valor === 0 || !concepto) continue;
+    // Filtra valores demasiado chicos que probablemente son sufijos de
+    // referencia (ej. comprobante "12345" interpretado como 12345 pesos).
+    // Usamos un mínimo de 1000 COP — los movimientos reales son mucho mayores.
+    if (Math.abs(valor) < 1000) continue;
+    const banco = opts.bancoDefault?.trim() || null;
+    registros.push({
+      fechaIngreso: fecha,
+      concepto,
+      valor,
+      bancoOrigen: banco,
+      hashIdentidad: hashMovimiento(banco ?? '', fecha, valor, concepto),
+    });
+  }
+
+  if (registros.length === 0) {
+    errores.push(
+      'No se detectaron líneas con formato "fecha concepto valor". ' +
+        'Intenta cargar Excel/CSV o usa Registro manual.',
+    );
+  }
+
+  return {
+    ok: registros.length > 0,
+    registros,
+    errores,
+    columnasDetectadas: {
+      fecha: 'auto (PDF)',
+      concepto: 'auto (PDF)',
+      valor: 'auto (PDF)',
+      banco: opts.bancoDefault ? 'manual' : null,
+    },
+  };
+}
+
+/** Parser PDF que envuelve la extracción de texto + el regex parser. */
+export async function parseExtractoBancarioPdf(
+  buf: Buffer,
+  opts: { bancoDefault?: string } = {},
+): Promise<ParseResult> {
+  let texto: string;
+  try {
+    texto = await extraerTextoPdf(buf);
+  } catch (e) {
+    return {
+      ok: false,
+      registros: [],
+      errores: [`No se pudo leer el PDF: ${e instanceof Error ? e.message : 'error'}`],
+      columnasDetectadas: { fecha: null, concepto: null, valor: null, banco: null },
+    };
+  }
+  if (!texto.trim()) {
+    return {
+      ok: false,
+      registros: [],
+      errores: ['El PDF no contiene texto extraíble (¿es escaneado?)'],
+      columnasDetectadas: { fecha: null, concepto: null, valor: null, banco: null },
+    };
+  }
+  return parseExtractoBancarioFromTexto(texto, opts);
 }

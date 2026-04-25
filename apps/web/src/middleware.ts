@@ -9,7 +9,11 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
 
-  const isPublic = pathname === '/login' || pathname.startsWith('/api/auth');
+  // Rutas públicas: login, callbacks de NextAuth y endpoints de monitoreo.
+  // El health check es público a propósito — no expone información sensible
+  // y debe ser accesible para uptime monitors, Kubernetes probes, etc.
+  const isPublic =
+    pathname === '/login' || pathname.startsWith('/api/auth') || pathname === '/api/health';
   if (isPublic) return NextResponse.next();
 
   if (!isLoggedIn) {

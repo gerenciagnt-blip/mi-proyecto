@@ -18,18 +18,22 @@ export function UploadExtractoForm() {
           htmlFor="archivo"
           className="text-[10px] font-medium uppercase tracking-wider text-slate-500"
         >
-          Archivo (Excel o CSV)
+          Archivo (Excel, CSV o PDF)
         </label>
         <input
           id="archivo"
           name="archivo"
           type="file"
-          accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+          accept=".xlsx,.xls,.csv,.pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/pdf"
           required
           onChange={(e) => setFileName(e.target.files?.[0]?.name ?? '')}
           className="mt-1 block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
         />
         {fileName && <p className="mt-1 text-[11px] text-slate-500">{fileName}</p>}
+        <p className="mt-1 text-[10px] text-slate-400">
+          PDF: detecta líneas con patrón “fecha … valor”. Si tu extracto no es estándar, usa{' '}
+          <strong>Registro manual</strong>.
+        </p>
       </div>
 
       <div>

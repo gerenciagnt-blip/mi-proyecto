@@ -6,6 +6,7 @@ import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { CuentaCobroSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
+import { nextCuentaCobroCodigo } from '@/lib/consecutivo';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -13,7 +14,6 @@ function parseForm(formData: FormData) {
   const g = (k: string) => String(formData.get(k) ?? '').trim();
   return {
     sucursalId: g('sucursalId'),
-    codigo: g('codigo').toUpperCase(),
     razonSocial: titleCase(g('razonSocial')),
     nit: g('nit'),
     dv: g('dv'),
@@ -43,22 +43,30 @@ export async function createCuentaCobroAction(
   if (!scope) return { error: 'Sesión inválida' };
   if (scope.tipo === 'SUCURSAL') raw.sucursalId = scope.sucursalId;
 
-  const parsed = CuentaCobroSchema.safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+  // El código es consecutivo global (CCB-000001) — lo asigna el server.
+  // Si por alguna race condition coincide, el @@unique reintenta.
+  let attempt = 0;
+  while (attempt < 3) {
+    attempt += 1;
+    const codigo = await nextCuentaCobroCodigo();
+    const parsed = CuentaCobroSchema.safeParse({ ...raw, codigo });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
-  try {
-    await prisma.cuentaCobro.create({ data: parsed.data });
-  } catch (e) {
-    return {
-      error:
-        e instanceof Error && e.message.includes('Unique')
-          ? 'Ya existe una cuenta con ese código en esa sucursal'
+    try {
+      await prisma.cuentaCobro.create({ data: parsed.data });
+      revalidatePath('/admin/cuentas-cobro');
+      return { ok: true };
+    } catch (e) {
+      const isUnique = e instanceof Error && e.message.includes('Unique');
+      if (isUnique && attempt < 3) continue; // reintenta con el siguiente consecutivo
+      return {
+        error: isUnique
+          ? 'Conflicto de código, intente de nuevo'
           : 'Error al crear cuenta de cobro',
-    };
+      };
+    }
   }
-
-  revalidatePath('/admin/cuentas-cobro');
-  return { ok: true };
+  return { error: 'No se pudo asignar un código único, intente de nuevo' };
 }
 
 export async function toggleCuentaCobroAction(id: string) {

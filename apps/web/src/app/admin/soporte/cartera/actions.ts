@@ -13,6 +13,7 @@ import {
   type ResultadoImport,
 } from '@/lib/cartera/normalizer';
 import type { ParsedCartera } from '@/lib/cartera/types';
+import { emitirNotificacion } from '@/lib/notificaciones';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -46,9 +47,7 @@ export type PreviewResult =
  * resumen para el UI (cabecera + primeras 10 líneas + advertencias). El
  * archivo se reparsea al confirmar el import — el preview no persiste.
  */
-export async function previewCarteraAction(
-  formData: FormData,
-): Promise<PreviewResult> {
+export async function previewCarteraAction(formData: FormData): Promise<PreviewResult> {
   await requireStaff();
   const file = formData.get('file');
   if (!(file instanceof File)) {
@@ -206,6 +205,51 @@ export async function gestionarLineaAction(
     });
   });
 
+  // Notificar al aliado si la línea acaba de pasar a MORA_REAL o CARTERA_REAL
+  // y tiene una sucursal asignada (efectiva, considerando el cambio en este
+  // mismo request).
+  const sucursalEfectiva =
+    cambios.sucursalAsignadaId !== undefined
+      ? cambios.sucursalAsignadaId
+      : linea.sucursalAsignadaId;
+  const estadoEfectivo = cambios.estado ?? linea.estado;
+  const acabaDeSerVisible =
+    cambios.estado &&
+    (cambios.estado === 'MORA_REAL' || cambios.estado === 'CARTERA_REAL') &&
+    linea.estado !== cambios.estado;
+
+  if (acabaDeSerVisible && sucursalEfectiva) {
+    const ctx = await prisma.carteraDetallado.findUnique({
+      where: { id: detalladoId },
+      select: {
+        numeroDocumento: true,
+        nombreCompleto: true,
+        valorCobro: true,
+        consolidado: { select: { entidadNombre: true } },
+      },
+    });
+    if (ctx) {
+      const labelEstado = estadoEfectivo === 'MORA_REAL' ? 'Mora real' : 'Cartera real';
+      const valor = new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        maximumFractionDigits: 0,
+      }).format(Number(ctx.valorCobro));
+      void emitirNotificacion({
+        tipo: 'ALIADO_CARTERA_ASIGNADA',
+        destinoSucursalId: sucursalEfectiva,
+        titulo: `${labelEstado} asignada · ${ctx.consolidado.entidadNombre}`,
+        mensaje: `${ctx.nombreCompleto} (${ctx.numeroDocumento}) · ${valor}`,
+        href: '/admin/administrativo/cartera',
+        metadatos: {
+          detalladoId,
+          consolidadoId: linea.consolidadoId,
+          estado: estadoEfectivo,
+        },
+      });
+    }
+  }
+
   revalidatePath('/admin/soporte/cartera');
   revalidatePath(`/admin/soporte/cartera/${linea.consolidadoId}`);
   // También en Administrativo por si la línea acaba de pasar a CARTERA_REAL.
@@ -232,9 +276,7 @@ export type GestionRow = {
  * Scope: STAFF ve cualquier línea; SUCURSAL sólo las asignadas a su
  * sucursal.
  */
-export async function listarGestionesLineaAction(
-  detalladoId: string,
-): Promise<GestionRow[]> {
+export async function listarGestionesLineaAction(detalladoId: string): Promise<GestionRow[]> {
   const { requireAuth } = await import('@/lib/auth-helpers');
   await requireAuth();
   const { getUserScope } = await import('@/lib/sucursal-scope');
@@ -270,9 +312,7 @@ export async function listarGestionesLineaAction(
 // ============ Anular consolidado ============
 
 /** Borra el consolidado completo (cascade). Solo ADMIN/SOPORTE. */
-export async function anularConsolidadoAction(
-  consolidadoId: string,
-): Promise<ActionState> {
+export async function anularConsolidadoAction(consolidadoId: string): Promise<ActionState> {
   await requireStaff();
   const existe = await prisma.carteraConsolidado.findUnique({
     where: { id: consolidadoId },

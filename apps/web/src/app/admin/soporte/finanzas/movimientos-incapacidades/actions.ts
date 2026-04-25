@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { Prisma, prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { nextMovimientoIncConsecutivo } from '@/lib/finanzas/consecutivos';
-import { parseExtractoBancario } from '@/lib/finanzas/parser-extracto';
+import { parseExtractoBancario, parseExtractoBancarioPdf } from '@/lib/finanzas/parser-extracto';
 
 export type ActionState = {
   error?: string;
@@ -37,14 +37,22 @@ export async function importarExtractoAction(
   const bancoDefault = String(formData.get('bancoDefault') ?? '').trim() || undefined;
 
   if (!(file instanceof File) || file.size === 0) {
-    return { error: 'Selecciona un archivo Excel o CSV.' };
+    return { error: 'Selecciona un archivo Excel, CSV o PDF.' };
   }
   if (file.size > 10 * 1024 * 1024) {
     return { error: 'Archivo demasiado grande (máx. 10 MB).' };
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const parse = parseExtractoBancario(buf, { bancoDefault });
+
+  // Detectamos el tipo por extensión (más confiable que MIME para casos
+  // donde el browser manda mime genérico como octet-stream).
+  const nombre = (file.name ?? '').toLowerCase();
+  const esPdf = nombre.endsWith('.pdf') || file.type === 'application/pdf';
+
+  const parse = esPdf
+    ? await parseExtractoBancarioPdf(buf, { bancoDefault })
+    : parseExtractoBancario(buf, { bancoDefault });
 
   if (!parse.ok || parse.registros.length === 0) {
     return {
@@ -127,6 +135,81 @@ export async function importarExtractoAction(
       columnasDetectadas: parse.columnasDetectadas,
     },
   };
+}
+
+/**
+ * Registra manualmente un movimiento bancario. Útil cuando el extracto
+ * no está disponible o el formato del PDF no es parseable.
+ *
+ * Genera el mismo `hashIdentidad` que el parser para que si después se
+ * importa el extracto con esa misma fila, no se duplique.
+ */
+export async function crearMovimientoManualAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireStaff();
+
+  const fechaIso = String(formData.get('fechaIngreso') ?? '').trim();
+  const concepto = String(formData.get('concepto') ?? '').trim();
+  const valorStr = String(formData.get('valor') ?? '').trim();
+  const bancoOrigen = String(formData.get('bancoOrigen') ?? '').trim() || null;
+
+  if (!fechaIso || !/^\d{4}-\d{2}-\d{2}$/.test(fechaIso)) {
+    return { error: 'Fecha inválida (formato AAAA-MM-DD)' };
+  }
+  if (!concepto || concepto.length < 3) {
+    return { error: 'El concepto es obligatorio (mín. 3 caracteres)' };
+  }
+  if (concepto.length > 500) {
+    return { error: 'Concepto demasiado largo (máx. 500 caracteres)' };
+  }
+  const valor = Number(valorStr.replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return { error: 'Valor inválido (debe ser un número > 0)' };
+  }
+
+  const [y, m, d] = fechaIso.split('-').map(Number);
+  const fechaIngreso = new Date(Date.UTC(y!, m! - 1, d!, 12, 0, 0));
+
+  // hashIdentidad consistente con el parser para evitar duplicados al
+  // importar después un extracto con la misma fila.
+  const { createHash } = await import('node:crypto');
+  const hashKey = `${bancoOrigen ?? ''}|${fechaIngreso.toISOString().slice(0, 10)}|${valor}|${concepto.toLowerCase()}`;
+  const hashIdentidad = createHash('sha256').update(hashKey).digest('hex');
+
+  const existente = await prisma.movimientoIncapacidad.findFirst({
+    where: { hashIdentidad },
+    select: { id: true, consecutivo: true },
+  });
+  if (existente) {
+    return {
+      error: `Ya existe un movimiento con esos datos (${existente.consecutivo}).`,
+    };
+  }
+
+  try {
+    const consec = await nextMovimientoIncConsecutivo();
+    await prisma.movimientoIncapacidad.create({
+      data: {
+        consecutivo: consec,
+        fechaIngreso,
+        concepto,
+        valor: new Prisma.Decimal(valor),
+        bancoOrigen,
+        hashIdentidad,
+        estado: 'PENDIENTE',
+        createdById: session.user.id,
+      },
+    });
+  } catch (e) {
+    return {
+      error: `Error al guardar: ${e instanceof Error ? e.message : 'desconocido'}`,
+    };
+  }
+
+  revalidatePath('/admin/soporte/finanzas/movimientos-incapacidades');
+  return { ok: true };
 }
 
 /** Anula un movimiento (solo si está PENDIENTE o CONCILIADO sin detalles). */

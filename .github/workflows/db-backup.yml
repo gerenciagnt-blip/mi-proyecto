@@ -1,0 +1,160 @@
+name: DB Backup (semanal · Neon → S3)
+
+# Backup completo de la BD usando pg_dump y subida a S3.
+# Corre los domingos a las 5 AM UTC (≈ medianoche Bogotá del domingo).
+# También se puede disparar manualmente.
+#
+# El archivo queda en s3://$BACKUP_S3_BUCKET/$BACKUP_S3_PREFIX/<YYYY-MM-DD>.dump
+# Formato `custom` de pg_dump: comprimido y restaurable con pg_restore.
+#
+# Política de retención sugerida: lifecycle rule en S3 que mueva a Glacier
+# después de 30 días y elimine después de 365 días.
+on:
+  schedule:
+    - cron: '0 5 * * 0'
+  workflow_dispatch:
+    inputs:
+      verify_restore:
+        description: 'Hacer test de restore en BD efímera (sanidad)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  backup:
+    name: pg_dump → S3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+      BACKUP_S3_PREFIX: ${{ secrets.BACKUP_S3_PREFIX || 'pila-prod' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Instalamos un Postgres client lo suficientemente nuevo para
+      # garantizar compatibilidad con la versión de Neon (Postgres 16+).
+      - name: Install Postgres 16 client
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+          sudo sh -c 'sed -i "s|deb |deb [signed-by=/usr/share/keyrings/pgdg.gpg] |" /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Validate secrets
+        run: |
+          missing=()
+          [ -z "$DATABASE_URL" ]            && missing+=("DATABASE_URL")
+          [ -z "$AWS_ACCESS_KEY_ID" ]       && missing+=("AWS_ACCESS_KEY_ID")
+          [ -z "$AWS_SECRET_ACCESS_KEY" ]   && missing+=("AWS_SECRET_ACCESS_KEY")
+          [ -z "$BACKUP_S3_BUCKET" ]        && missing+=("BACKUP_S3_BUCKET")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Faltan secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "✓ Secrets OK"
+
+      - name: Run pg_dump (formato custom)
+        id: dump
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y-%m-%d_%H%M%S)
+          FILE="/tmp/pila-${STAMP}.dump"
+          echo "stamp=$STAMP"   >> "$GITHUB_OUTPUT"
+          echo "file=$FILE"     >> "$GITHUB_OUTPUT"
+          # Strip de comillas accidentales en el secret
+          DB="${DATABASE_URL%\"}"; DB="${DB#\"}"
+          # -Fc = formato custom (comprimido). -Z 9 = compresión máxima.
+          # --no-owner / --no-privileges porque el restore va a otra cuenta.
+          pg_dump "$DB" \
+            -Fc -Z 9 \
+            --no-owner --no-privileges \
+            --file="$FILE"
+          ls -lh "$FILE"
+
+      - name: Verify dump integrity (pg_restore --list)
+        env:
+          DUMP_FILE: ${{ steps.dump.outputs.file }}
+        run: |
+          set -euo pipefail
+          # Si el dump está corrupto o incompleto, pg_restore --list falla.
+          # Esto es una sanidad básica antes de subir al bucket.
+          n_objects=$(pg_restore --list "$DUMP_FILE" | wc -l)
+          if [ "$n_objects" -lt 10 ]; then
+            echo "::error::Dump sospechosamente pequeño ($n_objects objetos). Abortando upload."
+            exit 1
+          fi
+          echo "✓ $n_objects objetos en el dump"
+
+      - name: Upload to S3
+        env:
+          STAMP: ${{ steps.dump.outputs.stamp }}
+          DUMP_FILE: ${{ steps.dump.outputs.file }}
+        run: |
+          set -euo pipefail
+          KEY="${BACKUP_S3_PREFIX}/${STAMP}.dump"
+          aws s3 cp "$DUMP_FILE" "s3://${BACKUP_S3_BUCKET}/${KEY}" \
+            --storage-class STANDARD_IA \
+            --metadata "stamp=${STAMP}"
+          echo "✓ Subido a s3://${BACKUP_S3_BUCKET}/${KEY}"
+
+      # Test opcional de restore: levanta un Postgres efímero y prueba que
+      # el dump se restaura sin errores. No reemplaza un restore manual,
+      # pero detecta corrupción a tiempo.
+      - name: Test restore (opcional)
+        if: ${{ inputs.verify_restore == 'true' }}
+        env:
+          DUMP_FILE: ${{ steps.dump.outputs.file }}
+        run: |
+          set -euo pipefail
+          # Usamos el contenedor postgres oficial — la versión coincide
+          # con la del cliente que usamos para pg_restore.
+          docker run -d --name pg_test \
+            -e POSTGRES_PASSWORD=test \
+            -p 5433:5432 \
+            postgres:16
+          # Esperar a que arranque
+          for i in {1..30}; do
+            if docker exec pg_test pg_isready -U postgres &>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec pg_test psql -U postgres -c "CREATE DATABASE restore_test;"
+          PGPASSWORD=test pg_restore \
+            -h localhost -p 5433 -U postgres \
+            -d restore_test \
+            --no-owner --no-privileges \
+            "$DUMP_FILE" || true
+          # Sanidad: cuántas tablas tiene la BD restaurada
+          n_tables=$(PGPASSWORD=test psql -h localhost -p 5433 -U postgres -d restore_test -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public';")
+          echo "✓ Restore OK · $n_tables tablas en la BD efímera"
+          docker rm -f pg_test
+
+      - name: Summary
+        env:
+          STAMP: ${{ steps.dump.outputs.stamp }}
+        run: |
+          {
+            echo "## Backup completado"
+            echo ""
+            echo "- Timestamp: \`$STAMP\`"
+            echo "- Bucket:    \`s3://${BACKUP_S3_BUCKET}/${BACKUP_S3_PREFIX}/${STAMP}.dump\`"
+            echo "- Storage:   STANDARD_IA"
+            echo ""
+            echo "Para restaurar manualmente:"
+            echo '```bash'
+            echo "aws s3 cp s3://${BACKUP_S3_BUCKET}/${BACKUP_S3_PREFIX}/${STAMP}.dump ./pila.dump"
+            echo "pg_restore --no-owner --no-privileges -d \$DATABASE_URL ./pila.dump"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

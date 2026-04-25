@@ -26,11 +26,8 @@ export function CreateAsesorForm({
 
   return (
     <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-      <div>
-        <Label htmlFor="codigo">Código</Label>
-        <Input id="codigo" name="codigo" required placeholder="AS-001" className="mt-1 uppercase" />
-      </div>
-      <div className="sm:col-span-2">
+      {/* Código (AS-NNNN) lo asigna el server — no se expone en el form. */}
+      <div className="sm:col-span-3">
         <Label htmlFor="nombre">Nombre completo</Label>
         <Input id="nombre" name="nombre" required placeholder="Laura Gómez" className="mt-1" />
       </div>
@@ -51,12 +48,7 @@ export function CreateAsesorForm({
       {esStaff && (
         <div className="sm:col-span-2">
           <Label htmlFor="sucursalId">Sucursal</Label>
-          <Select
-            id="sucursalId"
-            name="sucursalId"
-            defaultValue="GLOBAL"
-            className="mt-1"
-          >
+          <Select id="sucursalId" name="sucursalId" defaultValue="GLOBAL" className="mt-1">
             <option value="GLOBAL">Global (todas)</option>
             {sucursales.map((s) => (
               <option key={s.id} value={s.id}>

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import type { IncapacidadEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
+import { emitirNotificacion } from '@/lib/notificaciones';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -29,14 +30,24 @@ export async function gestionSoporteIncapAction(
 
   const inc = await prisma.incapacidad.findUnique({
     where: { id: incapacidadId },
-    select: { id: true, estado: true },
+    select: {
+      id: true,
+      estado: true,
+      consecutivo: true,
+      sucursalId: true,
+      cotizante: {
+        select: {
+          primerNombre: true,
+          primerApellido: true,
+          numeroDocumento: true,
+        },
+      },
+    },
   });
   if (!inc) return { error: 'Incapacidad no encontrada' };
 
   const cambio =
-    params.nuevoEstado && params.nuevoEstado !== inc.estado
-      ? params.nuevoEstado
-      : undefined;
+    params.nuevoEstado && params.nuevoEstado !== inc.estado ? params.nuevoEstado : undefined;
 
   await prisma.$transaction(async (tx) => {
     if (cambio) {
@@ -57,15 +68,32 @@ export async function gestionSoporteIncapAction(
     });
   });
 
+  // Notificar al aliado dueño/usuario de la sucursal: soporte gestionó
+  // su incapacidad. Adjuntamos el contexto del cotizante para que el
+  // aliado entienda de qué incapacidad se trata sin abrir el detalle.
+  const nombreCot = `${inc.cotizante.primerNombre} ${inc.cotizante.primerApellido}`.trim();
+  void emitirNotificacion({
+    tipo: 'ALIADO_GESTION_INCAPACIDAD',
+    destinoSucursalId: inc.sucursalId,
+    titulo: `Soporte gestionó incapacidad · ${inc.consecutivo}`,
+    mensaje: `${nombreCot} (${inc.cotizante.numeroDocumento})${
+      cambio ? ` · → ${cambio.replaceAll('_', ' ').toLowerCase()}` : ''
+    }`,
+    href: '/admin/administrativo/incapacidades?tab=historico',
+    metadatos: {
+      incapacidadId,
+      consecutivo: inc.consecutivo,
+      nuevoEstado: cambio ?? null,
+    },
+  });
+
   revalidatePath('/admin/soporte/incapacidades');
   revalidatePath('/admin/administrativo/incapacidades');
   return { ok: true };
 }
 
 /** Elimina una incapacidad junto con sus documentos (cascade). */
-export async function anularIncapacidadAction(
-  incapacidadId: string,
-): Promise<ActionState> {
+export async function anularIncapacidadAction(incapacidadId: string): Promise<ActionState> {
   await requireStaff();
   const inc = await prisma.incapacidad.findUnique({
     where: { id: incapacidadId },

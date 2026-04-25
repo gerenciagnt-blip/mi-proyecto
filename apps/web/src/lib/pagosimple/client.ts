@@ -14,6 +14,9 @@
 
 import { requirePagosimpleConfig } from './config';
 import type { PagosimpleResponse } from './types';
+import { createLogger } from '../logger';
+
+const log = createLogger('pagosimple');
 
 export class PagosimpleError extends Error {
   constructor(
@@ -79,8 +82,7 @@ export async function pagosimpleRequest<T>(
   } catch (e) {
     clearTimeout(timeout);
     const msg = e instanceof Error ? e.message : 'Error de red';
-    // eslint-disable-next-line no-console
-    console.error(`[pagosimple] ${method} ${path} — fetch failed: ${msg}`);
+    log.error({ method, path, err: msg }, 'fetch failed');
     throw new PagosimpleError(0, `Error de red llamando a PagoSimple: ${msg}`, undefined, path);
   }
   clearTimeout(timeout);
@@ -93,9 +95,9 @@ export async function pagosimpleRequest<T>(
   try {
     json = JSON.parse(rawBody) as PagosimpleResponse<T>;
   } catch {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[pagosimple] ${method} ${path} — non-JSON HTTP ${resp.status}: ${rawBody.slice(0, 300)}`,
+    log.error(
+      { method, path, status: resp.status, rawBodyPreview: rawBody.slice(0, 300) },
+      'respuesta no-JSON',
     );
     throw new PagosimpleError(
       resp.status,
@@ -109,9 +111,9 @@ export async function pagosimpleRequest<T>(
   // (success undefined), la API está devolviendo un error con otra shape
   // (típicamente Spring boot / 4xx con {message, status, error, ...}).
   if (typeof json?.success !== 'boolean') {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[pagosimple] ${method} ${path} — HTTP ${resp.status} unexpected shape: ${JSON.stringify(json).slice(0, 400)}`,
+    log.error(
+      { method, path, status: resp.status, jsonPreview: JSON.stringify(json).slice(0, 400) },
+      'shape inesperado',
     );
     throw new PagosimpleError(
       resp.status,
@@ -122,9 +124,15 @@ export async function pagosimpleRequest<T>(
   }
 
   if (!json.success) {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[pagosimple] ${method} ${path} — success=false code=${json.code} msg="${json.message}" desc="${json.description}"`,
+    log.error(
+      {
+        method,
+        path,
+        code: json.code,
+        msg: json.message,
+        description: json.description,
+      },
+      'PagoSimple devolvió success=false',
     );
     throw new PagosimpleError(json.code, json.message, json.description, path);
   }

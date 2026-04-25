@@ -197,6 +197,10 @@ model Sucursal {
   cobrosAliado     CobroAliado[]
   movimientosDetalle MovimientoIncDetalle[]
 
+  // Notificaciones dirigidas a esta sucursal (todos los usuarios que
+  // pertenecen a ella las verán como destino).
+  notificaciones   Notificacion[]      @relation("NotificacionSucursal")
+
   @@map("sucursales")
 }
 
@@ -237,6 +241,7 @@ model User {
   cobrosAliadoDocsUser    CobroAliadoDocumento[]    @relation("CobroAliadoDocUser")
   movimientosIncCreados   MovimientoIncapacidad[]   @relation("MovIncCreator")
   movimientosDetDocsUser  MovimientoDetalleDocumento[] @relation("MovDetDocUser")
+  notificaciones          Notificacion[]            @relation("NotificacionDestino")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -1219,10 +1224,12 @@ enum CarteraTipoEntidad {
  *   - PAGADA_CARTERA_REAL  el aliado pagó la cartera real confirmada
  */
 enum CarteraEstado {
-  EN_CONCILIACION
-  CONCILIADA
-  CARTERA_REAL
-  PAGADA_CARTERA_REAL
+  EN_CONCILIACION                                              // estado inicial — recién importado o sin respuesta
+  CONCILIADA                                                   // ya cerrado con la entidad (consolidado o línea)
+  ENVIADA                                                      // consolidado: soporte respondió a la entidad, espera confirmación
+  MORA_REAL                                                    // línea: deuda probable confirmada, visible al aliado
+  CARTERA_REAL                                                 // línea: deuda firme, visible al aliado
+  PAGADA_CARTERA_REAL                                          // línea: el aliado pagó la deuda
 }
 
 /** Origen del PDF — detectado por el parser; MANUAL = el staff lo mapeó a mano. */
@@ -1898,4 +1905,80 @@ model MovimientoDetalleDocumento {
 
   @@index([detalleId])
   @@map("movimiento_det_documento")
+}
+
+// =========================================================================
+// NOTIFICACIONES — bandeja in-app
+// =========================================================================
+//
+// Sistema simple de mensajes dirigidos. Una notificación puede apuntar a:
+//   - Un usuario específico (`destinoUserId`)
+//   - Todos los usuarios de un rol (`destinoRole`) — útil para staff
+//   - Todos los usuarios de una sucursal (`destinoSucursalId`) — para
+//     llegar al ALIADO_OWNER y ALIADO_USER de esa sucursal
+//
+// Al menos uno de los 3 debe estar seteado. La query de "no leídas"
+// combina los 3 con OR.
+//
+// `leidaEn` se setea cuando el usuario hace click. La regla de "leída"
+// se evalúa por usuario — para notificaciones por rol/sucursal, se mide
+// con un set adicional `NotificacionLeida` (user × notificacion).
+
+enum NotificacionTipo {
+  /** Soporte: el aliado creó/modificó/reactivó una afiliación ACTIVA. */
+  SOPORTE_NUEVA_AFILIACION
+  /** Soporte: el aliado radicó una nueva incapacidad. */
+  SOPORTE_NUEVA_INCAPACIDAD
+  /** Soporte: el aliado registró una gestión sobre una línea de cartera. */
+  SOPORTE_RESPUESTA_CARTERA
+  /** Aliado: soporte marcó una línea como MORA_REAL o CARTERA_REAL. */
+  ALIADO_CARTERA_ASIGNADA
+  /** Aliado: soporte registró una gestión sobre una incapacidad de la sucursal. */
+  ALIADO_GESTION_INCAPACIDAD
+}
+
+model Notificacion {
+  id    String           @id @default(cuid())
+  tipo  NotificacionTipo
+
+  // Targeting — al menos uno se llena.
+  destinoUserId     String?
+  destinoRole       Role?
+  destinoSucursalId String?
+
+  titulo    String
+  mensaje   String
+  /** Ruta a la que llevar al usuario al hacer click ("/admin/..."). */
+  href      String?
+  /** Datos extra (consecutivo, IDs, etc.). */
+  metadatos Json?
+
+  createdAt DateTime @default(now())
+
+  destinoUser     User?     @relation("NotificacionDestino", fields: [destinoUserId], references: [id], onDelete: Cascade)
+  destinoSucursal Sucursal? @relation("NotificacionSucursal", fields: [destinoSucursalId], references: [id], onDelete: Cascade)
+  lecturas        NotificacionLectura[]
+
+  @@index([destinoUserId, createdAt])
+  @@index([destinoRole, createdAt])
+  @@index([destinoSucursalId, createdAt])
+  @@map("notificaciones")
+}
+
+/**
+ * Marca una notificación como leída por un usuario específico. Permite
+ * que las notificaciones por rol o sucursal mantengan estado de lectura
+ * por usuario sin duplicar la fila origen.
+ */
+model NotificacionLectura {
+  id             String   @id @default(cuid())
+  notificacionId String
+  userId         String
+  leidaEn        DateTime @default(now())
+
+  notificacion Notificacion @relation(fields: [notificacionId], references: [id], onDelete: Cascade)
+
+  @@unique([notificacionId, userId])
+  @@index([userId])
+  @@map("notificacion_lectura")
 }

@@ -92,7 +92,7 @@ export const RoleEnum = z.enum([
   'ADMIN',
   'SOPORTE',
   'ALIADO_OWNER',
-  'ALIADO_USER', // legado — para usuarios existentes, no se expone en el UI de creación
+  'ALIADO_USER', // usuario aliado de la sucursal — recibe permisos vía rol personalizado
 ]);
 
 /** Staff (ADMIN/SOPORTE) no requieren sucursal — operan cross-tenant. */
@@ -192,6 +192,7 @@ export const CargoSchema = z.object({
     .nullable(),
 });
 
+// Asesor comercial: el `codigo` lo asigna el servidor (consecutivo global AS-NNNN).
 export const AsesorSchema = z.object({
   codigo: z.string().trim().min(1, 'Requerido').max(20),
   nombre: z.string().trim().min(1, 'Requerido').max(200),
@@ -216,23 +217,23 @@ export const ServicioAdicionalSchema = z.object({
 
 // --- Cuenta de Cobro (Fase 1.6.3) ---
 
-const emptyToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
-
+// Empresa CC: el `codigo` lo asigna el servidor (consecutivo global CCB-NNNNNN)
+// y todos los campos del formulario son obligatorios.
 export const CuentaCobroSchema = z.object({
   sucursalId: z.string().trim().min(1, 'Sucursal requerida'),
   codigo: z.string().trim().min(1, 'Requerido').max(30),
-  razonSocial: z.string().trim().min(1, 'Requerido').max(200),
-  nit: optional,
-  dv: optional,
-  tipoPersona: z.preprocess(emptyToNull, TipoPersonaEnum.nullable()),
-  repLegalTipoDoc: z.preprocess(emptyToNull, TipoDocumentoEnum.nullable()),
-  repLegalNumeroDoc: optional,
-  repLegalNombre: optional,
-  direccion: optional,
-  ciudad: optional,
-  departamento: optional,
-  telefono: optional,
-  email: optional.pipe(z.string().email('Correo no válido').optional()),
+  razonSocial: z.string().trim().min(1, 'Razón social requerida').max(200),
+  nit: z.string().trim().min(6, 'NIT requerido').max(20).regex(/^\d+$/, 'NIT solo dígitos'),
+  dv: z.string().trim().min(1, 'DV requerido').max(1).regex(/^\d$/, 'DV es un dígito'),
+  tipoPersona: TipoPersonaEnum,
+  repLegalTipoDoc: TipoDocumentoEnum,
+  repLegalNumeroDoc: z.string().trim().min(4, 'Documento requerido').max(20),
+  repLegalNombre: z.string().trim().min(1, 'Nombre del rep. legal requerido').max(200),
+  direccion: z.string().trim().min(1, 'Dirección requerida').max(200),
+  ciudad: z.string().trim().min(1, 'Ciudad requerida').max(120),
+  departamento: z.string().trim().min(1, 'Departamento requerido').max(120),
+  telefono: z.string().trim().min(7, 'Teléfono requerido').max(30),
+  email: z.string().trim().min(1, 'Correo requerido').email('Correo no válido'),
 });
 
 // --- Cotizante + Afiliación (Fase 2.1) ---

@@ -1,6 +1,7 @@
 import { Prisma, prisma, type SoporteAfTipoDisparo } from '@pila/db';
 import { nextSoporteAfConsecutivo } from './consecutivo';
 import { detectarDisparos, type AfiliacionSnapshot } from './disparos';
+import { emitirNotificacion } from '../notificaciones';
 
 /**
  * Dispara (si corresponde) una solicitud de Soporte · Afiliaciones al
@@ -70,6 +71,22 @@ export async function dispararSoporteAfiliacion(params: {
       },
       select: { id: true, consecutivo: true, disparos: true },
     });
+
+    // Notificar a SOPORTE — todos los staff de soporte verán la solicitud
+    // recién creada en el centro de notificaciones.
+    void emitirNotificacion({
+      tipo: 'SOPORTE_NUEVA_AFILIACION',
+      destinoRole: 'SOPORTE',
+      titulo: `Nueva solicitud de afiliación · ${created.consecutivo}`,
+      mensaje: `Disparos: ${disparos.join(', ')}`,
+      href: `/admin/soporte/afiliaciones`,
+      metadatos: {
+        soporteAfId: created.id,
+        consecutivo: created.consecutivo,
+        sucursalId: af.cotizante.sucursalId,
+      },
+    });
+
     return created;
   } catch (e) {
     console.error('[soporte-af/dispatch] fallo al crear solicitud:', e);

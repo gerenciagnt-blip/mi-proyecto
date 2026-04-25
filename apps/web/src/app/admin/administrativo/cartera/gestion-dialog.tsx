@@ -2,18 +2,13 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Wrench,
-  CheckCircle2,
-  AlertTriangle,
-  RotateCcw,
-  Banknote,
-} from 'lucide-react';
+import { Wrench, CheckCircle2, AlertTriangle, RotateCcw, Banknote } from 'lucide-react';
 import type { CarteraEstado } from '@pila/db';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
+import { ESTADO_LINEA_LABEL } from '@/lib/cartera/labels';
 import { gestionarCarteraAliadoAction } from './actions';
 
 export function GestionarAliadoButton({
@@ -89,11 +84,7 @@ function GestionForm({
       const r = await gestionarCarteraAliadoAction(detalladoId, {
         descripcion,
         marcarPagada:
-          accion === 'marcar-pagada'
-            ? true
-            : accion === 'revertir-pago'
-              ? false
-              : undefined,
+          accion === 'marcar-pagada' ? true : accion === 'revertir-pago' ? false : undefined,
       });
       if (r.error) {
         setError(r.error);
@@ -115,9 +106,7 @@ function GestionForm({
     <div className="space-y-4">
       <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
         Estado actual:{' '}
-        <strong className="text-slate-900">
-          {estadoActual === 'CARTERA_REAL' ? 'Cartera real' : 'Pagada (cartera real)'}
-        </strong>
+        <strong className="text-slate-900">{ESTADO_LINEA_LABEL[estadoActual]}</strong>
       </div>
 
       <div>
@@ -149,28 +138,17 @@ function GestionForm({
         <Button variant="secondary" onClick={onClose} disabled={pending}>
           Cancelar
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => submit('nota')}
-          disabled={pending}
-        >
+        <Button variant="outline" onClick={() => submit('nota')} disabled={pending}>
           Solo registrar nota
         </Button>
-        {estadoActual === 'CARTERA_REAL' && (
-          <Button
-            onClick={() => submit('marcar-pagada')}
-            disabled={pending}
-          >
+        {(estadoActual === 'MORA_REAL' || estadoActual === 'CARTERA_REAL') && (
+          <Button onClick={() => submit('marcar-pagada')} disabled={pending}>
             <Banknote className="h-3.5 w-3.5" />
             Marcar como pagada
           </Button>
         )}
         {estadoActual === 'PAGADA_CARTERA_REAL' && (
-          <Button
-            variant="danger"
-            onClick={() => submit('revertir-pago')}
-            disabled={pending}
-          >
+          <Button variant="danger" onClick={() => submit('revertir-pago')} disabled={pending}>
             <RotateCcw className="h-3.5 w-3.5" />
             Revertir pago
           </Button>

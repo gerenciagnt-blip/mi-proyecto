@@ -28,6 +28,10 @@ let cached: PagosimpleConfig | null = null;
  * Cualquier módulo que llame a la API debe usar `requirePagosimpleConfig()`
  * en su lugar, que sí tira error si no está configurado.
  */
+import { createLogger } from '../logger';
+
+const log = createLogger('pagosimple');
+
 export function getPagosimpleConfig(): PagosimpleConfig | null {
   if (cached) return cached;
 
@@ -43,10 +47,7 @@ export function getPagosimpleConfig(): PagosimpleConfig | null {
 
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length > 0) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[pagosimple] config incompleta — faltan vars: ${missing.join(', ')}. La integración está deshabilitada.`,
-    );
+    log.warn({ missing }, 'config incompleta — integración deshabilitada');
     return null;
   }
 

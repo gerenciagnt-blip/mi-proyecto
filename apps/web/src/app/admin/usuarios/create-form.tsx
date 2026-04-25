@@ -75,8 +75,7 @@ export function CreateUserForm({
   // Validación cliente: coincidencia de contraseñas
   const passwordsMatch =
     password.length === 0 || passwordConfirm.length === 0 || password === passwordConfirm;
-  const canSubmit =
-    password.length >= 8 && password === passwordConfirm && !pending;
+  const canSubmit = password.length >= 8 && password === passwordConfirm && !pending;
 
   return (
     <form ref={ref} action={action} className="space-y-4">
@@ -99,13 +98,7 @@ export function CreateUserForm({
           <Label htmlFor="name">
             Nombre <span className="text-red-500">*</span>
           </Label>
-          <Input
-            id="name"
-            name="name"
-            required
-            placeholder="Juan Pérez"
-            className="mt-1"
-          />
+          <Input id="name" name="name" required placeholder="Juan Pérez" className="mt-1" />
         </div>
 
         <div>
@@ -154,9 +147,7 @@ export function CreateUserForm({
             autoComplete="new-password"
           />
           {!passwordsMatch && (
-            <p className="mt-1 text-[11px] text-red-600">
-              Las contraseñas no coinciden
-            </p>
+            <p className="mt-1 text-[11px] text-red-600">Las contraseñas no coinciden</p>
           )}
         </div>
 
@@ -177,9 +168,11 @@ export function CreateUserForm({
             <option value="ADMIN">Administrador</option>
             <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
+            <option value="ALIADO_USER">Usuario Aliado</option>
           </Select>
           <p className="mt-1 text-[10px] text-slate-500">
-            ADMIN y Soporte ven todas las sucursales. Dueño Aliado ve solo la suya.
+            ADMIN y Soporte ven todas las sucursales. Dueño y Usuario Aliado ven solo la suya;
+            asigna un rol personalizado al Usuario Aliado para refinar sus permisos.
           </p>
         </div>
         {!esStaff && (
@@ -187,13 +180,7 @@ export function CreateUserForm({
             <Label htmlFor="sucursalId">
               Sucursal <span className="text-red-500">*</span>
             </Label>
-            <Select
-              id="sucursalId"
-              name="sucursalId"
-              required
-              defaultValue=""
-              className="mt-1"
-            >
+            <Select id="sucursalId" name="sucursalId" required defaultValue="" className="mt-1">
               <option value="" disabled>
                 — Seleccionar —
               </option>
@@ -227,9 +214,8 @@ export function CreateUserForm({
             ))}
           </Select>
           <p className="mt-1 text-[10px] text-slate-500">
-            Refina los permisos con un rol creado en{' '}
-            <span className="font-medium">Roles</span>. Si no eliges ninguno,
-            aplican los permisos base del nivel.
+            Refina los permisos con un rol creado en <span className="font-medium">Roles</span>. Si
+            no eliges ninguno, aplican los permisos base del nivel.
           </p>
         </div>
       </div>

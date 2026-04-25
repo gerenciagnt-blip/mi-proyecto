@@ -41,10 +41,7 @@ function fechaLegible(d: Date) {
   });
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
   const { id } = await params;
 
@@ -58,8 +55,22 @@ export async function GET(
           municipio: { select: { nombre: true } },
         },
       },
-      cuentaCobro: { select: { codigo: true, razonSocial: true, nit: true, dv: true, direccion: true, ciudad: true, telefono: true, email: true, sucursalId: true } },
-      asesorComercial: { select: { codigo: true, nombre: true, email: true, telefono: true, sucursalId: true } },
+      cuentaCobro: {
+        select: {
+          codigo: true,
+          razonSocial: true,
+          nit: true,
+          dv: true,
+          direccion: true,
+          ciudad: true,
+          telefono: true,
+          email: true,
+          sucursalId: true,
+        },
+      },
+      asesorComercial: {
+        select: { codigo: true, nombre: true, email: true, telefono: true, sucursalId: true },
+      },
       medioPago: { select: { codigo: true, nombre: true } },
       liquidaciones: {
         include: {
@@ -99,8 +110,7 @@ export async function GET(
       (comp.cotizante && comp.cotizante.sucursalId === mia) ||
       (comp.cuentaCobro && comp.cuentaCobro.sucursalId === mia) ||
       (comp.asesorComercial &&
-        (comp.asesorComercial.sucursalId === null ||
-          comp.asesorComercial.sucursalId === mia));
+        (comp.asesorComercial.sucursalId === null || comp.asesorComercial.sucursalId === mia));
     if (!permitido) {
       return NextResponse.json(
         { error: 'No tienes permiso sobre este comprobante' },
@@ -110,17 +120,19 @@ export async function GET(
   }
 
   if (comp.estado === 'ANULADO') {
-    return NextResponse.json(
-      { error: 'Comprobante anulado — PDF no disponible' },
-      { status: 410 },
-    );
+    return NextResponse.json({ error: 'Comprobante anulado — PDF no disponible' }, { status: 410 });
   }
 
-  // Intentamos encontrar la sucursal para el formato
-  // - EMPRESA_CC: la sucursal de la cuenta de cobro
-  // - INDIVIDUAL: la sucursal de la primera cuenta de cobro entre las liquidaciones
-  // - ASESOR: similar, primera sucursal con cuenta de cobro en las liquidaciones
-  let sucursalId: string | null = comp.cuentaCobro?.sucursalId ?? null;
+  // Resolución de sucursal (para cargar el formato/logo correcto):
+  //   1. comp.cuentaCobro.sucursalId   (EMPRESA_CC)
+  //   2. comp.cotizante.sucursalId     (INDIVIDUAL — cotizante con sucursal asignada)
+  //   3. comp.asesorComercial.sucursalId (ASESOR_COMERCIAL no global)
+  //   4. Primera liquidación con cuenta de cobro (fallback)
+  let sucursalId: string | null =
+    comp.cuentaCobro?.sucursalId ??
+    comp.cotizante?.sucursalId ??
+    comp.asesorComercial?.sucursalId ??
+    null;
   if (!sucursalId && comp.liquidaciones.length > 0) {
     const primeraConCC = await prisma.liquidacion.findFirst({
       where: {
@@ -207,12 +219,8 @@ export async function GET(
     consecutivo: comp.consecutivo,
     tipo: comp.tipo,
     agrupacion: comp.agrupacion,
-    emitidoEn: comp.emitidoEn
-      ? fechaLegible(comp.emitidoEn)
-      : fechaLegible(comp.createdAt),
-    procesadoEn: comp.procesadoEn
-      ? fechaLegible(comp.procesadoEn)
-      : fechaLegible(comp.createdAt),
+    emitidoEn: comp.emitidoEn ? fechaLegible(comp.emitidoEn) : fechaLegible(comp.createdAt),
+    procesadoEn: comp.procesadoEn ? fechaLegible(comp.procesadoEn) : fechaLegible(comp.createdAt),
     numeroComprobanteExt: comp.numeroComprobanteExt,
     formaPago: comp.formaPago,
     medioPago: comp.medioPago,
@@ -234,16 +242,11 @@ export async function GET(
       if (!primera?.periodoAporteAnio || !primera?.periodoAporteMes) return null;
       const { periodoAporteAnio, periodoAporteMes } = primera;
       const todasIguales = liqs.every(
-        (l) =>
-          l.periodoAporteAnio === periodoAporteAnio &&
-          l.periodoAporteMes === periodoAporteMes,
+        (l) => l.periodoAporteAnio === periodoAporteAnio && l.periodoAporteMes === periodoAporteMes,
       );
       if (!todasIguales) return null;
       // Si coincide con el período contable, no mostrar
-      if (
-        periodoAporteAnio === comp.periodo.anio &&
-        periodoAporteMes === comp.periodo.mes
-      ) {
+      if (periodoAporteAnio === comp.periodo.anio && periodoAporteMes === comp.periodo.mes) {
         return null;
       }
       return {

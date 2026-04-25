@@ -28,9 +28,7 @@ async function nextCodigo(prefix: string, find: Finder): Promise<string> {
 }
 
 /** Siguiente código para una entidad SGSS, prefijo según tipo. */
-export async function nextEntidadSgssCodigo(
-  tipo: 'EPS' | 'AFP' | 'ARL' | 'CCF',
-): Promise<string> {
+export async function nextEntidadSgssCodigo(tipo: 'EPS' | 'AFP' | 'ARL' | 'CCF'): Promise<string> {
   return nextCodigo(tipo, async (where) => {
     const row = await prisma.entidadSgss.findFirst({
       where: { tipo, ...where },
@@ -51,6 +49,56 @@ export async function nextPlanSgssCodigo(): Promise<string> {
     });
     return row;
   });
+}
+
+/**
+ * Siguiente código global para una Cuenta de Cobro. Formato CCB-000001.
+ * El modelo tiene `@@unique([sucursalId, codigo])`, pero usamos un
+ * consecutivo global (no por sucursal) para que el código sea único en
+ * todo el sistema y más fácil de identificar.
+ */
+export async function nextCuentaCobroCodigo(): Promise<string> {
+  const last = await prisma.cuentaCobro.findFirst({
+    where: { codigo: { startsWith: 'CCB-' } },
+    orderBy: { codigo: 'desc' },
+    select: { codigo: true },
+  });
+  let next = 1;
+  if (last) {
+    const m = last.codigo.match(/^CCB-(\d+)$/);
+    if (m && m[1]) next = parseInt(m[1], 10) + 1;
+  }
+  return `CCB-${String(next).padStart(6, '0')}`;
+}
+
+/** Siguiente código global para un Asesor Comercial. Formato AS-0001. */
+export async function nextAsesorCodigo(): Promise<string> {
+  const last = await prisma.asesorComercial.findFirst({
+    where: { codigo: { startsWith: 'AS-' } },
+    orderBy: { codigo: 'desc' },
+    select: { codigo: true },
+  });
+  let next = 1;
+  if (last) {
+    const m = last.codigo.match(/^AS-(\d+)$/);
+    if (m && m[1]) next = parseInt(m[1], 10) + 1;
+  }
+  return `AS-${String(next).padStart(4, '0')}`;
+}
+
+/** Siguiente código global para un Servicio Adicional. Formato SRV-0001. */
+export async function nextServicioAdicionalCodigo(): Promise<string> {
+  const last = await prisma.servicioAdicional.findFirst({
+    where: { codigo: { startsWith: 'SRV-' } },
+    orderBy: { codigo: 'desc' },
+    select: { codigo: true },
+  });
+  let next = 1;
+  if (last) {
+    const m = last.codigo.match(/^SRV-(\d+)$/);
+    if (m && m[1]) next = parseInt(m[1], 10) + 1;
+  }
+  return `SRV-${String(next).padStart(4, '0')}`;
 }
 
 /**

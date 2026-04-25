@@ -20,6 +20,9 @@ import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 import { consultarCotizanteBduaRuaf } from '@/lib/pagosimple/bdua-ruaf';
 import { PagosimpleError } from '@/lib/pagosimple/client';
 import type { BduaRuafItem } from '@/lib/pagosimple/types';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('bdua-ruaf');
 
 export type BduaRuafResult =
   | { ok: true; item: BduaRuafItem | null }
@@ -69,8 +72,7 @@ export async function consultarBduaRuafAction(
       };
     }
     const msg = err instanceof Error ? err.message : 'Error desconocido';
-    // eslint-disable-next-line no-console
-    console.error('[bdua-ruaf] fallo:', msg);
+    log.error({ err: msg }, 'consulta BDUA/RUAF falló');
     return { ok: false, error: `No se pudo consultar BDUA/RUAF: ${msg}` };
   }
 }

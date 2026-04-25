@@ -1,17 +1,11 @@
 import Link from 'next/link';
-import {
-  Wallet,
-  AlertCircle,
-  FileText,
-  Clock,
-  CheckCircle2,
-  XCircle,
-} from 'lucide-react';
+import { Wallet, AlertCircle, FileText, Clock, CheckCircle2, Send, XCircle } from 'lucide-react';
 import type { CarteraEstado, CarteraTipoEntidad, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
+import { ESTADO_CONSOLIDADO_LABEL, ESTADO_TONE } from '@/lib/cartera/labels';
 import { UploadCarteraButton } from './upload-dialog';
 
 export const metadata = { title: 'Cartera · Soporte — Sistema PILA' };
@@ -22,13 +16,6 @@ const TIPO_LABEL: Record<CarteraTipoEntidad, string> = {
   AFP: 'AFP',
   ARL: 'ARL',
   CCF: 'CCF',
-};
-
-const ESTADO_LABEL: Record<CarteraEstado, string> = {
-  EN_CONCILIACION: 'En conciliación',
-  CONCILIADA: 'Conciliada',
-  CARTERA_REAL: 'Cartera real',
-  PAGADA_CARTERA_REAL: 'Pagada (cartera real)',
 };
 
 /** Parse YYYY-MM-DD seguro; undefined si inválido. */
@@ -45,11 +32,7 @@ type SP = {
   entidad?: string;
 };
 
-export default async function SoporteCarteraPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function SoporteCarteraPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const desde = parseDateIso(sp.desde);
   const hasta = parseDateIso(sp.hasta);
@@ -80,11 +63,14 @@ export default async function SoporteCarteraPage({
     ];
   }
 
-  const [lineasAgrupado, consolidados] = await Promise.all([
-    prisma.carteraDetallado.groupBy({
+  const [consolidadoAgrupado, consolidados] = await Promise.all([
+    // Stats por estado del CONSOLIDADO (en proceso / enviada / conciliada).
+    // Sumamos `valorTotalInformado` para tener una vista de cuánto dinero
+    // hay en cada cubeta del flujo con la entidad.
+    prisma.carteraConsolidado.groupBy({
       by: ['estado'],
       _count: { _all: true },
-      _sum: { valorCobro: true },
+      _sum: { valorTotalInformado: true },
     }),
     prisma.carteraConsolidado.findMany({
       where,
@@ -97,61 +83,52 @@ export default async function SoporteCarteraPage({
     }),
   ]);
 
-  const statsByEstado = new Map<
-    CarteraEstado,
-    { count: number; total: number }
-  >();
-  for (const r of lineasAgrupado) {
+  const statsByEstado = new Map<CarteraEstado, { count: number; total: number }>();
+  for (const r of consolidadoAgrupado) {
     statsByEstado.set(r.estado, {
       count: r._count._all,
-      total: Number(r._sum.valorCobro ?? 0),
+      total: Number(r._sum.valorTotalInformado ?? 0),
     });
   }
 
+  // Solo mostramos los 3 estados que aplican al consolidado (en proceso,
+  // enviada, conciliada). Las cubetas a nivel línea (cartera real / mora
+  // real / pagada) se ven dentro de cada consolidado.
   const stats: Array<{
     estado: CarteraEstado;
     label: string;
     icon: typeof Clock;
-    tone: 'amber' | 'sky' | 'emerald' | 'violet';
+    tone: 'amber' | 'sky' | 'slate';
     count: number;
     total: number;
   }> = [
     {
       estado: 'EN_CONCILIACION',
-      label: 'En conciliación',
+      label: 'En proceso',
       icon: Clock,
       tone: 'amber',
       count: statsByEstado.get('EN_CONCILIACION')?.count ?? 0,
       total: statsByEstado.get('EN_CONCILIACION')?.total ?? 0,
     },
     {
+      estado: 'ENVIADA',
+      label: 'Enviadas',
+      icon: Send,
+      tone: 'sky',
+      count: statsByEstado.get('ENVIADA')?.count ?? 0,
+      total: statsByEstado.get('ENVIADA')?.total ?? 0,
+    },
+    {
       estado: 'CONCILIADA',
       label: 'Conciliadas',
       icon: CheckCircle2,
-      tone: 'sky',
+      tone: 'slate',
       count: statsByEstado.get('CONCILIADA')?.count ?? 0,
       total: statsByEstado.get('CONCILIADA')?.total ?? 0,
     },
-    {
-      estado: 'CARTERA_REAL',
-      label: 'Cartera real',
-      icon: AlertCircle,
-      tone: 'violet',
-      count: statsByEstado.get('CARTERA_REAL')?.count ?? 0,
-      total: statsByEstado.get('CARTERA_REAL')?.total ?? 0,
-    },
-    {
-      estado: 'PAGADA_CARTERA_REAL',
-      label: 'Pagada cartera real',
-      icon: CheckCircle2,
-      tone: 'emerald',
-      count: statsByEstado.get('PAGADA_CARTERA_REAL')?.count ?? 0,
-      total: statsByEstado.get('PAGADA_CARTERA_REAL')?.total ?? 0,
-    },
   ];
 
-  const hayFiltros =
-    !!desde || !!hasta || !!tipoFilter || entidadQ.length > 0;
+  const hayFiltros = !!desde || !!hasta || !!tipoFilter || entidadQ.length > 0;
 
   return (
     <div className="space-y-6">
@@ -162,37 +139,31 @@ export default async function SoporteCarteraPage({
             Cartera · Soporte
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Importa estados de cuenta de entidades SGSS y gestiónalos. Las
-            líneas que marques como <span className="font-medium">Cartera real</span>
-            {' '}aparecerán automáticamente en el módulo Administrativo del
-            aliado dueño de la sucursal.
+            Importa estados de cuenta de entidades SGSS y gestiónalos. Las líneas que marques como{' '}
+            <span className="font-medium">Cartera real</span> aparecerán automáticamente en el
+            módulo Administrativo del aliado dueño de la sucursal.
           </p>
         </div>
         <UploadCarteraButton />
       </header>
 
-      {/* Stats por estado (agregados a nivel línea) */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Stats por estado del consolidado (en proceso / enviada / conciliada) */}
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {stats.map((s) => (
           <div
             key={s.estado}
             className={cn('rounded-xl border bg-white p-4 shadow-sm', {
               'border-amber-200': s.tone === 'amber',
               'border-sky-200': s.tone === 'sky',
-              'border-emerald-200': s.tone === 'emerald',
-              'border-violet-200': s.tone === 'violet',
+              'border-slate-200': s.tone === 'slate',
             })}
           >
             <div
-              className={cn(
-                'inline-flex h-8 w-8 items-center justify-center rounded-lg',
-                {
-                  'bg-amber-50 text-amber-700': s.tone === 'amber',
-                  'bg-sky-50 text-sky-700': s.tone === 'sky',
-                  'bg-emerald-50 text-emerald-700': s.tone === 'emerald',
-                  'bg-violet-50 text-violet-700': s.tone === 'violet',
-                },
-              )}
+              className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg', {
+                'bg-amber-50 text-amber-700': s.tone === 'amber',
+                'bg-sky-50 text-sky-700': s.tone === 'sky',
+                'bg-slate-100 text-slate-700': s.tone === 'slate',
+              })}
             >
               <s.icon className="h-4 w-4" />
             </div>
@@ -202,9 +173,7 @@ export default async function SoporteCarteraPage({
             <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-slate-900">
               {s.count}
             </p>
-            <p className="mt-0.5 font-mono text-xs text-slate-500">
-              {formatCOP(s.total)}
-            </p>
+            <p className="mt-0.5 font-mono text-xs text-slate-500">{formatCOP(s.total)}</p>
           </div>
         ))}
       </section>
@@ -298,8 +267,7 @@ export default async function SoporteCarteraPage({
               </Link>
             )}
             <span className="ml-auto self-end text-xs text-slate-500">
-              {consolidados.length}{' '}
-              {consolidados.length === 1 ? 'consolidado' : 'consolidados'}
+              {consolidados.length} {consolidados.length === 1 ? 'consolidado' : 'consolidados'}
             </span>
           </form>
         </header>
@@ -347,9 +315,7 @@ export default async function SoporteCarteraPage({
                       </p>
                     </td>
                     <td className="px-4 py-2.5 text-xs">
-                      <p className="font-medium">
-                        {c.empresa?.nombre ?? c.empresaRazonSocial}
-                      </p>
+                      <p className="font-medium">{c.empresa?.nombre ?? c.empresaRazonSocial}</p>
                       <p className="font-mono text-[10px] text-slate-500">
                         NIT {c.empresaNit}
                         {!c.empresa && (
@@ -372,17 +338,10 @@ export default async function SoporteCarteraPage({
                       <span
                         className={cn(
                           'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                          c.estado === 'EN_CONCILIACION' &&
-                            'bg-amber-50 text-amber-700 ring-amber-200',
-                          c.estado === 'CONCILIADA' &&
-                            'bg-sky-50 text-sky-700 ring-sky-200',
-                          c.estado === 'CARTERA_REAL' &&
-                            'bg-violet-50 text-violet-700 ring-violet-200',
-                          c.estado === 'PAGADA_CARTERA_REAL' &&
-                            'bg-emerald-50 text-emerald-700 ring-emerald-200',
+                          ESTADO_TONE[c.estado],
                         )}
                       >
-                        {ESTADO_LABEL[c.estado]}
+                        {ESTADO_CONSOLIDADO_LABEL[c.estado]}
                       </span>
                     </td>
                   </tr>
@@ -397,14 +356,25 @@ export default async function SoporteCarteraPage({
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
         <p className="mb-2 flex items-center gap-1 font-semibold text-slate-700">
           <XCircle className="h-3.5 w-3.5" />
-          Flujo de estados
+          Flujo de estados (consolidado)
         </p>
-        <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-          <li><strong>En conciliación</strong>: recién importado — revísalo.</li>
-          <li><strong>Conciliada</strong>: respondiste a la entidad o descartaste la deuda.</li>
-          <li><strong>Cartera real</strong>: deuda confirmada — aparece en el aliado.</li>
-          <li><strong>Pagada cartera real</strong>: el aliado pagó.</li>
+        <ul className="grid grid-cols-1 gap-1 sm:grid-cols-3">
+          <li>
+            <strong>En proceso</strong>: recién cargado — revísalo y respóndele a la entidad.
+          </li>
+          <li>
+            <strong>Enviada</strong>: ya respondiste a la entidad y esperas confirmación.
+          </li>
+          <li>
+            <strong>Conciliada</strong>: cerrado con la entidad.
+          </li>
         </ul>
+        <p className="mt-3 mb-1 text-[11px] text-slate-500">
+          Dentro de cada consolidado, las líneas individuales se marcan como{' '}
+          <span className="font-medium text-orange-700">Mora real</span> o{' '}
+          <span className="font-medium text-violet-700">Cartera real</span> — ambas aparecen
+          automáticamente en el módulo Administrativo del aliado dueño de la sucursal.
+        </p>
       </section>
     </div>
   );

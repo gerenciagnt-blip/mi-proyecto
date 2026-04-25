@@ -15,6 +15,7 @@ import {
   IncapacidadRadicarSchema,
   IncapacidadDocumentoTipoEnum,
 } from '@/lib/incapacidades/validations';
+import { emitirNotificacion } from '@/lib/notificaciones';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -211,9 +212,7 @@ export async function radicarIncapacidadAction(
 
   // Regla operativa: certificado de incapacidad es mínimo indispensable;
   // el resto son deseables pero no obligatorios en esta primera iteración.
-  const tieneCertificado = archivos.some(
-    (a) => a.tipo === 'CERTIFICADO_INCAPACIDAD',
-  );
+  const tieneCertificado = archivos.some((a) => a.tipo === 'CERTIFICADO_INCAPACIDAD');
   if (!tieneCertificado) {
     return { error: 'Debes adjuntar al menos el Certificado de Incapacidad.' };
   }
@@ -233,9 +232,7 @@ export async function radicarIncapacidadAction(
 
   // Cálculo de días (ambos extremos inclusivos).
   const dias =
-    Math.round(
-      (d.fechaFin.getTime() - d.fechaInicio.getTime()) / (1000 * 60 * 60 * 24),
-    ) + 1;
+    Math.round((d.fechaFin.getTime() - d.fechaInicio.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
   const consecutivo = await nextIncapacidadConsecutivo();
 
@@ -281,11 +278,7 @@ export async function radicarIncapacidadAction(
   for (const a of archivos) {
     try {
       const buf = Buffer.from(await a.file.arrayBuffer());
-      const saved = await guardarDocumentoIncapacidad(
-        buf,
-        a.file.name,
-        incapacidad.id,
-      );
+      const saved = await guardarDocumentoIncapacidad(buf, a.file.name, incapacidad.id);
       await prisma.incapacidadDocumento.create({
         data: {
           incapacidadId: incapacidad.id,
@@ -298,9 +291,7 @@ export async function radicarIncapacidadAction(
         },
       });
     } catch (err) {
-      fallos.push(
-        `${a.tipo}: ${err instanceof Error ? err.message : 'error desconocido'}`,
-      );
+      fallos.push(`${a.tipo}: ${err instanceof Error ? err.message : 'error desconocido'}`);
     }
   }
 
@@ -313,6 +304,20 @@ export async function radicarIncapacidadAction(
       descripcion: `Radicación inicial · ${archivos.length} documento(s) adjunto(s).`,
       userId,
       userName,
+    },
+  });
+
+  // Notificar a SOPORTE: hay un nuevo radicado para procesar.
+  void emitirNotificacion({
+    tipo: 'SOPORTE_NUEVA_INCAPACIDAD',
+    destinoRole: 'SOPORTE',
+    titulo: `Nueva incapacidad radicada · ${consecutivo}`,
+    mensaje: `${d.tipo.replaceAll('_', ' ').toLowerCase()} · ${dias} día(s) · ${archivos.length} doc(s).`,
+    href: `/admin/soporte/incapacidades`,
+    metadatos: {
+      incapacidadId: incapacidad.id,
+      consecutivo,
+      sucursalId: cotizante.sucursalId,
     },
   });
 

@@ -6,6 +6,7 @@ import { PanelLeftClose, PanelLeft } from 'lucide-react';
 import type { Role } from '@pila/db';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { AdminNav } from '@/components/admin/admin-nav';
+import { NotificacionesBell } from '@/components/admin/notificaciones-bell';
 import { Avatar } from '@/components/ui/avatar';
 import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
@@ -73,11 +74,7 @@ export function AdminShell({
               aria-label={open ? 'Ocultar menú' : 'Mostrar menú'}
               className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             >
-              {open ? (
-                <PanelLeftClose className="h-5 w-5" />
-              ) : (
-                <PanelLeft className="h-5 w-5" />
-              )}
+              {open ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
             </button>
             {/* Logo en el header cuando el sidebar está oculto */}
             {!open && (
@@ -90,7 +87,8 @@ export function AdminShell({
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <NotificacionesBell />
             <Link
               href="/admin/perfil"
               title="Ver mi perfil"
@@ -98,9 +96,7 @@ export function AdminShell({
             >
               <div className="hidden text-right leading-tight sm:block">
                 <p className="text-sm font-medium text-slate-900">{userName}</p>
-                <p className="text-[11px] text-slate-500">
-                  {ROLE_LABELS[userRole] ?? userRole}
-                </p>
+                <p className="text-[11px] text-slate-500">{ROLE_LABELS[userRole] ?? userRole}</p>
               </div>
               <Avatar name={userName} />
             </Link>

@@ -1,30 +1,17 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, FileText, Download } from 'lucide-react';
+import { ArrowLeft, FileText, Download, UserCircle2 } from 'lucide-react';
 import type { CarteraEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { formatCOP } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { ESTADO_LINEA_LABEL, ESTADO_CONSOLIDADO_LABEL, ESTADO_TONE } from '@/lib/cartera/labels';
 import { GestionarLineaButton } from '../gestion-dialog';
 import { AnularConsolidadoButton } from '../anular-button';
 import { VerGestionesButton } from '../ver-gestiones-dialog';
 
 export const metadata = { title: 'Detalle consolidado · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
-
-const ESTADO_LABEL: Record<CarteraEstado, string> = {
-  EN_CONCILIACION: 'En conciliación',
-  CONCILIADA: 'Conciliada',
-  CARTERA_REAL: 'Cartera real',
-  PAGADA_CARTERA_REAL: 'Pagada (cartera real)',
-};
-
-const ESTADO_TONE: Record<CarteraEstado, string> = {
-  EN_CONCILIACION: 'bg-amber-50 text-amber-700 ring-amber-200',
-  CONCILIADA: 'bg-sky-50 text-sky-700 ring-sky-200',
-  CARTERA_REAL: 'bg-violet-50 text-violet-700 ring-violet-200',
-  PAGADA_CARTERA_REAL: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-};
 
 type SP = { doc?: string; sucursalId?: string; estado?: string };
 
@@ -43,6 +30,7 @@ export default async function ConsolidadoDetallePage({
   const estadoFilter: CarteraEstado | undefined =
     sp.estado === 'EN_CONCILIACION' ||
     sp.estado === 'CONCILIADA' ||
+    sp.estado === 'MORA_REAL' ||
     sp.estado === 'CARTERA_REAL' ||
     sp.estado === 'PAGADA_CARTERA_REAL'
       ? (sp.estado as CarteraEstado)
@@ -159,7 +147,7 @@ export default async function ConsolidadoDetallePage({
           value={
             consolidado.periodoDesde && consolidado.periodoHasta
               ? `${consolidado.periodoDesde} → ${consolidado.periodoHasta}`
-              : consolidado.periodoHasta ?? '—'
+              : (consolidado.periodoHasta ?? '—')
           }
         />
         <Field
@@ -168,10 +156,19 @@ export default async function ConsolidadoDetallePage({
           highlight
         />
         <Field label="Líneas" value={String(consolidado.cantidadRegistros)} />
-        <Field
-          label="Origen PDF"
-          value={consolidado.origenPdf ?? 'MANUAL'}
-        />
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            Estado consolidado
+          </p>
+          <span
+            className={cn(
+              'mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+              ESTADO_TONE[consolidado.estado],
+            )}
+          >
+            {ESTADO_CONSOLIDADO_LABEL[consolidado.estado]}
+          </span>
+        </div>
         <Field
           label="Cargado por"
           value={consolidado.createdBy?.name ?? '—'}
@@ -181,21 +178,23 @@ export default async function ConsolidadoDetallePage({
 
       {/* Distribución por estado */}
       <section className="flex flex-wrap gap-2">
-        {(Array.from(porEstado.entries()) as Array<[CarteraEstado, { count: number; total: number }]>).map(
-          ([estado, stat]) => (
-            <span
-              key={estado}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset',
-                ESTADO_TONE[estado],
-              )}
-            >
-              {ESTADO_LABEL[estado]}
-              <span className="font-mono">· {stat.count}</span>
-              <span className="font-mono">· {formatCOP(stat.total)}</span>
-            </span>
-          ),
-        )}
+        {(
+          Array.from(porEstado.entries()) as Array<
+            [CarteraEstado, { count: number; total: number }]
+          >
+        ).map(([estado, stat]) => (
+          <span
+            key={estado}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset',
+              ESTADO_TONE[estado],
+            )}
+          >
+            {ESTADO_LINEA_LABEL[estado]}
+            <span className="font-mono">· {stat.count}</span>
+            <span className="font-mono">· {formatCOP(stat.total)}</span>
+          </span>
+        ))}
       </section>
 
       {/* Filtros del detallado */}
@@ -260,6 +259,7 @@ export default async function ConsolidadoDetallePage({
                 <option value="">Todos</option>
                 <option value="EN_CONCILIACION">En conciliación</option>
                 <option value="CONCILIADA">Conciliada</option>
+                <option value="MORA_REAL">Mora real</option>
                 <option value="CARTERA_REAL">Cartera real</option>
                 <option value="PAGADA_CARTERA_REAL">Pagada</option>
               </select>
@@ -279,8 +279,7 @@ export default async function ConsolidadoDetallePage({
               </Link>
             )}
             <span className="ml-auto self-end text-xs text-slate-500">
-              {detalladoFiltrado.length}{' '}
-              {detalladoFiltrado.length === 1 ? 'línea' : 'líneas'}
+              {detalladoFiltrado.length} {detalladoFiltrado.length === 1 ? 'línea' : 'líneas'}
             </span>
           </form>
         </header>
@@ -302,10 +301,7 @@ export default async function ConsolidadoDetallePage({
             <tbody className="divide-y divide-slate-100">
               {detalladoFiltrado.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-8 text-center text-xs text-slate-400"
-                  >
+                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-400">
                     {hayFiltros
                       ? 'Sin resultados con los filtros actuales.'
                       : 'No hay líneas en este consolidado.'}
@@ -335,9 +331,7 @@ export default async function ConsolidadoDetallePage({
                           <span className="font-mono text-[10px] font-semibold">
                             {d.sucursalAsignada.codigo}
                           </span>
-                          <span className="ml-1 text-slate-500">
-                            {d.sucursalAsignada.nombre}
-                          </span>
+                          <span className="ml-1 text-slate-500">{d.sucursalAsignada.nombre}</span>
                         </>
                       ) : (
                         <span className="italic text-amber-700">sin asignar</span>
@@ -350,11 +344,21 @@ export default async function ConsolidadoDetallePage({
                           ESTADO_TONE[d.estado],
                         )}
                       >
-                        {ESTADO_LABEL[d.estado]}
+                        {ESTADO_LINEA_LABEL[d.estado]}
                       </span>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">
+                        {d.cotizanteId && (
+                          <Link
+                            href={`/admin/base-datos?q=${encodeURIComponent(d.numeroDocumento)}`}
+                            target="_blank"
+                            title="Ver formulario de afiliación completo del cotizante"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-brand-blue"
+                          >
+                            <UserCircle2 className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
                         <VerGestionesButton
                           detalladoId={d.id}
                           gestionesCount={d._count.gestiones}
@@ -406,9 +410,7 @@ function Field({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
       <p
         className={cn(
           'mt-0.5 font-mono text-sm',

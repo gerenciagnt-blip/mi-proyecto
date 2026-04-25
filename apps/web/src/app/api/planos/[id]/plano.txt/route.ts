@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
-import { requireAuth } from '@/lib/auth-helpers';
-import { getUserScope } from '@/lib/sucursal-scope';
+import { requireStaff } from '@/lib/auth-helpers';
 import { generarPlano } from '@/lib/planos/generar';
 
 export const dynamic = 'force-dynamic';
@@ -15,9 +14,15 @@ export const dynamic = 'force-dynamic';
  *   - Separador CRLF (\r\n).
  *
  * Solo se permite descargar planillas CONSOLIDADO o PAGADA.
+ *
+ * Restricción de roles: solo ADMIN y SOPORTE pueden descargar el TXT —
+ * los aliados no manejan el archivo plano directamente. `requireStaff`
+ * redirige al login si la sesión no cumple, así que el chequeo cubre
+ * tanto la UI (que oculta el botón) como cualquier intento de manipular
+ * la URL directamente.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  await requireAuth();
+  await requireStaff();
   const { id } = await params;
 
   const planilla = await prisma.planilla.findUnique({
@@ -105,15 +110,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
   if (planilla.estado === 'ANULADA') {
     return NextResponse.json({ error: 'Planilla anulada — plano no disponible' }, { status: 410 });
-  }
-
-  // Scope: un aliado sólo puede descargar sus planillas.
-  const scope = await getUserScope();
-  if (!scope) {
-    return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
-  }
-  if (scope.tipo === 'SUCURSAL' && planilla.sucursalId !== scope.sucursalId) {
-    return NextResponse.json({ error: 'No tienes permiso sobre esta planilla' }, { status: 403 });
   }
 
   // ----- Query de mensualidades previas para marcar ING -----

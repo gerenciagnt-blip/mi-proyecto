@@ -26,13 +26,16 @@ export function CreateServicioForm({
 
   return (
     <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-      <div>
-        <Label htmlFor="codigo">Código</Label>
-        <Input id="codigo" name="codigo" required placeholder="SRV-001" className="mt-1 uppercase" />
-      </div>
-      <div className="sm:col-span-2">
+      {/* Código (SRV-NNNN) lo asigna el server — no se expone en el form. */}
+      <div className="sm:col-span-3">
         <Label htmlFor="nombre">Nombre</Label>
-        <Input id="nombre" name="nombre" required placeholder="Certificado de afiliación" className="mt-1" />
+        <Input
+          id="nombre"
+          name="nombre"
+          required
+          placeholder="Certificado de afiliación"
+          className="mt-1"
+        />
       </div>
       <div>
         <Label htmlFor="precio">Precio (COP)</Label>
@@ -53,12 +56,7 @@ export function CreateServicioForm({
       {esStaff && (
         <div>
           <Label htmlFor="sucursalId">Sucursal</Label>
-          <Select
-            id="sucursalId"
-            name="sucursalId"
-            defaultValue="GLOBAL"
-            className="mt-1"
-          >
+          <Select id="sucursalId" name="sucursalId" defaultValue="GLOBAL" className="mt-1">
             <option value="GLOBAL">Global</option>
             {sucursales.map((s) => (
               <option key={s.id} value={s.id}>

@@ -83,67 +83,98 @@ export default async function SoporteAfiliacionesPage({
     ];
   }
 
-  const [solicitudes, statsByEstado, owners, statsGestionesByUser] =
-    await Promise.all([
-      prisma.soporteAfiliacion.findMany({
-        where,
-        orderBy: { fechaRadicacion: 'desc' },
-        take: 500,
-        include: {
-          cotizante: {
-            select: {
-              tipoDocumento: true,
-              numeroDocumento: true,
-              primerNombre: true,
-              primerApellido: true,
-              segundoApellido: true,
-            },
+  const [solicitudes, statsByEstado, owners, gestionesEnRango] = await Promise.all([
+    prisma.soporteAfiliacion.findMany({
+      where,
+      orderBy: { fechaRadicacion: 'desc' },
+      take: 500,
+      include: {
+        cotizante: {
+          select: {
+            tipoDocumento: true,
+            numeroDocumento: true,
+            primerNombre: true,
+            primerApellido: true,
+            segundoApellido: true,
           },
-          createdBy: { select: { id: true, name: true } },
-          sucursal: { select: { codigo: true, nombre: true } },
-          _count: { select: { documentos: true } },
         },
-      }),
-      prisma.soporteAfiliacion.groupBy({
-        by: ['estado'],
-        where,
-        _count: { _all: true },
-      }),
-      prisma.user.findMany({
-        where: { role: 'ALIADO_OWNER', active: true },
-        orderBy: { name: 'asc' },
-        select: { id: true, name: true, sucursal: { select: { codigo: true } } },
-      }),
-      // Stats de gestiones por usuario de soporte en el mismo rango de fechas.
-      prisma.soporteAfGestion.groupBy({
-        by: ['userId', 'userName'],
-        where: {
-          accionadaPor: 'SOPORTE',
-          ...(fechaDesdeD || fechaHastaD
-            ? {
-                createdAt: {
-                  ...(fechaDesdeD ? { gte: fechaDesdeD } : {}),
-                  ...(fechaHastaD ? { lte: fechaHastaD } : {}),
-                },
-              }
-            : {}),
-        },
-        _count: { _all: true },
-      }),
-    ]);
+        createdBy: { select: { id: true, name: true } },
+        sucursal: { select: { codigo: true, nombre: true } },
+        _count: { select: { documentos: true } },
+      },
+    }),
+    prisma.soporteAfiliacion.groupBy({
+      by: ['estado'],
+      where,
+      _count: { _all: true },
+    }),
+    prisma.user.findMany({
+      where: { role: 'ALIADO_OWNER', active: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, sucursal: { select: { codigo: true } } },
+    }),
+    // Traemos las gestiones SOPORTE crudas en el rango. Después agrupamos
+    // en JS quedándonos con la PRIMERA gestión por solicitud — el "dueño"
+    // de esa solicitud es el primer usuario que la tocó. Si después otro
+    // usuario gestiona la misma solicitud, no se le cuenta (regla de
+    // negocio: una gestión por registro).
+    prisma.soporteAfGestion.findMany({
+      where: {
+        accionadaPor: 'SOPORTE',
+        userId: { not: null },
+        ...(fechaDesdeD || fechaHastaD
+          ? {
+              createdAt: {
+                ...(fechaDesdeD ? { gte: fechaDesdeD } : {}),
+                ...(fechaHastaD ? { lte: fechaHastaD } : {}),
+              },
+            }
+          : {}),
+      },
+      select: {
+        userId: true,
+        userName: true,
+        soporteAfId: true,
+        createdAt: true,
+      },
+      orderBy: [{ soporteAfId: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
 
   const counts = new Map<SoporteAfEstado, number>();
   for (const r of statsByEstado) counts.set(r.estado, r._count._all);
 
-  // Ordenar stats por nombre y convertir a shape estable.
-  const statsSoporte = statsGestionesByUser
-    .filter((g) => g.userName)
-    .map((g) => ({
-      userId: g.userId,
-      userName: g.userName as string,
-      gestiones: g._count._all,
-    }))
-    .sort((a, b) => b.gestiones - a.gestiones);
+  // Reglas:
+  //   1. Iteramos las gestiones ya ordenadas por (soporteAfId, createdAt asc).
+  //   2. La primera vez que vemos un soporteAfId, ese userId se queda con
+  //      el registro. Las gestiones siguientes de ese mismo soporteAfId se
+  //      ignoran (sin importar quién las haya hecho).
+  //   3. Contamos cuántas solicitudes únicas tocó cada usuario.
+  const solicitudesPorUsuario = new Map<
+    string,
+    { userId: string | null; userName: string; gestiones: number }
+  >();
+  const solicitudesYaAtribuidas = new Set<string>();
+  for (const g of gestionesEnRango) {
+    if (!g.userName || solicitudesYaAtribuidas.has(g.soporteAfId)) continue;
+    solicitudesYaAtribuidas.add(g.soporteAfId);
+    const key = g.userId ?? `name:${g.userName}`;
+    const prev = solicitudesPorUsuario.get(key);
+    if (prev) {
+      prev.gestiones += 1;
+    } else {
+      solicitudesPorUsuario.set(key, {
+        userId: g.userId,
+        userName: g.userName,
+        gestiones: 1,
+      });
+    }
+  }
+  const statsSoporte = Array.from(solicitudesPorUsuario.values()).sort(
+    (a, b) => b.gestiones - a.gestiones,
+  );
+  const totalGestiones = statsSoporte.reduce((s, u) => s + u.gestiones, 0);
+  const maxGestiones = statsSoporte[0]?.gestiones ?? 0;
 
   const rows: SolicitudRow[] = solicitudes.map((s) => {
     const nombre = [
@@ -161,8 +192,7 @@ export default async function SoporteAfiliacionesPage({
       sucursalCodigo: s.sucursal?.codigo ?? null,
       cotizanteNombre: nombre,
       cotizanteDoc: `${s.cotizante.tipoDocumento} ${s.cotizante.numeroDocumento}`,
-      modalidadLabel:
-        s.modalidadSnap === 'DEPENDIENTE' ? 'Dependiente' : 'Independiente',
+      modalidadLabel: s.modalidadSnap === 'DEPENDIENTE' ? 'Dependiente' : 'Independiente',
       planLabel: s.planNombreSnap,
       regimenLabel: s.regimenSnap,
       disparos: s.disparos,
@@ -171,9 +201,7 @@ export default async function SoporteAfiliacionesPage({
     };
   });
 
-  const hayFiltrosExtra = Boolean(
-    estadoFilter || createdByFilter || q || sp.desde || sp.hasta,
-  );
+  const hayFiltrosExtra = Boolean(estadoFilter || createdByFilter || q || sp.desde || sp.hasta);
 
   return (
     <div className="space-y-6">
@@ -183,8 +211,8 @@ export default async function SoporteAfiliacionesPage({
           Soporte · Afiliaciones
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Solicitudes generadas automáticamente cuando los aliados crean,
-          reactivan o modifican afiliaciones activas. Rango actual:{' '}
+          Solicitudes generadas automáticamente cuando los aliados crean, reactivan o modifican
+          afiliaciones activas. Rango actual:{' '}
           <span className="font-medium text-slate-700">
             {desde || '—'} → {hasta || '—'}
           </span>
@@ -214,17 +242,37 @@ export default async function SoporteAfiliacionesPage({
         ))}
       </section>
 
-      {/* Stats por usuario soporte (en el rango) */}
+      {/* Stats por usuario soporte (en el rango).
+          Regla: una solicitud cuenta una sola vez, atribuida al primer
+          usuario que la gestionó. */}
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2">
+        <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
           <UserCog className="h-4 w-4 text-slate-500" />
           <h2 className="text-xs font-semibold text-slate-700">
             Gestiones por usuario soporte en el rango
           </h2>
-          <span className="ml-auto text-[10px] text-slate-500">
-            {statsSoporte.length === 0
-              ? 'Sin gestiones'
-              : `${statsSoporte.length} usuario${statsSoporte.length === 1 ? '' : 's'}`}
+          <span
+            className="ml-1 cursor-help text-[10px] text-slate-400"
+            title="Cada solicitud se cuenta una sola vez y se le atribuye al primer usuario que la gestionó. Las gestiones posteriores no suman."
+          >
+            ⓘ
+          </span>
+          <span className="ml-auto flex items-center gap-3 text-[10px] text-slate-500">
+            {statsSoporte.length > 0 && (
+              <>
+                <span>
+                  Total{' '}
+                  <span className="font-mono font-semibold text-slate-800">{totalGestiones}</span>{' '}
+                  gesti{totalGestiones === 1 ? 'ón' : 'ones'}
+                </span>
+                <span>·</span>
+              </>
+            )}
+            <span>
+              {statsSoporte.length === 0
+                ? 'Sin gestiones'
+                : `${statsSoporte.length} usuario${statsSoporte.length === 1 ? '' : 's'}`}
+            </span>
           </span>
         </header>
         {statsSoporte.length === 0 ? (
@@ -233,22 +281,53 @@ export default async function SoporteAfiliacionesPage({
           </p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {statsSoporte.map((u) => (
-              <li
-                key={u.userId ?? u.userName}
-                className="flex items-center gap-3 px-4 py-2 text-xs"
-              >
-                <span className="flex-1 font-medium text-slate-900">
-                  {u.userName}
-                </span>
-                <span className="font-mono text-sm font-bold text-brand-blue-dark">
-                  {u.gestiones}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  gestion{u.gestiones === 1 ? '' : 'es'}
-                </span>
-              </li>
-            ))}
+            {statsSoporte.map((u, idx) => {
+              const pct = totalGestiones > 0 ? (u.gestiones / totalGestiones) * 100 : 0;
+              const barPct = maxGestiones > 0 ? (u.gestiones / maxGestiones) * 100 : 0;
+              const initials = u.userName
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((p) => p[0]!.toUpperCase())
+                .join('');
+              const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+              return (
+                <li
+                  key={u.userId ?? u.userName}
+                  className="grid grid-cols-[auto_2rem_1fr_auto_auto] items-center gap-3 px-4 py-2.5 text-xs"
+                >
+                  <span
+                    className={cn(
+                      'inline-flex h-5 w-7 items-center justify-center rounded-md font-mono text-[10px] font-semibold tabular-nums',
+                      idx === 0 && 'bg-amber-100 text-amber-800',
+                      idx === 1 && 'bg-slate-200 text-slate-700',
+                      idx === 2 && 'bg-orange-100 text-orange-800',
+                      idx > 2 && 'bg-slate-100 text-slate-500',
+                    )}
+                  >
+                    {medal ?? `#${idx + 1}`}
+                  </span>
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-blue/10 font-semibold text-brand-blue-dark">
+                    {initials || '?'}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{u.userName}</p>
+                    <div className="mt-1 h-1 w-full max-w-[280px] overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-brand-blue/70"
+                        style={{ width: `${barPct.toFixed(1)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <span className="font-mono text-[10px] tabular-nums text-slate-500">
+                    {pct.toFixed(0)}%
+                  </span>
+                  <span className="font-mono text-base font-bold tabular-nums text-brand-blue-dark">
+                    {u.gestiones}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -262,9 +341,7 @@ export default async function SoporteAfiliacionesPage({
             className="flex flex-wrap items-end gap-2 text-xs"
           >
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                Desde
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Desde</span>
               <input
                 type="date"
                 name="desde"
@@ -273,9 +350,7 @@ export default async function SoporteAfiliacionesPage({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                Hasta
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Hasta</span>
               <input
                 type="date"
                 name="hasta"
@@ -284,9 +359,7 @@ export default async function SoporteAfiliacionesPage({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                Aliado
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Aliado</span>
               <select
                 name="createdById"
                 defaultValue={createdByFilter}
@@ -302,9 +375,7 @@ export default async function SoporteAfiliacionesPage({
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                Estado
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Estado</span>
               <select
                 name="estado"
                 defaultValue={estadoFilter ?? ''}
@@ -319,9 +390,7 @@ export default async function SoporteAfiliacionesPage({
               </select>
             </label>
             <label className="flex flex-1 flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                Buscar
-              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Buscar</span>
               <input
                 type="search"
                 name="q"
@@ -354,8 +423,8 @@ export default async function SoporteAfiliacionesPage({
           <Alert variant="info" className="m-5">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>
-              Sin solicitudes con los filtros actuales. Cuando los aliados
-              registren o modifiquen afiliaciones aparecerán aquí.
+              Sin solicitudes con los filtros actuales. Cuando los aliados registren o modifiquen
+              afiliaciones aparecerán aquí.
             </span>
           </Alert>
         ) : (

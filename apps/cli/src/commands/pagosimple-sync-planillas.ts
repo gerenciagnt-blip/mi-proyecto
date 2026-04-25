@@ -63,10 +63,49 @@ type PayrollTotalSubsystem = {
   arrear_value?: number | string;
 };
 
+/**
+ * Shape de la respuesta de `/payroll/total/{code}`. PagoSimple incluye
+ * más campos que los que usa explícitamente el cálculo de totales — los
+ * dejamos como opcionales porque algunos solo vienen cuando la planilla
+ * ya está pagada. Los nombres exactos pueden variar entre versiones del
+ * operador, por eso aceptamos varias formas (`paid_at`, `payment_date`,
+ * `payment_status`).
+ */
 type PayrollTotalResponse = {
   administrator_total_value?: PayrollTotalSubsystem[];
   total_to_pay?: number | string;
+  // Indicios de pago — al menos uno presente confirma que está pagada.
+  payment_status?: string | null;
+  paid_at?: string | null;
+  payment_date?: string | null;
+  payroll_number?: string | number | null;
 };
+
+/**
+ * Determina si los totales indican que la planilla fue pagada.
+ * - `payment_status` igual a 'PAID', 'PAGADO', 'PAGADA' (cualquier case).
+ * - `paid_at` o `payment_date` con un valor no vacío.
+ * Si ninguno aparece en la respuesta, retorna null (no podemos decidir).
+ */
+function detectarPago(
+  resp: PayrollTotalResponse,
+): { fechaPago: Date | null; numeroOficial: string | null } | null {
+  const status = (resp.payment_status ?? '').toString().trim().toUpperCase();
+  const paidAt = resp.paid_at ?? resp.payment_date ?? null;
+  if (status === 'PAID' || status === 'PAGADO' || status === 'PAGADA') {
+    return {
+      fechaPago: paidAt ? new Date(paidAt) : new Date(),
+      numeroOficial: resp.payroll_number != null ? String(resp.payroll_number) : null,
+    };
+  }
+  if (paidAt && paidAt.trim() !== '') {
+    return {
+      fechaPago: new Date(paidAt),
+      numeroOficial: resp.payroll_number != null ? String(resp.payroll_number) : null,
+    };
+  }
+  return null;
+}
 
 const REQUIRED_VARS = [
   'PAGOSIMPLE_BASE_URL',
@@ -155,6 +194,7 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
     select: {
       id: true,
       consecutivo: true,
+      estado: true,
       pagosimpleNumero: true,
       pagosimpleEstadoValidacion: true,
       empresa: { select: { nit: true } },
@@ -217,8 +257,10 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
       const nuevoEstado = calcularEstado(data);
 
       // Para planillas validadas OK, traemos también los totales para
-      // actualizar la columna SGSS/Mora/Total en la tabla Guardado.
+      // actualizar la columna SGSS/Mora/Total en la tabla Guardado, y
+      // detectamos si la planilla ya fue pagada en el operador.
       let totales: { totalSgss: number; totalMora: number; totalPagar: number } | null = null;
+      let pagoDetectado: { fechaPago: Date | null; numeroOficial: string | null } | null = null;
       if (nuevoEstado === 'OK') {
         try {
           const totalResp = await apiCall<PayrollTotalResponse>(
@@ -243,6 +285,12 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
           );
           const totalPagar = Number(totalResp.total_to_pay) || totalSgss + totalMora;
           totales = { totalSgss, totalMora, totalPagar };
+          // Si la planilla está en CONSOLIDADO y el operador reporta pago,
+          // detectamos la transición. Si ya está PAGADA (incluyePagadas),
+          // no la transicionamos de nuevo.
+          if (p.estado === 'CONSOLIDADO') {
+            pagoDetectado = detectarPago(totalResp);
+          }
         } catch (totErr) {
           console.warn(
             `   ⚠ ${p.consecutivo}: totales no disponibles — ${
@@ -250,6 +298,48 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
             }`,
           );
         }
+      }
+
+      // Caso especial: el operador confirmó pago → transicionar a PAGADA
+      // y propagar el numeroPlanilla a los comprobantes enlazados.
+      if (pagoDetectado) {
+        const fechaPago = pagoDetectado.fechaPago ?? new Date();
+        const numeroOficial = pagoDetectado.numeroOficial ?? p.pagosimpleNumero!;
+        await prisma.$transaction(async (tx) => {
+          await tx.planilla.update({
+            where: { id: p.id },
+            data: {
+              estado: 'PAGADA',
+              numeroPlanillaExt: numeroOficial,
+              pagadoEn: fechaPago,
+              pagosimpleEstadoValidacion: 'OK',
+              pagosimpleSyncedAt: new Date(),
+              ...(totales
+                ? {
+                    pagosimpleTotalSgss: totales.totalSgss,
+                    pagosimpleTotalMora: totales.totalMora,
+                    pagosimpleTotalPagar: totales.totalPagar,
+                  }
+                : {}),
+            },
+          });
+          // Propagar el número a todos los comprobantes enlazados
+          const comps = await tx.planillaComprobante.findMany({
+            where: { planillaId: p.id },
+            select: { comprobanteId: true },
+          });
+          if (comps.length > 0) {
+            await tx.comprobante.updateMany({
+              where: { id: { in: comps.map((c) => c.comprobanteId) } },
+              data: { numeroPlanilla: numeroOficial },
+            });
+          }
+        });
+        console.log(
+          `   💰 ${p.consecutivo}: PAGADA — N° ${numeroOficial} (${fechaPago.toISOString().slice(0, 10)})`,
+        );
+        actualizadas++;
+        continue;
       }
 
       if (nuevoEstado !== p.pagosimpleEstadoValidacion || totales) {
