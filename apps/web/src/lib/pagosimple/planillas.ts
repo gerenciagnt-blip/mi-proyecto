@@ -25,7 +25,7 @@
 
 import { prisma } from '@pila/db';
 import { pagosimpleRequest } from './client';
-import { getBaseAuthHeaders } from './auth';
+import { getBaseAuthHeaders, getFullAuthHeaders } from './auth';
 import { requirePagosimpleConfig } from './config';
 import { generarPlano } from '@/lib/planos/generar';
 import type {
@@ -36,19 +36,27 @@ import type {
   PaymentUrlData,
 } from './types';
 
-// ============== Helper: extrae payroll_number del response =================
+// ============== Helper: extrae IDs del response =============================
 
-function extractPayrollNumber(
-  resp: PayrollValidateResponse & { payroll_code?: string; payroll_number?: string },
-): string | null {
-  // El validate devuelve principalmente payroll_validations[]; el código
-  // puede venir en payroll_code o dentro del array como payroll_code.
-  if (resp.payroll_code) return resp.payroll_code;
-  if (resp.payroll_number) return resp.payroll_number;
+/**
+ * El validate retorna 2 identificadores que NO son lo mismo:
+ *   - `payroll_code`: usado por GET /payroll/inconsistencies/{code}/...
+ *   - `payroll_number`: usado por GET /payroll/total/{number}, payment/{number}
+ *
+ * Persistimos ambos. `pagosimpleNumero` (nuestro campo) guarda el number;
+ * el code lo extraemos a la hora de pedir inconsistencias.
+ */
+function extractPayrollIds(resp: PayrollValidateResponse): {
+  payrollNumber: string | null;
+  payrollCode: string | null;
+} {
   const first = resp.payroll_validations?.[0];
-  if (first?.payroll_code) return String(first.payroll_code);
-  if (first?.payroll_number) return String(first.payroll_number);
-  return null;
+  // payroll_number=0 significa "no se guardó" (hay errores). Solo
+  // tratamos como válido si es > 0.
+  const rawNumber = first?.payroll_number;
+  const payrollNumber = typeof rawNumber === 'number' && rawNumber > 0 ? String(rawNumber) : null;
+  const payrollCode = first?.payroll_code ? String(first.payroll_code) : null;
+  return { payrollNumber, payrollCode };
 }
 
 // ============== Helper: genera el contenido del plano ======================
@@ -72,7 +80,7 @@ async function obtenerContenidoPlano(
         include: {
           departamentoRef: { select: { codigo: true } },
           municipioRef: { select: { codigo: true } },
-          arl: { select: { codigo: true } },
+          arl: { select: { codigo: true, codigoMinSalud: true } },
         },
       },
       cotizante: {
@@ -81,6 +89,7 @@ async function obtenerContenidoPlano(
           municipio: { select: { codigo: true } },
         },
       },
+      sucursal: { select: { codigo: true, nombre: true } },
       createdBy: {
         include: { sucursal: { select: { codigo: true, nombre: true } } },
       },
@@ -107,17 +116,24 @@ async function obtenerContenidoPlano(
                             include: {
                               departamentoRef: { select: { codigo: true } },
                               municipioRef: { select: { codigo: true } },
-                              arl: { select: { codigo: true } },
+                              arl: { select: { codigo: true, codigoMinSalud: true } },
                             },
                           },
                           tipoCotizante: { select: { codigo: true } },
                           subtipo: { select: { codigo: true } },
-                          planSgss: { select: { incluyeCcf: true } },
+                          planSgss: {
+                            select: {
+                              incluyeEps: true,
+                              incluyeAfp: true,
+                              incluyeArl: true,
+                              incluyeCcf: true,
+                            },
+                          },
                           actividadEconomica: { select: { codigoCiiu: true } },
-                          eps: { select: { codigo: true } },
-                          afp: { select: { codigo: true } },
-                          arl: { select: { codigo: true } },
-                          ccf: { select: { codigo: true } },
+                          eps: { select: { codigo: true, codigoMinSalud: true } },
+                          afp: { select: { codigo: true, codigoMinSalud: true } },
+                          arl: { select: { codigo: true, codigoMinSalud: true } },
+                          ccf: { select: { codigo: true, codigoMinSalud: true } },
                         },
                       },
                       conceptos: true,
@@ -208,36 +224,77 @@ export async function validatePlanillaInPagosimple(
   const execution_params: PayrollValidationExecutionParams = {
     is_UGPP: opts?.is_UGPP ?? false,
     is_novelties_planillaN: opts?.is_novelties_planillaN ?? false,
-    // `file_type` usa el código de tipo de planilla PILA (E, I, N, A, ...)
-    file_type:
-      opts?.file_type ??
-      (['I', 'E', 'Y', 'N', 'A', 'K', 'S'].includes(planilla.tipoPlanilla)
-        ? (planilla.tipoPlanilla as PayrollValidationExecutionParams['file_type'])
-        : 'E'),
+    // SWAGGER (literal): "file_type, debe venir siempre en I." — el tipo
+    // real (E/K/etc) lo lee el operador del encabezado del TXT.
+    file_type: opts?.file_type ?? 'I',
   };
 
-  // Para /payroll/validate NO se necesita auth_token del aportante:
-  // el TXT plano ya lleva la identificación del aportante en su
-  // estructura interna. El endpoint solo requiere los headers de
-  // sesión del operador master (nit + token + session_token).
+  // /payroll/validate exige auth_token del APORTANTE (la empresa o
+  // cotizante de la planilla), no del master. Esa empresa típicamente
+  // ya existe en PagoSimple como aportante operando — no requiere que
+  // nosotros la creamos vía PS-B, solo pedimos su auth_token.
   const cfg = requirePagosimpleConfig();
 
   // Multipart manual — pagosimpleMultipart no soporta múltiples campos
   // de string + file; usamos fetch directo con FormData.
+  // PagoSimple valida el MIME type del archivo: debe ser text/plain.
   const url = `${cfg.baseUrl}/payroll/validate`;
   const fd = new FormData();
   fd.append(
     'payroll_file',
-    new Blob([new Uint8Array(Buffer.from(archivo.contenido, 'utf-8'))]),
+    new Blob([new Uint8Array(Buffer.from(archivo.contenido, 'utf-8'))], {
+      type: 'text/plain',
+    }),
     archivo.filename,
   );
   fd.append('execution_params', JSON.stringify(execution_params));
 
-  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  // Auth: PagoSimple exige el `id` INTERNO del aportante (Integer
+  // asignado por el operador, no el NIT). Lo configuramos manualmente
+  // en el form de Empresa al campo `pagosimpleContributorId`.
+  let auth: { id: string; documentType: string; document: string };
+  if (planilla.empresa) {
+    if (!planilla.empresa.pagosimpleContributorId) {
+      return {
+        ok: false,
+        error: `Falta el ID interno PagoSimple de la empresa "${planilla.empresa.nombre}". Cárgalo en /admin/empresas/${planilla.empresa.id} (campo "ID PagoSimple") — lo encuentras en la URL del aportante en el panel del operador.`,
+      };
+    }
+    auth = {
+      id: planilla.empresa.pagosimpleContributorId,
+      documentType: 'NI',
+      document: planilla.empresa.nit,
+    };
+  } else if (planilla.cotizante) {
+    if (!planilla.cotizante.pagosimpleContributorId) {
+      return {
+        ok: false,
+        error: `Falta el ID interno PagoSimple del cotizante. Cárgalo en su perfil — lo encuentras en el panel del operador.`,
+      };
+    }
+    auth = {
+      id: planilla.cotizante.pagosimpleContributorId,
+      documentType: planilla.cotizante.tipoDocumento,
+      document: planilla.cotizante.numeroDocumento,
+    };
+  } else {
+    return {
+      ok: false,
+      error: 'Planilla sin aportante (empresa ni cotizante).',
+    };
+  }
+
+  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
   try {
-    headers = await getBaseAuthHeaders();
+    headers = await getFullAuthHeaders(auth);
   } catch (authErr) {
     const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    if (/aportante no existe/i.test(msg)) {
+      return {
+        ok: false,
+        error: `El ID interno (${auth.id}) no existe en PagoSimple. Verifica el valor capturado en el form de la empresa contra el del panel del operador.`,
+      };
+    }
     return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
   }
 
@@ -264,6 +321,10 @@ export async function validatePlanillaInPagosimple(
         code: resp.status,
       };
     }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[pagosimple] POST /payroll/validate — RAW RESPONSE (HTTP ${resp.status}):\n${raw}`,
+    );
     if (typeof json?.success !== 'boolean') {
       return {
         ok: false,
@@ -282,29 +343,104 @@ export async function validatePlanillaInPagosimple(
         code: json.code,
       };
     }
-    const data = json.data;
-    const payrollNumber = extractPayrollNumber(data);
-    if (!payrollNumber) {
+    let data = json.data;
+    let { payrollNumber, payrollCode } = extractPayrollIds(data);
+
+    // ── Auto-corrección ────────────────────────────────────────────
+    // Si TODOS los errores devueltos son `autocorrect: "Si"`, llamamos
+    // POST /payroll/correction para que PagoSimple los repare y
+    // re-procese el plano. Si después de corregir queda sin errores,
+    // la planilla queda guardada oficialmente (payroll_number > 0).
+    //
+    // Si hay aunque sea UN error con autocorrect="No", no intentamos
+    // corregir — la planilla va directo a Validación para que el
+    // usuario corrija a mano los datos de origen y vuelva a generar.
+    {
+      const first1 = data.payroll_validations?.[0];
+      const errs1 = [
+        ...(first1?.detail_errors_company ?? []),
+        ...(first1?.detail_errors_contributor ?? []),
+      ];
+      const todosAutocorregibles = errs1.length > 0 && errs1.every((e) => e.autocorrect === 'Si');
+
+      if (todosAutocorregibles && payrollCode) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[pagosimple] auto-corrección disparada (${errs1.length} errores autocorregibles)`,
+        );
+        try {
+          const correctionResp = await fetch(`${cfg.baseUrl}/payroll/correction`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              payroll_code: payrollCode,
+              is_UGPP: execution_params.is_UGPP,
+              is_novelties_planillaN: execution_params.is_novelties_planillaN,
+            }),
+          });
+          const corrRaw = await correctionResp.text();
+          // eslint-disable-next-line no-console
+          console.log(
+            `[pagosimple] POST /payroll/correction — RAW RESPONSE (HTTP ${correctionResp.status}):\n${corrRaw}`,
+          );
+          const corrJson = JSON.parse(corrRaw) as typeof json;
+          if (corrJson?.success && corrJson.data) {
+            // Reemplazamos la data con la corregida; el operador asigna
+            // un payroll_number nuevo si la corrección sirvió.
+            data = corrJson.data;
+            const ids = extractPayrollIds(data);
+            payrollNumber = ids.payrollNumber;
+            payrollCode = ids.payrollCode;
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[pagosimple] /payroll/correction respondió success=false: ${corrJson?.message}`,
+            );
+          }
+        } catch (corrErr) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[pagosimple] /payroll/correction falló: ${corrErr instanceof Error ? corrErr.message : corrErr}`,
+          );
+        }
+      }
+    }
+
+    const first = data.payroll_validations?.[0];
+    const numErrors = (first?.number_errors_company ?? 0) + (first?.number_errors_contributor ?? 0);
+    const planillaGuardadaOk = payrollNumber !== null && numErrors === 0;
+
+    if (!payrollCode && !payrollNumber) {
       // eslint-disable-next-line no-console
       console.error(
-        `[pagosimple] POST /payroll/validate — success pero sin payroll_number. data keys: ${Object.keys(data).join(',')}`,
+        `[pagosimple] POST /payroll/validate — sin code ni number. data: ${JSON.stringify(data).slice(0, 300)}`,
       );
       return {
         ok: false,
-        error: 'PagoSimple validó pero no devolvió payroll_number — verifica el plano.',
+        error: 'PagoSimple no devolvió payroll_code ni number — verifica el plano.',
       };
     }
+
+    // Estado interno: mapeamos según el resultado real, no según
+    // `validation_status` (que solo dice "validación ejecutada").
+    //   - OK     = guardada oficialmente (payroll_number > 0 y 0 errores)
+    //   - ERROR  = tiene errores no auto-corregibles → tab Validación
+    const estadoInterno = planillaGuardadaOk ? 'OK' : 'ERROR';
+
     await prisma.planilla.update({
       where: { id: planillaId },
       data: {
-        pagosimpleNumero: payrollNumber,
-        pagosimpleEstadoValidacion: data.validation_status,
+        // Si payroll_number=0 (no se guardó), guardamos el code para
+        // poder consultar inconsistencias después. Si number>0, ese es
+        // el número oficial y lo usamos para todo.
+        pagosimpleNumero: payrollNumber ?? payrollCode,
+        pagosimpleEstadoValidacion: estadoInterno,
         pagosimpleSyncedAt: new Date(),
       },
     });
     // eslint-disable-next-line no-console
     console.log(
-      `[pagosimple] POST /payroll/validate — OK payroll_number=${payrollNumber} status=${data.validation_status}`,
+      `[pagosimple] POST /payroll/validate — code=${payrollCode} number=${payrollNumber ?? '0 (no guardada)'} errors=${numErrors} → ${estadoInterno}`,
     );
 
     // Best-effort: si la validación pasó, traer también los totales
@@ -325,8 +461,8 @@ export async function validatePlanillaInPagosimple(
 
     return {
       ok: true,
-      payrollNumber,
-      validationStatus: data.validation_status,
+      payrollNumber: payrollNumber ?? payrollCode ?? '0',
+      validationStatus: estadoInterno,
       response: data,
     };
   } catch (err) {
@@ -361,16 +497,44 @@ export async function getPlanillaTotalsFromPagosimple(
 ): Promise<PlanillaTotalsResult> {
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { pagosimpleNumero: true },
+    select: {
+      pagosimpleNumero: true,
+      empresa: { select: { nit: true, pagosimpleContributorId: true } },
+      cotizante: {
+        select: {
+          numeroDocumento: true,
+          tipoDocumento: true,
+          pagosimpleContributorId: true,
+        },
+      },
+    },
   });
   if (!planilla) return { ok: false, error: 'Planilla no encontrada.' };
   if (!planilla.pagosimpleNumero) {
     return { ok: false, error: 'La planilla no tiene payroll_number.' };
   }
 
-  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  // Mismos headers full que validate — auth_token del aportante real.
+  let auth: { id: string; documentType: string; document: string };
+  if (planilla.empresa?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.empresa.pagosimpleContributorId,
+      documentType: 'NI',
+      document: planilla.empresa.nit,
+    };
+  } else if (planilla.cotizante?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.cotizante.pagosimpleContributorId,
+      documentType: planilla.cotizante.tipoDocumento,
+      document: planilla.cotizante.numeroDocumento,
+    };
+  } else {
+    return { ok: false, error: 'Falta el ID interno PagoSimple del aportante.' };
+  }
+
+  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
   try {
-    headers = await getBaseAuthHeaders();
+    headers = await getFullAuthHeaders(auth);
   } catch (authErr) {
     const msg = authErr instanceof Error ? authErr.message : String(authErr);
     return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
@@ -423,7 +587,18 @@ export async function getPlanillaPaymentUrlFromPagosimple(
 ): Promise<PaymentUrlResult> {
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { pagosimpleNumero: true, pagosimplePaymentUrl: true },
+    select: {
+      pagosimpleNumero: true,
+      pagosimplePaymentUrl: true,
+      empresa: { select: { nit: true, pagosimpleContributorId: true } },
+      cotizante: {
+        select: {
+          numeroDocumento: true,
+          tipoDocumento: true,
+          pagosimpleContributorId: true,
+        },
+      },
+    },
   });
   if (!planilla) return { ok: false, error: 'Planilla no encontrada.' };
   if (!planilla.pagosimpleNumero) {
@@ -437,11 +612,27 @@ export async function getPlanillaPaymentUrlFromPagosimple(
     return { ok: true, url: planilla.pagosimplePaymentUrl, cached: true };
   }
 
-  // El payroll_number en el path identifica al aportante; basta con
-  // headers base del master.
-  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  // Auth full con el id interno del aportante (igual que validate).
+  let auth: { id: string; documentType: string; document: string };
+  if (planilla.empresa?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.empresa.pagosimpleContributorId,
+      documentType: 'NI',
+      document: planilla.empresa.nit,
+    };
+  } else if (planilla.cotizante?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.cotizante.pagosimpleContributorId,
+      documentType: planilla.cotizante.tipoDocumento,
+      document: planilla.cotizante.numeroDocumento,
+    };
+  } else {
+    return { ok: false, error: 'Falta el ID interno PagoSimple del aportante.' };
+  }
+
+  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
   try {
-    headers = await getBaseAuthHeaders();
+    headers = await getFullAuthHeaders(auth);
   } catch (authErr) {
     const msg = authErr instanceof Error ? authErr.message : String(authErr);
     return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
@@ -488,18 +679,44 @@ export async function getPlanillaInconsistenciesFromPagosimple(
 ): Promise<InconsistenciesResult> {
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { pagosimpleNumero: true },
+    select: {
+      pagosimpleNumero: true,
+      empresa: { select: { nit: true, pagosimpleContributorId: true } },
+      cotizante: {
+        select: {
+          numeroDocumento: true,
+          tipoDocumento: true,
+          pagosimpleContributorId: true,
+        },
+      },
+    },
   });
   if (!planilla) return { ok: false, error: 'Planilla no encontrada.' };
   if (!planilla.pagosimpleNumero) {
     return { ok: false, error: 'La planilla no tiene payroll_number asociado.' };
   }
 
-  // El payroll_code en el path identifica al aportante; basta con
-  // headers base del master.
-  let headers: Awaited<ReturnType<typeof getBaseAuthHeaders>>;
+  // Auth full con el id interno del aportante.
+  let auth: { id: string; documentType: string; document: string };
+  if (planilla.empresa?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.empresa.pagosimpleContributorId,
+      documentType: 'NI',
+      document: planilla.empresa.nit,
+    };
+  } else if (planilla.cotizante?.pagosimpleContributorId) {
+    auth = {
+      id: planilla.cotizante.pagosimpleContributorId,
+      documentType: planilla.cotizante.tipoDocumento,
+      document: planilla.cotizante.numeroDocumento,
+    };
+  } else {
+    return { ok: false, error: 'Falta el ID interno PagoSimple del aportante.' };
+  }
+
+  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
   try {
-    headers = await getBaseAuthHeaders();
+    headers = await getFullAuthHeaders(auth);
   } catch (authErr) {
     const msg = authErr instanceof Error ? authErr.message : String(authErr);
     return { ok: false, error: `Auth PagoSimple falló: ${msg}` };

@@ -34,6 +34,7 @@ function parseForm(formData: FormData) {
     arlId: get('arlId'),
     exoneraLey1607: formData.get('exoneraLey1607') === 'on',
     fechaInicioActividades: get('fechaInicioActividades'),
+    pagosimpleContributorId: get('pagosimpleContributorId'),
   };
 }
 

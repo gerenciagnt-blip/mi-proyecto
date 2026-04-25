@@ -150,11 +150,13 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
         ...(compScopeOR.length > 0 ? { OR: compScopeOR } : {}),
       },
     }),
-    // CONSOLIDADO + sin error en PagoSimple = "Guardado"
+    // "Guardado" = ya pasó por PagoSimple OK: tiene pagosimpleNumero
+    // y estado limpio (OK / PENDIENTE / null tras OK).
     prisma.planilla.count({
       where: {
         periodoId: periodo.id,
         estado: 'CONSOLIDADO',
+        pagosimpleNumero: { not: null },
         OR: [
           { pagosimpleEstadoValidacion: null },
           { pagosimpleEstadoValidacion: 'OK' },
@@ -163,13 +165,22 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
         ...planillaScope,
       },
     }),
-    // CONSOLIDADO con error de PagoSimple = "Validación"
+    // "Validación" = necesita atención: o no se pudo subir
+    // (pagosimpleNumero=null) o el operador rechazó con error.
     prisma.planilla.count({
       where: {
         periodoId: periodo.id,
         estado: 'CONSOLIDADO',
-        pagosimpleEstadoValidacion: { not: null },
-        NOT: [{ pagosimpleEstadoValidacion: 'OK' }, { pagosimpleEstadoValidacion: 'PENDIENTE' }],
+        OR: [
+          { pagosimpleNumero: null },
+          {
+            pagosimpleEstadoValidacion: { not: null },
+            NOT: [
+              { pagosimpleEstadoValidacion: 'OK' },
+              { pagosimpleEstadoValidacion: 'PENDIENTE' },
+            ],
+          },
+        ],
         ...planillaScope,
       },
     }),
@@ -675,14 +686,27 @@ async function PlanillasTable({
     scope?.tipo === 'SUCURSAL' ? scope.sucursalId : staffSucursalFilter;
   const planillaScope = sucursalAplicada ? { sucursalId: sucursalAplicada } : {};
 
+  // Filtro PagoSimple:
+  //   'sin_error'  = ya pasó OK: tiene pagosimpleNumero Y estado limpio.
+  //   'con_error'  = requiere atención: NO tiene número (falló envío) o
+  //                  el operador devolvió error de validación.
   const psWhere: Prisma.PlanillaWhereInput =
     pagosimpleFilter === 'con_error'
       ? {
-          pagosimpleEstadoValidacion: { not: null },
-          NOT: [{ pagosimpleEstadoValidacion: 'OK' }, { pagosimpleEstadoValidacion: 'PENDIENTE' }],
+          OR: [
+            { pagosimpleNumero: null },
+            {
+              pagosimpleEstadoValidacion: { not: null },
+              NOT: [
+                { pagosimpleEstadoValidacion: 'OK' },
+                { pagosimpleEstadoValidacion: 'PENDIENTE' },
+              ],
+            },
+          ],
         }
       : pagosimpleFilter === 'sin_error'
         ? {
+            pagosimpleNumero: { not: null },
             OR: [
               { pagosimpleEstadoValidacion: null },
               { pagosimpleEstadoValidacion: 'OK' },

@@ -12,17 +12,8 @@ import {
   assertLength,
   normalizeText,
 } from './format';
-import {
-  tipoDocPila,
-  tipoDocAportantePila,
-  claseRiesgoPila,
-  exoneraLey1607Pila,
-} from './codigos';
-import {
-  banderasSubsistemas,
-  identificacionForzada,
-  aplicaOmisionPension,
-} from './politicas';
+import { tipoDocPila, tipoDocAportantePila, claseRiesgoPila, exoneraLey1607Pila } from './codigos';
+import { banderasSubsistemas, identificacionForzada, aplicaOmisionPension } from './politicas';
 
 /**
  * Genera el archivo plano PILA según resolución 2388/2016:
@@ -49,7 +40,7 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
       include: {
         departamentoRef: { select: { codigo: true } };
         municipioRef: { select: { codigo: true } };
-        arl: { select: { codigo: true } };
+        arl: { select: { codigo: true; codigoMinSalud: true } };
       };
     };
     cotizante: {
@@ -58,6 +49,7 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
         municipio: { select: { codigo: true } };
       };
     };
+    sucursal: { select: { codigo: true; nombre: true } };
     createdBy: {
       include: {
         sucursal: { select: { codigo: true; nombre: true } };
@@ -88,7 +80,7 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
                           include: {
                             departamentoRef: { select: { codigo: true } };
                             municipioRef: { select: { codigo: true } };
-                            arl: { select: { codigo: true } };
+                            arl: { select: { codigo: true; codigoMinSalud: true } };
                           };
                         };
                         tipoCotizante: { select: { codigo: true } };
@@ -102,10 +94,10 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
                           };
                         };
                         actividadEconomica: { select: { codigoCiiu: true } };
-                        eps: { select: { codigo: true } };
-                        afp: { select: { codigo: true } };
-                        arl: { select: { codigo: true } };
-                        ccf: { select: { codigo: true } };
+                        eps: { select: { codigo: true; codigoMinSalud: true } };
+                        afp: { select: { codigo: true; codigoMinSalud: true } };
+                        arl: { select: { codigo: true; codigoMinSalud: true } };
+                        ccf: { select: { codigo: true; codigoMinSalud: true } };
                       };
                     };
                     conceptos: true;
@@ -154,7 +146,7 @@ export function construirEncabezado(
     tipoDocAportante = 'NI';
     numeroDocAportante = planilla.empresa.nit ?? '';
     dvAportante = planilla.empresa.dv ?? '0';
-    codArl = planilla.empresa.arl?.codigo ?? '';
+    codArl = planilla.empresa.arl?.codigoMinSalud ?? planilla.empresa.arl?.codigo ?? '';
   } else if (planilla.cotizante) {
     const c = planilla.cotizante;
     razonSocial = [c.primerNombre, c.segundoNombre, c.primerApellido, c.segundoApellido]
@@ -164,46 +156,47 @@ export function construirEncabezado(
     numeroDocAportante = c.numeroDocumento;
     dvAportante = calcularDV(c.numeroDocumento) ?? '0';
     const primeraLiq = planilla.comprobantes[0]?.comprobante.liquidaciones[0]?.liquidacion;
-    codArl = primeraLiq?.afiliacion.arl?.codigo ?? '';
+    codArl = primeraLiq?.afiliacion.arl?.codigoMinSalud ?? primeraLiq?.afiliacion.arl?.codigo ?? '';
   } else {
-    throw new Error(
-      `Planilla ${planilla.consecutivo} sin aportante (empresa o cotizante)`,
-    );
+    throw new Error(`Planilla ${planilla.consecutivo} sin aportante (empresa o cotizante)`);
   }
 
   // Forma presentación: E/K → "S" (sucursal) · I → "U" (pago único)
   const formaPresentacion =
-    planilla.tipoPlanilla === 'E' || planilla.tipoPlanilla === 'K'
-      ? 'S'
-      : 'U';
+    planilla.tipoPlanilla === 'E' || planilla.tipoPlanilla === 'K' ? 'S' : 'U';
 
   let codSucursal = '';
   let nombreSucursal = '';
   if (formaPresentacion === 'S') {
-    const userSucursal = planilla.createdBy?.sucursal;
-    if (userSucursal) {
-      codSucursal = userSucursal.codigo;
-      nombreSucursal = userSucursal.nombre;
+    // Prioridad de búsqueda de sucursal:
+    //   1. planilla.sucursal       → fuente de verdad multi-tenant
+    //   2. createdBy.sucursal      → sucursal del usuario que generó
+    //   3. cuentaCobro.sucursal    → fallback desde comprobantes
+    const planillaSucursal = planilla.sucursal;
+    if (planillaSucursal) {
+      codSucursal = planillaSucursal.codigo;
+      nombreSucursal = planillaSucursal.nombre;
     } else {
-      for (const cp of planilla.comprobantes) {
-        const s = cp.comprobante.cuentaCobro?.sucursal;
-        if (s) {
-          codSucursal = s.codigo;
-          nombreSucursal = s.nombre;
-          break;
+      const userSucursal = planilla.createdBy?.sucursal;
+      if (userSucursal) {
+        codSucursal = userSucursal.codigo;
+        nombreSucursal = userSucursal.nombre;
+      } else {
+        for (const cp of planilla.comprobantes) {
+          const s = cp.comprobante.cuentaCobro?.sucursal;
+          if (s) {
+            codSucursal = s.codigo;
+            nombreSucursal = s.nombre;
+            break;
+          }
         }
       }
     }
   }
 
-  const periodoOtros = padPeriodo(
-    planilla.periodoAporteAnio,
-    planilla.periodoAporteMes,
-  );
+  const periodoOtros = padPeriodo(planilla.periodoAporteAnio, planilla.periodoAporteMes);
   const { anio: saludAnio, mes: saludMes } =
-    planilla.tipoPlanilla === 'E' ||
-    planilla.tipoPlanilla === 'A' ||
-    planilla.tipoPlanilla === 'Y'
+    planilla.tipoPlanilla === 'E' || planilla.tipoPlanilla === 'A' || planilla.tipoPlanilla === 'Y'
       ? shiftMes(planilla.periodoAporteAnio, planilla.periodoAporteMes, 1)
       : { anio: planilla.periodoAporteAnio, mes: planilla.periodoAporteMes };
   const periodoSalud = padPeriodo(saludAnio, saludMes);
@@ -334,12 +327,13 @@ export function construirCotizante(d: DatosCotizante): string {
   const subtipo = overrides.subtipoOverride ?? d.subtipoCodigo;
 
   // Omisión de pensión por subtipo (solo aplica en tipos E/I ordinarios)
-  const omisionPension =
-    d.regimen !== 'RESOLUCION' && aplicaOmisionPension(d.subtipoCodigo);
+  const omisionPension = d.regimen !== 'RESOLUCION' && aplicaOmisionPension(d.subtipoCodigo);
 
-  // IBC prorrateado por días
+  // IBC prorrateado por días.
+  // Regla del operador PILA: salario/30 × días, redondeo HACIA ARRIBA
+  // si el resultado tiene parte decimal (ej. 1575814.5 → 1575815).
   const ibcDia = d.salario / 30;
-  const ibcBase = Math.trunc(ibcDia * d.diasCotizados);
+  const ibcBase = Math.ceil(ibcDia * d.diasCotizados);
 
   // Fallback para el día de salario exacto cuando días=0 (split línea 2
   // con 0 días ARL pero el resto queda en 0 lógicamente): sigue usando
@@ -347,8 +341,7 @@ export function construirCotizante(d: DatosCotizante): string {
 
   // Novedades ING/RET. Si vienen overrides (split), respetarlos.
   const aplicaIngreso =
-    d.ingOverride ??
-    (d.tipoLiquidacion === 'MENSUALIDAD' && d.esPrimeraMensualidad);
+    d.ingOverride ?? (d.tipoLiquidacion === 'MENSUALIDAD' && d.esPrimeraMensualidad);
   const aplicaRetiro = d.retOverride ?? d.aplicaRetiroComp;
   const ing = aplicaIngreso ? 'X' : ' ';
   const ret = aplicaRetiro ? 'X' : ' ';
@@ -396,7 +389,11 @@ export function construirCotizante(d: DatosCotizante): string {
   const diasCcf = ccfActiva ? d.diasCotizados : 0;
   // IBC CCF: si plan sin CCF → $1 simbólico (regla de negocio)
   const ibcCcf = ccfActiva ? (d.planIncluyeCcf ? ibcBase : 1) : 0;
-  const tarifaCcfEf = ccfActiva ? d.tarifaCcf : 0;
+  // Tarifa CCF: el operador PILA exige 4% siempre que el campo CCF
+  // esté activo (sea cobertura real o el mínimo legal de $1). Si la
+  // liquidación no trae tarifa porque el plan no incluye CCF, la
+  // defaulteamos a 4 (= 4%).
+  const tarifaCcfEf = ccfActiva ? (d.planIncluyeCcf ? d.tarifaCcf || 4 : 4) : 0;
   const valorCcfEf = ccfActiva ? d.valorCcf : 0;
 
   // SENA e ICBF: 0 si plan K o E-resolución; 0 además si exonera Ley 1607
@@ -478,7 +475,9 @@ export function construirCotizante(d: DatosCotizante): string {
   parts.push(blank(15)); // 59
   parts.push(padMoney(0, 9)); // 60
   parts.push(padTarifa(tarifaArlEf, 9)); // 61
-  parts.push(padAlpha('0000000', 9)); // 62
+  // 62 · Centro de trabajo — campo NUMÉRICO de 9 dígitos, ceros a la
+  // izquierda. Default = "000000000" si no hay actividad económica.
+  parts.push(padNum(Number(d.actividadEconomicaCodigo) || 0, 9)); // 62
   parts.push(padMoney(valorArlEf, 9)); // 63
   parts.push(padTarifa(tarifaCcfEf, 7)); // 64
   parts.push(padMoney(valorCcfEf, 9)); // 65
@@ -516,9 +515,7 @@ export function construirCotizante(d: DatosCotizante): string {
 
   // Padding operador (17): CIIU justificado a derecha, "0" si no hay
   const actividad = (d.actividadEconomicaCodigo || '0').trim() || '0';
-  const padding = actividad
-    .padStart(PADDING_OPERADOR_LEN, ' ')
-    .slice(-PADDING_OPERADOR_LEN);
+  const padding = actividad.padStart(PADDING_OPERADOR_LEN, ' ').slice(-PADDING_OPERADOR_LEN);
   parts.push(padding);
 
   return assertLength(parts.join(''), LINEA_LEN, `cotizante #${d.secuencia}`);
@@ -595,21 +592,62 @@ export function generarPlano(
 
       const esDep = af.modalidad === 'DEPENDIENTE';
       const empresa = af.empresa;
-      const codDepto = esDep
-        ? empresa?.departamentoRef?.codigo ?? ''
-        : c.departamento?.codigo ?? '';
-      const codMuni = esDep
-        ? empresa?.municipioRef?.codigo ?? ''
-        : c.municipio?.codigo ?? '';
+
+      // El TXT PILA espera el municipio en 3 dígitos (los últimos del
+      // DIVIPOLA de 5). Helper para extraer.
+      const tail3 = (cod: string | null | undefined): string => (cod ?? '').slice(-3);
+
+      // ── Regla de negocio: Dependiente + Ordinario + plan SIN CCF ──
+      // Por ley el aportante debe registrarse a la CCF de menor cobertura
+      // del país (Comfamiliares Vichada). Así se fuerzan los campos
+      // depto / muni / CCF a Vichada / Cumaribo / CCF68 en el TXT.
+      // El cobro real de los $100 internos va dirigido a CCF68 también.
+      const aplicaSinCcf = esDep && af.regimen === 'ORDINARIO' && af.planSgss?.incluyeCcf === false;
+
+      const codDepto = aplicaSinCcf
+        ? '99' // Vichada
+        : esDep
+          ? (empresa?.departamentoRef?.codigo ?? '')
+          : (c.departamento?.codigo ?? '');
+      const codMuni = aplicaSinCcf
+        ? '773' // Cumaribo (DIVIPOLA 99773 → últimos 3)
+        : esDep
+          ? tail3(empresa?.municipioRef?.codigo)
+          : tail3(c.municipio?.codigo);
+      // Códigos PILA oficiales (codigoMinSalud) con fallback al interno.
       const codArl = esDep
-        ? empresa?.arl?.codigo ?? af.arl?.codigo ?? ''
-        : af.arl?.codigo ?? '';
+        ? (empresa?.arl?.codigoMinSalud ??
+          empresa?.arl?.codigo ??
+          af.arl?.codigoMinSalud ??
+          af.arl?.codigo ??
+          '')
+        : (af.arl?.codigoMinSalud ?? af.arl?.codigo ?? '');
+
+      // CCF: si aplica la regla, forzar CCF68; si no, usar el de la
+      // afiliación (con codigoMinSalud preferido sobre código interno).
+      const codCcfFinal = aplicaSinCcf ? 'CCF68' : (af.ccf?.codigoMinSalud ?? af.ccf?.codigo ?? '');
 
       const actividadEconomica = af.actividadEconomica?.codigoCiiu ?? '0';
       const esPrimeraMensualidad = !cotizantesConMensualidadPrevia.has(c.id);
 
       // Base común para las líneas
-      const baseDatos: Omit<DatosCotizante, 'secuencia' | 'diasCotizados' | 'valorPension' | 'valorSalud' | 'valorArl' | 'valorCcf' | 'valorSena' | 'valorIcbf' | 'valorFsp' | 'valorSubsistencia' | 'campo25Ige' | 'ingOverride' | 'retOverride' | 'tarifaArl'> = {
+      const baseDatos: Omit<
+        DatosCotizante,
+        | 'secuencia'
+        | 'diasCotizados'
+        | 'valorPension'
+        | 'valorSalud'
+        | 'valorArl'
+        | 'valorCcf'
+        | 'valorSena'
+        | 'valorIcbf'
+        | 'valorFsp'
+        | 'valorSubsistencia'
+        | 'campo25Ige'
+        | 'ingOverride'
+        | 'retOverride'
+        | 'tarifaArl'
+      > = {
         tipoDoc: tipoDocPila(c.tipoDocumento),
         numeroDoc: c.numeroDocumento,
         primerNombre: c.primerNombre,
@@ -630,10 +668,10 @@ export function generarPlano(
         planIncluyeAfp: af.planSgss?.incluyeAfp ?? true,
         planIncluyeArl: af.planSgss?.incluyeArl ?? true,
         planIncluyeCcf: af.planSgss?.incluyeCcf ?? true,
-        codAfp: af.afp?.codigo ?? '',
-        codEps: af.eps?.codigo ?? '',
+        codAfp: af.afp?.codigoMinSalud ?? af.afp?.codigo ?? '',
+        codEps: af.eps?.codigoMinSalud ?? af.eps?.codigo ?? '',
         codArl,
-        codCcf: af.ccf?.codigo ?? '',
+        codCcf: codCcfFinal,
         salario: Number(af.salario),
         tipoLiquidacion: liq.tipo,
         esPrimeraMensualidad,
@@ -655,19 +693,14 @@ export function generarPlano(
       //   - Plan NO incluye ARL
       //   - Hay novedad de Ingreso o Retiro
       //   - días cotizados ≥ 2
-      const aplicaIngresoNorm =
-        liq.tipo === 'MENSUALIDAD' && esPrimeraMensualidad;
+      const aplicaIngresoNorm = liq.tipo === 'MENSUALIDAD' && esPrimeraMensualidad;
       const aplicaRetiroNorm = aplicaRetiroComp;
       const tipoNoEsK = planilla.tipoPlanilla !== 'K';
       const esOrdinario = af.regimen !== 'RESOLUCION';
       const planSinArl = !(af.planSgss?.incluyeArl ?? true);
       const tieneNovedad = aplicaIngresoNorm || aplicaRetiroNorm;
       const splitAplica =
-        tipoNoEsK &&
-        esOrdinario &&
-        planSinArl &&
-        tieneNovedad &&
-        liq.diasCotizados >= 2;
+        tipoNoEsK && esOrdinario && planSinArl && tieneNovedad && liq.diasCotizados >= 2;
 
       if (splitAplica) {
         // ---- Línea 1: 1 día con ING/RET + ARL Nivel I ----
@@ -694,11 +727,10 @@ export function generarPlano(
           fsp: (fsp?.valor ?? 0) - prorL1.fsp,
         };
 
-        // Valor ARL línea 1: con tarifa Nivel I 1 día sobre IBC del día
-        const ibcDia1 = Math.trunc(Number(af.salario) / 30);
-        const valorArlL1 = Math.ceil(
-          (ibcDia1 * (TARIFA_ARL_NIVEL_I / 100)) / 100,
-        ) * 100; // redondeo round100Up
+        // Valor ARL línea 1: con tarifa Nivel I 1 día sobre IBC del día.
+        // IBC de 1 día = salario/30 redondeado HACIA ARRIBA si hay decimal.
+        const ibcDia1 = Math.ceil(Number(af.salario) / 30);
+        const valorArlL1 = Math.ceil((ibcDia1 * (TARIFA_ARL_NIVEL_I / 100)) / 100) * 100; // redondeo round100Up
 
         const datos1: DatosCotizante = {
           ...baseDatos,
@@ -781,11 +813,7 @@ export function generarPlano(
     lineasCot.push(construirCotizante(it.datos));
   });
 
-  const encabezado = construirEncabezado(
-    planilla,
-    cotizantesUnicos.size,
-    totalNomina,
-  );
+  const encabezado = construirEncabezado(planilla, cotizantesUnicos.size, totalNomina);
 
   const contenido = [encabezado, ...lineasCot].join('\r\n') + '\r\n';
 

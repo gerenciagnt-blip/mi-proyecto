@@ -8,6 +8,8 @@ import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
 import { pagosimpleSyncPlanillasCommand } from './commands/pagosimple-sync-planillas.js';
+import { divipolaSeedCommand } from './commands/divipola-seed.js';
+import { entidadesPilaSeedCommand } from './commands/entidades-pila-seed.js';
 
 const program = new Command();
 
@@ -87,6 +89,20 @@ program
   .description('Verifica credenciales del usuario master de PagoSimple (login + auth_token)')
   .action(async () => {
     await pagosimplePingCommand();
+  });
+
+program
+  .command('divipola:seed')
+  .description('Carga la lista oficial DANE de departamentos + municipios (idempotente)')
+  .action(async () => {
+    await divipolaSeedCommand();
+  });
+
+program
+  .command('entidades-pila:seed')
+  .description('Carga el catálogo oficial de Administradoras PILA (EPS/AFP/ARL/CCF) desde Excel')
+  .action(async () => {
+    await entidadesPilaSeedCommand();
   });
 
 program

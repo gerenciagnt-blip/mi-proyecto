@@ -25,6 +25,7 @@ type Empresa = {
   arlId: string | null;
   exoneraLey1607: boolean;
   fechaInicioActividades: Date | null;
+  pagosimpleContributorId: string | null;
   active: boolean;
 };
 
@@ -69,6 +70,7 @@ export function EditEmpresaForm({
           fechaInicioActividades: empresa.fechaInicioActividades
             ? empresa.fechaInicioActividades.toISOString().slice(0, 10)
             : '',
+          pagosimpleContributorId: empresa.pagosimpleContributorId ?? '',
         }}
       />
 

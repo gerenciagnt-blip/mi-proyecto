@@ -24,6 +24,9 @@ type InitialValues = Partial<{
   exoneraLey1607: boolean;
   /** Fecha de inicio de actividades — formato YYYY-MM-DD para input type=date. */
   fechaInicioActividades: string;
+  /** ID interno del aportante en PagoSimple (Integer asignado por el
+   * operador). Se ve en la URL del panel cuando seleccionas el aportante. */
+  pagosimpleContributorId: string;
 }>;
 
 type Arl = { id: string; codigo: string; nombre: string };
@@ -302,6 +305,21 @@ export function EmpresaFields({
             />
             <p className="mt-1 text-[10px] text-slate-400">
               Requerida por PagoSimple al sincronizar
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>ID PagoSimple (aportante)</label>
+            <input
+              type="text"
+              name="pagosimpleContributorId"
+              defaultValue={initial?.pagosimpleContributorId ?? ''}
+              placeholder="ej. 12345"
+              className={input}
+            />
+            <p className="mt-1 text-[10px] text-slate-400">
+              Número entero asignado por el operador. Lo ves en la URL del panel cuando seleccionas
+              el aportante (ej. /aportante/<strong>12345</strong>/...). Necesario para validar
+              planillas.
             </p>
           </div>
           <div className="sm:col-span-4">

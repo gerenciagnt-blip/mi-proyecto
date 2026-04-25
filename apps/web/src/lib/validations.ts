@@ -74,6 +74,14 @@ export const EmpresaCreateSchema = z.object({
     .optional()
     .transform((v) => (!v ? null : new Date(`${v}T00:00:00Z`)))
     .nullable(),
+  /** ID interno del aportante en PagoSimple — string (puede venir
+   * como número con muchos dígitos). Vacío = null. */
+  pagosimpleContributorId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (!v ? null : v))
+    .nullable(),
 });
 
 export const EmpresaUpdateSchema = EmpresaCreateSchema.extend({

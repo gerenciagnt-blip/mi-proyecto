@@ -16,10 +16,7 @@ export const dynamic = 'force-dynamic';
  *
  * Solo se permite descargar planillas CONSOLIDADO o PAGADA.
  */
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
   const { id } = await params;
 
@@ -31,7 +28,7 @@ export async function GET(
         include: {
           departamentoRef: { select: { codigo: true } },
           municipioRef: { select: { codigo: true } },
-          arl: { select: { codigo: true } },
+          arl: { select: { codigo: true, codigoMinSalud: true } },
         },
       },
       cotizante: {
@@ -40,6 +37,7 @@ export async function GET(
           municipio: { select: { codigo: true } },
         },
       },
+      sucursal: { select: { codigo: true, nombre: true } },
       createdBy: {
         include: {
           sucursal: { select: { codigo: true, nombre: true } },
@@ -70,17 +68,24 @@ export async function GET(
                             include: {
                               departamentoRef: { select: { codigo: true } },
                               municipioRef: { select: { codigo: true } },
-                              arl: { select: { codigo: true } },
+                              arl: { select: { codigo: true, codigoMinSalud: true } },
                             },
                           },
                           tipoCotizante: { select: { codigo: true } },
                           subtipo: { select: { codigo: true } },
-                          planSgss: { select: { incluyeCcf: true } },
+                          planSgss: {
+                            select: {
+                              incluyeEps: true,
+                              incluyeAfp: true,
+                              incluyeArl: true,
+                              incluyeCcf: true,
+                            },
+                          },
                           actividadEconomica: { select: { codigoCiiu: true } },
-                          eps: { select: { codigo: true } },
-                          afp: { select: { codigo: true } },
-                          arl: { select: { codigo: true } },
-                          ccf: { select: { codigo: true } },
+                          eps: { select: { codigo: true, codigoMinSalud: true } },
+                          afp: { select: { codigo: true, codigoMinSalud: true } },
+                          arl: { select: { codigo: true, codigoMinSalud: true } },
+                          ccf: { select: { codigo: true, codigoMinSalud: true } },
                         },
                       },
                       conceptos: true,
@@ -99,10 +104,7 @@ export async function GET(
     return NextResponse.json({ error: 'Planilla no existe' }, { status: 404 });
   }
   if (planilla.estado === 'ANULADA') {
-    return NextResponse.json(
-      { error: 'Planilla anulada — plano no disponible' },
-      { status: 410 },
-    );
+    return NextResponse.json({ error: 'Planilla anulada — plano no disponible' }, { status: 410 });
   }
 
   // Scope: un aliado sólo puede descargar sus planillas.
@@ -111,10 +113,7 @@ export async function GET(
     return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
   }
   if (scope.tipo === 'SUCURSAL' && planilla.sucursalId !== scope.sucursalId) {
-    return NextResponse.json(
-      { error: 'No tienes permiso sobre esta planilla' },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: 'No tienes permiso sobre esta planilla' }, { status: 403 });
   }
 
   // ----- Query de mensualidades previas para marcar ING -----
@@ -129,9 +128,7 @@ export async function GET(
         .map((cl) => cl.liquidacion.afiliacion.cotizante.id),
     ),
   );
-  const comprobanteIdsPlanilla = planilla.comprobantes.map(
-    (cp) => cp.comprobanteId,
-  );
+  const comprobanteIdsPlanilla = planilla.comprobantes.map((cp) => cp.comprobanteId);
 
   let cotizantesConMensualidadPrevia = new Set<string>();
   if (cotizanteIds.length > 0) {
@@ -152,17 +149,12 @@ export async function GET(
       select: { afiliacion: { select: { cotizanteId: true } } },
     });
     cotizantesConMensualidadPrevia = new Set(
-      liqsPrevias
-        .map((l) => l.afiliacion.cotizanteId)
-        .filter((x): x is string => x != null),
+      liqsPrevias.map((l) => l.afiliacion.cotizanteId).filter((x): x is string => x != null),
     );
   }
 
   try {
-    const { contenido, filename } = generarPlano(
-      planilla,
-      cotizantesConMensualidadPrevia,
-    );
+    const { contenido, filename } = generarPlano(planilla, cotizantesConMensualidadPrevia);
     return new NextResponse(contenido, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
