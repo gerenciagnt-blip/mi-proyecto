@@ -1,0 +1,94 @@
+name: PagoSimple Sync (15 min · horario laboral)
+
+# Corre cada 15 minutos en horario laboral Bogotá (8:00-17:00, L-V).
+# Bogotá = UTC-5 → 13:00-22:00 UTC.
+# Cron: minutos */15 / horas 13-22 (inclusive 13 a 22) / días 1-5 (Lun-Vie).
+#
+# La idea es mantener actualizado el estado de validación de las
+# planillas en CONSOLIDADO contra PagoSimple sin que el usuario tenga
+# que apretar manualmente "Revalidar" — los errores nuevos del operador
+# aparecen automáticamente en el tab Validación.
+#
+# También se puede disparar manualmente desde la UI de Actions.
+on:
+  schedule:
+    - cron: '*/15 13-22 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      include_pagadas:
+        description: 'Incluir también PAGADA'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  sync:
+    name: Re-consulta inconsistencias planillas
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PAGOSIMPLE_BASE_URL: ${{ secrets.PAGOSIMPLE_BASE_URL }}
+      PAGOSIMPLE_MASTER_NIT: ${{ secrets.PAGOSIMPLE_MASTER_NIT }}
+      PAGOSIMPLE_MASTER_COMPANY: ${{ secrets.PAGOSIMPLE_MASTER_COMPANY }}
+      PAGOSIMPLE_MASTER_SECRET_KEY: ${{ secrets.PAGOSIMPLE_MASTER_SECRET_KEY }}
+      PAGOSIMPLE_MASTER_DOCUMENT_TYPE: ${{ secrets.PAGOSIMPLE_MASTER_DOCUMENT_TYPE }}
+      PAGOSIMPLE_MASTER_DOCUMENT: ${{ secrets.PAGOSIMPLE_MASTER_DOCUMENT }}
+      PAGOSIMPLE_MASTER_PASSWORD: ${{ secrets.PAGOSIMPLE_MASTER_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate secrets shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+          PAGOSIMPLE_BASE_URL_RAW: ${{ secrets.PAGOSIMPLE_BASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          if [ -z "$PAGOSIMPLE_BASE_URL_RAW" ]; then
+            echo "::error::PAGOSIMPLE_BASE_URL no está configurado"
+            exit 1
+          fi
+          echo "✓ Secrets OK"
+
+      - name: Sync PagoSimple
+        working-directory: apps/cli
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          if [ "${{ inputs.include_pagadas }}" = "true" ]; then
+            pnpm exec tsx src/index.ts pagosimple:sync-planillas --include-pagadas
+          else
+            pnpm exec tsx src/index.ts pagosimple:sync-planillas
+          fi

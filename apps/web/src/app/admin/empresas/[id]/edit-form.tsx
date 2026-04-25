@@ -24,6 +24,7 @@ type Empresa = {
   ciiuPrincipal: string | null;
   arlId: string | null;
   exoneraLey1607: boolean;
+  fechaInicioActividades: Date | null;
   active: boolean;
 };
 
@@ -65,6 +66,9 @@ export function EditEmpresaForm({
           ciiuPrincipal: empresa.ciiuPrincipal ?? '',
           arlId: empresa.arlId ?? '',
           exoneraLey1607: empresa.exoneraLey1607,
+          fechaInicioActividades: empresa.fechaInicioActividades
+            ? empresa.fechaInicioActividades.toISOString().slice(0, 10)
+            : '',
         }}
       />
 

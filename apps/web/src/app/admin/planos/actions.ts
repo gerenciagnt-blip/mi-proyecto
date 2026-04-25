@@ -6,10 +6,9 @@ import type { Prisma, TipoPlanilla } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
-import {
-  planillasParaAfiliacion,
-  banderasSubsistemas,
-} from '@/lib/planos/politicas';
+import { planillasParaAfiliacion, banderasSubsistemas } from '@/lib/planos/politicas';
+import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
+import { validatePlanillaInPagosimple } from '@/lib/pagosimple/planillas';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -42,9 +41,7 @@ async function currentUserId(): Promise<string | null> {
  * banderas del tipo de planilla: tipo E-resolución solo suma EPS; tipo K
  * solo suma ARL.
  */
-export async function generarPlanillasAction(
-  periodoId: string,
-): Promise<ActionState> {
+export async function generarPlanillasAction(periodoId: string): Promise<ActionState> {
   await requireAuth();
   const userId = await currentUserId();
 
@@ -205,10 +202,7 @@ export async function generarPlanillasAction(
 
     for (const tipo of tipos) {
       let key: string;
-      let bucketBase: Omit<
-        Bucket,
-        'comprobanteIds' | 'cotizantesSet' | 'totales'
-      >;
+      let bucketBase: Omit<Bucket, 'comprobanteIds' | 'cotizantesSet' | 'totales'>;
 
       // Clave: incluye sucursalId para evitar mezclar cotizantes de
       // sucursales distintas en una misma planilla tipo E.
@@ -351,6 +345,7 @@ export async function generarPlanillasAction(
   // ------ Crear planillas ------
   let creadas = 0;
   const errores: { key: string; mensaje: string }[] = [];
+  const planillasCreadas: string[] = [];
 
   for (const [key, b] of buckets.entries()) {
     try {
@@ -364,7 +359,7 @@ export async function generarPlanillasAction(
         b.totales.icbf +
         b.totales.fsp;
 
-      await prisma.planilla.create({
+      const nueva = await prisma.planilla.create({
         data: {
           periodoId,
           consecutivo,
@@ -390,12 +385,32 @@ export async function generarPlanillasAction(
             })),
           },
         },
+        select: { id: true },
       });
       creadas++;
+      planillasCreadas.push(nueva.id);
     } catch (err) {
       const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       errores.push({ key, mensaje });
       console.error(`[generarPlanillas] bucket=${key} error:`, mensaje);
+    }
+  }
+
+  // PagoSimple — auto-validate cada planilla recién creada (best-effort).
+  // Si PagoSimple falla por X razón, la planilla queda en CONSOLIDADO sin
+  // pagosimpleNumero y aparece en el tab Validación para acción manual.
+  let pagosimpleOk = 0;
+  let pagosimpleFalla = 0;
+  if (planillasCreadas.length > 0 && isPagosimpleEnabled()) {
+    for (const planillaId of planillasCreadas) {
+      try {
+        const res = await validatePlanillaInPagosimple(planillaId);
+        if (res.ok) pagosimpleOk++;
+        else pagosimpleFalla++;
+      } catch (err) {
+        pagosimpleFalla++;
+        console.error(`[generarPlanillas] PagoSimple validate falló para ${planillaId}:`, err);
+      }
     }
   }
 
@@ -421,6 +436,13 @@ export async function generarPlanillasAction(
   }
   if (errores.length > 0) {
     partes.push(`${errores.length} con error`);
+  }
+  if (pagosimpleOk + pagosimpleFalla > 0) {
+    partes.push(
+      `PagoSimple: ${pagosimpleOk} OK${
+        pagosimpleFalla > 0 ? `, ${pagosimpleFalla} en validación` : ''
+      }`,
+    );
   }
   return { ok: true, mensaje: partes.join(' · ') };
 }
@@ -503,9 +525,7 @@ export async function marcarPlanillaPagadaAction(
  * (cascade), liberando los comprobantes para que vuelvan a agruparse.
  * No se puede anular una planilla PAGADA.
  */
-export async function anularPlanillaAction(
-  planillaId: string,
-): Promise<ActionState> {
+export async function anularPlanillaAction(planillaId: string): Promise<ActionState> {
   await requireAuth();
 
   const planilla = await prisma.planilla.findUnique({

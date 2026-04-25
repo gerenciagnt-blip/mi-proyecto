@@ -25,7 +25,7 @@ import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 export const metadata = { title: 'Planos PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-type Tab = 'consolidado' | 'guardado' | 'pagadas';
+type Tab = 'consolidado' | 'guardado' | 'validacion' | 'pagadas';
 type SP = { tab?: string; sucursalId?: string };
 
 const MESES = [
@@ -66,7 +66,10 @@ const ESTADO_LABEL: Record<EstadoPlanilla, string> = {
 export default async function PlanosPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const tabRaw = sp.tab;
-  const tab: Tab = tabRaw === 'guardado' || tabRaw === 'pagadas' ? tabRaw : 'consolidado';
+  const tab: Tab =
+    tabRaw === 'guardado' || tabRaw === 'pagadas' || tabRaw === 'validacion'
+      ? tabRaw
+      : 'consolidado';
   const sucursalFilter = sp.sucursalId?.trim() || '';
 
   // Período vigente = mes en curso
@@ -136,7 +139,7 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
   }
 
   // Conteos para badges en tabs
-  const [countConsolidado, countGuardado, countPagadas] = await Promise.all([
+  const [countConsolidado, countGuardado, countValidacion, countPagadas] = await Promise.all([
     // Comprobantes del período sin planilla activa
     prisma.comprobante.count({
       where: {
@@ -147,8 +150,28 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
         ...(compScopeOR.length > 0 ? { OR: compScopeOR } : {}),
       },
     }),
+    // CONSOLIDADO + sin error en PagoSimple = "Guardado"
     prisma.planilla.count({
-      where: { periodoId: periodo.id, estado: 'CONSOLIDADO', ...planillaScope },
+      where: {
+        periodoId: periodo.id,
+        estado: 'CONSOLIDADO',
+        OR: [
+          { pagosimpleEstadoValidacion: null },
+          { pagosimpleEstadoValidacion: 'OK' },
+          { pagosimpleEstadoValidacion: 'PENDIENTE' },
+        ],
+        ...planillaScope,
+      },
+    }),
+    // CONSOLIDADO con error de PagoSimple = "Validación"
+    prisma.planilla.count({
+      where: {
+        periodoId: periodo.id,
+        estado: 'CONSOLIDADO',
+        pagosimpleEstadoValidacion: { not: null },
+        NOT: [{ pagosimpleEstadoValidacion: 'OK' }, { pagosimpleEstadoValidacion: 'PENDIENTE' }],
+        ...planillaScope,
+      },
     }),
     prisma.planilla.count({
       where: { periodoId: periodo.id, estado: 'PAGADA', ...planillaScope },
@@ -177,6 +200,13 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
             icon={Save}
             label="Guardado"
             count={countGuardado}
+          />
+          <TabLink
+            href={`/admin/planos?tab=validacion${qs}`}
+            active={tab === 'validacion'}
+            icon={AlertCircle}
+            label="Validación"
+            count={countValidacion}
           />
           <TabLink
             href={`/admin/planos?tab=pagadas${qs}`}
@@ -242,6 +272,12 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
       )}
       {tab === 'guardado' && (
         <TabGuardado
+          periodoId={periodo.id}
+          staffSucursalFilter={esStaff ? sucursalFilter || null : null}
+        />
+      )}
+      {tab === 'validacion' && (
+        <TabValidacion
           periodoId={periodo.id}
           staffSucursalFilter={esStaff ? sucursalFilter || null : null}
         />
@@ -565,6 +601,8 @@ async function TabConsolidado({
 }
 
 // ================== Tab Guardado =====================
+// Planillas CONSOLIDADO sin error (o aún sin validar). Listas para
+// pagar — la celda PagoSimple permite reintentar validate o pasar a PSE.
 
 async function TabGuardado({
   periodoId,
@@ -577,6 +615,29 @@ async function TabGuardado({
     <PlanillasTable
       periodoId={periodoId}
       estado="CONSOLIDADO"
+      pagosimpleFilter="sin_error"
+      staffSucursalFilter={staffSucursalFilter}
+    />
+  );
+}
+
+// ================== Tab Validación =====================
+// Planillas CONSOLIDADO con error retornado por PagoSimple. El operador
+// detectó inconsistencias en el plano — el usuario debe corregirlas en
+// los datos de origen (afiliaciones / comprobantes) y volver a validar.
+
+async function TabValidacion({
+  periodoId,
+  staffSucursalFilter,
+}: {
+  periodoId: string;
+  staffSucursalFilter: string | null;
+}) {
+  return (
+    <PlanillasTable
+      periodoId={periodoId}
+      estado="CONSOLIDADO"
+      pagosimpleFilter="con_error"
       staffSucursalFilter={staffSucursalFilter}
     />
   );
@@ -595,11 +656,17 @@ async function PlanillasTable({
   estado,
   showPeriodo = false,
   staffSucursalFilter,
+  pagosimpleFilter,
 }: {
   periodoId?: string;
   estado: EstadoPlanilla;
   showPeriodo?: boolean;
   staffSucursalFilter: string | null;
+  /** Filtro adicional sobre el resultado de validación PagoSimple:
+   *   - 'sin_error': null / 'OK' / 'PENDIENTE' (lo "limpio")
+   *   - 'con_error': cualquier valor distinto = la planilla quedó con
+   *     errores tras la validación del operador y necesita atención. */
+  pagosimpleFilter?: 'sin_error' | 'con_error';
 }) {
   // Scope: aliado sólo ve sus propias planillas.
   // Staff puede filtrar explícitamente por sucursal.
@@ -608,11 +675,28 @@ async function PlanillasTable({
     scope?.tipo === 'SUCURSAL' ? scope.sucursalId : staffSucursalFilter;
   const planillaScope = sucursalAplicada ? { sucursalId: sucursalAplicada } : {};
 
+  const psWhere: Prisma.PlanillaWhereInput =
+    pagosimpleFilter === 'con_error'
+      ? {
+          pagosimpleEstadoValidacion: { not: null },
+          NOT: [{ pagosimpleEstadoValidacion: 'OK' }, { pagosimpleEstadoValidacion: 'PENDIENTE' }],
+        }
+      : pagosimpleFilter === 'sin_error'
+        ? {
+            OR: [
+              { pagosimpleEstadoValidacion: null },
+              { pagosimpleEstadoValidacion: 'OK' },
+              { pagosimpleEstadoValidacion: 'PENDIENTE' },
+            ],
+          }
+        : {};
+
   const planillas = await prisma.planilla.findMany({
     where: {
       ...(periodoId ? { periodoId } : {}),
       estado,
       ...planillaScope,
+      ...psWhere,
     },
     orderBy: [{ generadoEn: 'desc' }],
     include: {

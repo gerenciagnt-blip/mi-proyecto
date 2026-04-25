@@ -80,7 +80,9 @@ export type ExtraValidation = {
   id?: string | null;
   contributor_id?: string | null;
   sheet_duplication: 'S' | 'N';
-  type_assisted_payment_voucher_id?: string | null;
+  /** Swagger PYME tipa como Integer; en otros endpoints aparece String.
+   * Aceptamos ambos para flexibilidad. */
+  type_assisted_payment_voucher_id?: number | string | null;
   values_voucher: 'S' | 'N';
   new_income_withdrawal: 'S' | 'N';
   exonerated_parafiscal_payment: 'S' | 'N';
@@ -109,6 +111,13 @@ export type ContributorIndependentRequest = {
   type_identification: string;
   type_payer_pension_id: string;
   type_person_id: number; // 1 Natural, 2 Jurídica
+  /** Segmento del aportante: 1=Independiente, 2=Corporativo, 3=PYME.
+   * Marca el tipo de cliente en PagoSimple sin necesidad de endpoints
+   * separados. */
+  segment_id?: number | null;
+  /** Fecha de inicio de actividades (YYYY-MM-DD). Validación implícita
+   * en backend aunque no aparezca explícita en el OpenAPI schema. */
+  start_activity?: string | null;
   information_contact: ContactInformation;
   extra_validation: ExtraValidation;
 };

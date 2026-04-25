@@ -30,7 +30,12 @@ export const EmpresaCreateSchema = z.object({
     .min(5, 'Mínimo 5 caracteres')
     .max(20)
     .regex(/^[0-9]+$/, 'Solo números (sin DV ni guión)'),
-  dv: optionalTrim.pipe(z.string().regex(/^[0-9]$/, 'DV debe ser 1 dígito').optional()),
+  dv: optionalTrim.pipe(
+    z
+      .string()
+      .regex(/^[0-9]$/, 'DV debe ser 1 dígito')
+      .optional(),
+  ),
   nombre: z.string().trim().min(1, 'Razón social requerida').max(200),
   nombreComercial: optionalTrim,
   tipoPersona: TipoPersonaEnum,
@@ -62,6 +67,13 @@ export const EmpresaCreateSchema = z.object({
     .transform((v) => (v === '' ? null : v))
     .nullable(),
   exoneraLey1607: z.preprocess((v) => v === 'on' || v === true, z.boolean()),
+  /** Fecha de inicio de actividades (YYYY-MM-DD del input type=date). */
+  fechaInicioActividades: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (!v ? null : new Date(`${v}T00:00:00Z`)))
+    .nullable(),
 });
 
 export const EmpresaUpdateSchema = EmpresaCreateSchema.extend({
@@ -135,7 +147,10 @@ export const EntidadSgssSchema = z.object({
 });
 
 export const ActividadSchema = z.object({
-  codigoCiiu: z.string().trim().regex(/^[0-9]{4}$/, 'CIIU de 4 dígitos'),
+  codigoCiiu: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{4}$/, 'CIIU de 4 dígitos'),
   descripcion: z.string().trim().min(1).max(300),
 });
 
@@ -252,17 +267,9 @@ export const ModalidadEnum = z.enum(['DEPENDIENTE', 'INDEPENDIENTE']);
 export const FormaPagoEnum = z.enum(['VIGENTE', 'VENCIDO']);
 
 // --- Tarifas SGSS (Fase 2.8) ---
-export const ConceptoTarifaEnum = z.enum([
-  'EPS',
-  'AFP',
-  'ARL',
-  'CCF',
-  'SENA',
-  'ICBF',
-]);
+export const ConceptoTarifaEnum = z.enum(['EPS', 'AFP', 'ARL', 'CCF', 'SENA', 'ICBF']);
 
-const emptyToNullStr = (v: unknown) =>
-  typeof v === 'string' && v.trim() === '' ? null : v;
+const emptyToNullStr = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? null : v);
 
 const porcentaje = z.coerce
   .number({ message: 'Porcentaje inválido' })
@@ -287,17 +294,16 @@ export const TarifaSgssSchema = z.object({
 export const FspRangoSchema = z
   .object({
     smlvDesde: z.coerce.number().min(0, 'No puede ser negativo'),
-    smlvHasta: z
-      .preprocess(
-        (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
-        z.coerce.number().min(0).nullable(),
-      ),
+    smlvHasta: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.coerce.number().min(0).nullable(),
+    ),
     porcentaje,
   })
-  .refine(
-    (v) => v.smlvHasta === null || v.smlvHasta > v.smlvDesde,
-    { message: '"Hasta" debe ser mayor que "Desde"', path: ['smlvHasta'] },
-  );
+  .refine((v) => v.smlvHasta === null || v.smlvHasta > v.smlvDesde, {
+    message: '"Hasta" debe ser mayor que "Desde"',
+    path: ['smlvHasta'],
+  });
 
 export const PlanSgssSchema = z.object({
   // Código interno auto-generado (helper `nextPlanSgssCodigo`) — opcional en el schema.
@@ -342,15 +348,15 @@ export const AfiliacionSchema = z
     arlId: idOrNull,
     ccfId: idOrNull,
   })
-  .refine(
-    (v) => v.modalidad !== 'DEPENDIENTE' || !!v.empresaId,
-    { message: 'Empresa planilla requerida para dependientes', path: ['empresaId'] },
-  )
-  .refine(
-    (v) => v.modalidad !== 'DEPENDIENTE' || !!v.regimen,
-    { message: 'Régimen requerido para dependientes', path: ['regimen'] },
-  )
-  .refine(
-    (v) => v.modalidad !== 'INDEPENDIENTE' || !!v.formaPago,
-    { message: 'Forma de pago requerida para independientes', path: ['formaPago'] },
-  );
+  .refine((v) => v.modalidad !== 'DEPENDIENTE' || !!v.empresaId, {
+    message: 'Empresa planilla requerida para dependientes',
+    path: ['empresaId'],
+  })
+  .refine((v) => v.modalidad !== 'DEPENDIENTE' || !!v.regimen, {
+    message: 'Régimen requerido para dependientes',
+    path: ['regimen'],
+  })
+  .refine((v) => v.modalidad !== 'INDEPENDIENTE' || !!v.formaPago, {
+    message: 'Forma de pago requerida para independientes',
+    path: ['formaPago'],
+  });

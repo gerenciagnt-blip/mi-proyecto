@@ -22,6 +22,8 @@ type InitialValues = Partial<{
   ciiuPrincipal: string;
   arlId: string;
   exoneraLey1607: boolean;
+  /** Fecha de inicio de actividades — formato YYYY-MM-DD para input type=date. */
+  fechaInicioActividades: string;
 }>;
 
 type Arl = { id: string; codigo: string; nombre: string };
@@ -65,10 +67,7 @@ export function EmpresaFields({
     () => departamentos.find((d) => d.id === deptoId),
     [departamentos, deptoId],
   );
-  const muni = useMemo(
-    () => depto?.municipios.find((m) => m.id === muniId),
-    [depto, muniId],
-  );
+  const muni = useMemo(() => depto?.municipios.find((m) => m.id === muniId), [depto, muniId]);
 
   // Si al cambiar depto el municipio ya no está, resetear
   useEffect(() => {
@@ -219,9 +218,7 @@ export function EmpresaFields({
               required
               className={input}
             >
-              <option value="">
-                {depto ? '— Seleccionar —' : 'Primero elige departamento'}
-              </option>
+              <option value="">{depto ? '— Seleccionar —' : 'Primero elige departamento'}</option>
               {depto?.municipios.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.nombre}
@@ -233,12 +230,7 @@ export function EmpresaFields({
           </div>
           <div>
             <label className={label}>Teléfono *</label>
-            <input
-              name="telefono"
-              required
-              defaultValue={initial?.telefono}
-              className={input}
-            />
+            <input name="telefono" required defaultValue={initial?.telefono} className={input} />
           </div>
           <div className="sm:col-span-3">
             <label className={label}>Correo electrónico *</label>
@@ -299,11 +291,24 @@ export function EmpresaFields({
               </span>
             </label>
           </div>
+          <div>
+            <label className={label}>Fecha inicio actividades</label>
+            <input
+              type="date"
+              name="fechaInicioActividades"
+              defaultValue={initial?.fechaInicioActividades ?? ''}
+              max={new Date().toISOString().slice(0, 10)}
+              className={input}
+            />
+            <p className="mt-1 text-[10px] text-slate-400">
+              Requerida por PagoSimple al sincronizar
+            </p>
+          </div>
           <div className="sm:col-span-4">
             <p className="mt-2 text-xs text-slate-500">
-              Niveles de riesgo permitidos, actividades adicionales y tipos/subtipos de
-              cotizante se configuran en la pestaña <strong>Configuración PILA</strong>{' '}
-              (disponible tras crear la empresa).
+              Niveles de riesgo permitidos, actividades adicionales y tipos/subtipos de cotizante se
+              configuran en la pestaña <strong>Configuración PILA</strong> (disponible tras crear la
+              empresa).
             </p>
           </div>
         </div>

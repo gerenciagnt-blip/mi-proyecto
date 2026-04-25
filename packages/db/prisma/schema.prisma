@@ -269,9 +269,12 @@ model Empresa {
   email          String?
 
   // PILA
-  ciiuPrincipal    String?
-  arlId            String?
-  exoneraLey1607   Boolean @default(false) // exoneración de aportes Ley 1607 de 2012
+  ciiuPrincipal           String?
+  arlId                   String?
+  /** Fecha de inicio de actividades de la empresa — requerida por
+   * PagoSimple al crear el aportante. */
+  fechaInicioActividades  DateTime?
+  exoneraLey1607          Boolean @default(false) // exoneración de aportes Ley 1607 de 2012
   arl              EntidadSgss?  @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
   departamentoRef  Departamento? @relation("EmpresaDepto", fields: [departamentoId], references: [id], onDelete: SetNull)
   municipioRef     Municipio?    @relation("EmpresaMuni", fields: [municipioId], references: [id], onDelete: SetNull)

@@ -7,6 +7,7 @@ import { retentionRunCommand } from './commands/retention-run.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
+import { pagosimpleSyncPlanillasCommand } from './commands/pagosimple-sync-planillas.js';
 
 const program = new Command();
 
@@ -86,6 +87,16 @@ program
   .description('Verifica credenciales del usuario master de PagoSimple (login + auth_token)')
   .action(async () => {
     await pagosimplePingCommand();
+  });
+
+program
+  .command('pagosimple:sync-planillas')
+  .description(
+    'Re-consulta inconsistencias en PagoSimple para planillas CONSOLIDADO y actualiza el estado local',
+  )
+  .option('--include-pagadas', 'Incluir también planillas PAGADA')
+  .action(async (options: { includePagadas?: boolean }) => {
+    await pagosimpleSyncPlanillasCommand({ includePagadas: options.includePagadas });
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args

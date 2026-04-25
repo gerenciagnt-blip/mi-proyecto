@@ -33,6 +33,7 @@ function parseForm(formData: FormData) {
     ciiuPrincipal: get('ciiuPrincipal'),
     arlId: get('arlId'),
     exoneraLey1607: formData.get('exoneraLey1607') === 'on',
+    fechaInicioActividades: get('fechaInicioActividades'),
   };
 }
 
@@ -50,9 +51,10 @@ export async function createEmpresaAction(
   try {
     await prisma.empresa.create({ data: parsed.data });
   } catch (e) {
-    const msg = e instanceof Error && e.message.includes('Unique')
-      ? 'Ya existe una empresa con ese NIT'
-      : 'Error al crear empresa';
+    const msg =
+      e instanceof Error && e.message.includes('Unique')
+        ? 'Ya existe una empresa con ese NIT'
+        : 'Error al crear empresa';
     return { error: msg };
   }
 
@@ -78,9 +80,8 @@ export async function updateEmpresaAction(
   try {
     await prisma.empresa.update({ where: { id }, data: parsed.data });
   } catch (e) {
-    const msg = e instanceof Error && e.message.includes('Unique')
-      ? 'NIT duplicado'
-      : 'Error al actualizar';
+    const msg =
+      e instanceof Error && e.message.includes('Unique') ? 'NIT duplicado' : 'Error al actualizar';
     return { error: msg };
   }
 
