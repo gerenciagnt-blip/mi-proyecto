@@ -131,27 +131,3 @@ export async function pagosimpleRequest<T>(
 
   return json.data as T;
 }
-
-/**
- * Helper específico para endpoints que suben un archivo (multipart).
- * Construye el FormData con los campos + el archivo.
- */
-export async function pagosimpleMultipart<T>(
-  path: string,
-  fileField: string,
-  file: { buffer: Buffer; filename: string },
-  extraFields: Record<string, string> = {},
-  options: Omit<ClientRequestOptions, 'formData' | 'body' | 'method'> = {},
-): Promise<T> {
-  const fd = new FormData();
-  const blob = new Blob([new Uint8Array(file.buffer)]);
-  fd.append(fileField, blob, file.filename);
-  for (const [k, v] of Object.entries(extraFields)) {
-    fd.append(k, v);
-  }
-  return pagosimpleRequest<T>(path, {
-    ...options,
-    method: 'POST',
-    formData: fd,
-  });
-}

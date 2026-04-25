@@ -235,9 +235,8 @@ export async function validatePlanillaInPagosimple(
   // nosotros la creamos vía PS-B, solo pedimos su auth_token.
   const cfg = requirePagosimpleConfig();
 
-  // Multipart manual — pagosimpleMultipart no soporta múltiples campos
-  // de string + file; usamos fetch directo con FormData.
-  // PagoSimple valida el MIME type del archivo: debe ser text/plain.
+  // Multipart manual con fetch directo (archivo + string en mismo
+  // FormData). PagoSimple valida el MIME type: debe ser text/plain.
   const url = `${cfg.baseUrl}/payroll/validate`;
   const fd = new FormData();
   fd.append(
@@ -321,10 +320,6 @@ export async function validatePlanillaInPagosimple(
         code: resp.status,
       };
     }
-    // eslint-disable-next-line no-console
-    console.log(
-      `[pagosimple] POST /payroll/validate — RAW RESPONSE (HTTP ${resp.status}):\n${raw}`,
-    );
     if (typeof json?.success !== 'boolean') {
       return {
         ok: false,
@@ -379,10 +374,6 @@ export async function validatePlanillaInPagosimple(
             }),
           });
           const corrRaw = await correctionResp.text();
-          // eslint-disable-next-line no-console
-          console.log(
-            `[pagosimple] POST /payroll/correction — RAW RESPONSE (HTTP ${correctionResp.status}):\n${corrRaw}`,
-          );
           const corrJson = JSON.parse(corrRaw) as typeof json;
           if (corrJson?.success && corrJson.data) {
             // Reemplazamos la data con la corregida; el operador asigna
