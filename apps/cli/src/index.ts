@@ -5,6 +5,7 @@ import { adminCreateCommand } from './commands/admin-create.js';
 import { resetPasswordCommand } from './commands/reset-password.js';
 import { retentionRunCommand } from './commands/retention-run.js';
 import { auditoriaPurgeCommand } from './commands/auditoria-purge.js';
+import { analyzeDbCommand } from './commands/analyze-db.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
@@ -71,6 +72,21 @@ program
   .action(async (options: { dry?: boolean; meses?: number }) => {
     await auditoriaPurgeCommand(options);
   });
+
+program
+  .command('analyze:db')
+  .description('Reporta queries lentas, sequential scans y índices huérfanos')
+  .option('--by <key>', 'Orden de queries: total | mean | calls (default total)', 'total')
+  .option('--limit <n>', 'Cantidad de queries (default 20)', (v) =>
+    v ? parseInt(v, 10) : undefined,
+  )
+  .option('--reset', 'Resetea pg_stat_statements (requiere superuser)')
+  .option('--tables-only', 'Solo reportes de tablas e índices (saltar queries)')
+  .action(
+    async (options: { by?: string; limit?: number; reset?: boolean; tablesOnly?: boolean }) => {
+      await analyzeDbCommand(options);
+    },
+  );
 
 program
   .command('seed:test-data')
