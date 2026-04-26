@@ -14,6 +14,7 @@ import { requireRole } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { buildAuditoriaWhere } from '@/lib/auditoria/scope';
 import { BitacoraFiltros } from './filtros';
+import { DetalleEventoTrigger } from './detalle-modal';
 
 export const metadata = { title: 'Bitácora — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -105,6 +106,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
         userRole: true,
         descripcion: true,
         ip: true,
+        cambios: true,
         createdAt: true,
         userSucursal: { select: { codigo: true } },
         entidadSucursal: { select: { codigo: true } },
@@ -192,6 +194,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                 {scope.tipo === 'STAFF' && (
                   <th className="px-3 py-2 text-left font-medium">Sucursal</th>
                 )}
+                <th className="w-8 px-2 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -246,6 +249,25 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                         {sucursalLabel}
                       </td>
                     )}
+                    <td className="px-2 py-2">
+                      <DetalleEventoTrigger
+                        evento={{
+                          id: ev.id,
+                          entidad: ev.entidad,
+                          entidadId: ev.entidadId,
+                          accion: ev.accion,
+                          userId: ev.userId,
+                          userName: ev.userName,
+                          userRole: ev.userRole,
+                          userSucursalCodigo: ev.userSucursal?.codigo ?? null,
+                          entidadSucursalCodigo: ev.entidadSucursal?.codigo ?? null,
+                          descripcion: ev.descripcion,
+                          ip: ev.ip,
+                          cambios: ev.cambios,
+                          createdAt: ev.createdAt.toISOString(),
+                        }}
+                      />
+                    </td>
                   </tr>
                 );
               })}
