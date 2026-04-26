@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import {
   Activity,
   Database,
@@ -7,10 +8,13 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Bot,
+  ArrowRight,
 } from 'lucide-react';
 import { requireAdmin } from '@/lib/auth-helpers';
 import {
   chequearBD,
+  chequearColpatria,
   chequearCrons,
   chequearUploads,
   type ResultadoCron,
@@ -66,10 +70,11 @@ function chipEstado(c: ResultadoCron): { label: string; clase: string; Icon: typ
 export default async function SistemaPage() {
   await requireAdmin();
 
-  // Las tres consultas son independientes — paralelo.
-  const [bd, crons, uploads] = await Promise.all([
+  // Las consultas son independientes — paralelo.
+  const [bd, crons, colpatria, uploads] = await Promise.all([
     chequearBD(),
     chequearCrons(),
+    chequearColpatria(),
     Promise.resolve(chequearUploads()),
   ]);
 
@@ -227,6 +232,91 @@ export default async function SistemaPage() {
               })}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      {/* ====== BOT COLPATRIA ====== */}
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <header className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-brand-blue" />
+            <h2 className="text-sm font-semibold text-slate-900">Bot Colpatria ARL</h2>
+          </div>
+          <Link
+            href="/admin/configuracion/colpatria-jobs"
+            className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 hover:bg-slate-50"
+          >
+            Ver todos los jobs
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </header>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          {/* Counters 24h */}
+          <div>
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">Últimas 24h</p>
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                {
+                  label: 'Pending',
+                  v: colpatria.ultimas24h.pending,
+                  c: 'bg-slate-100 text-slate-700',
+                },
+                {
+                  label: 'Running',
+                  v: colpatria.ultimas24h.running,
+                  c: 'bg-blue-50 text-blue-700',
+                },
+                {
+                  label: 'Success',
+                  v: colpatria.ultimas24h.success,
+                  c: 'bg-emerald-50 text-emerald-700',
+                },
+                {
+                  label: 'Retry',
+                  v: colpatria.ultimas24h.retryable,
+                  c: 'bg-amber-50 text-amber-800',
+                },
+                {
+                  label: 'Failed',
+                  v: colpatria.ultimas24h.failed,
+                  c: 'bg-rose-50 text-rose-700',
+                },
+              ].map((s) => (
+                <div key={s.label} className={`rounded-md px-2 py-1.5 text-center ${s.c}`}>
+                  <p className="text-lg font-semibold leading-none">{s.v}</p>
+                  <p className="mt-1 text-[9px] uppercase tracking-wider opacity-70">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] text-slate-500">
+              Total histórico: <strong>{colpatria.totalHistorico}</strong> jobs
+            </p>
+          </div>
+
+          {/* Empresas + alerta de pending viejos */}
+          <div>
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">Empresas</p>
+            <div className="space-y-1 text-xs">
+              <p className="text-slate-700">
+                <strong>{colpatria.empresas.configuradas}</strong> con credenciales configuradas
+              </p>
+              <p className="text-slate-700">
+                <strong>{colpatria.empresas.activas}</strong> con bot activo
+              </p>
+            </div>
+
+            {colpatria.pendingMasViejoH != null && colpatria.pendingMasViejoH > 1 && (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  Hay un job PENDING de hace{' '}
+                  <strong>{colpatria.pendingMasViejoH.toFixed(1)}h</strong>. ¿Está corriendo el
+                  worker?
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

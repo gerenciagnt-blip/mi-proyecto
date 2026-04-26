@@ -59,6 +59,27 @@ export type ResultadoUploads = {
   rutaConfigurada: string;
 };
 
+export type ResultadoColpatria = {
+  /** Cuenta de jobs por status en las últimas 24h (rolling window). */
+  ultimas24h: {
+    pending: number;
+    running: number;
+    success: number;
+    failed: number;
+    retryable: number;
+  };
+  /** Total acumulado histórico — para dimensionar la tabla. */
+  totalHistorico: number;
+  /** Empresas con bot activo y con bot configurado (con credenciales). */
+  empresas: {
+    activas: number;
+    configuradas: number;
+  };
+  /** Job más viejo en estado PENDING (en horas). null si no hay
+   *  PENDINGs. Si supera ~1h alerta de que el worker no está corriendo. */
+  pendingMasViejoH: number | null;
+};
+
 /**
  * Tabla de jobs esperados — agregar acá cada cron que se sume al sistema.
  * Si un job no aparece en esta lista, el status page no lo muestra como
@@ -178,6 +199,62 @@ export async function chequearCrons(): Promise<ResultadoCron[]> {
       enAlerta,
     };
   });
+}
+
+export async function chequearColpatria(): Promise<ResultadoColpatria> {
+  const ahora = Date.now();
+  const hace24h = new Date(ahora - 24 * 60 * 60 * 1000);
+
+  // Una sola query con groupBy para los 5 status en 24h.
+  // Otra query separada para el total histórico y el más viejo PENDING.
+  const [grupos, totalHistorico, masViejoPending, empresasActivas, empresasConfiguradas] =
+    await Promise.all([
+      prisma.colpatriaAfiliacionJob.groupBy({
+        by: ['status'],
+        where: { createdAt: { gte: hace24h } },
+        _count: { _all: true },
+      }),
+      prisma.colpatriaAfiliacionJob.count(),
+      prisma.colpatriaAfiliacionJob.findFirst({
+        where: { status: 'PENDING' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+      prisma.empresa.count({ where: { colpatriaActivo: true, active: true } }),
+      prisma.empresa.count({
+        where: {
+          colpatriaUsuario: { not: null },
+          colpatriaPasswordEnc: { not: null },
+          active: true,
+        },
+      }),
+    ]);
+
+  const conteo = {
+    pending: 0,
+    running: 0,
+    success: 0,
+    failed: 0,
+    retryable: 0,
+  };
+  for (const g of grupos) {
+    const k = g.status.toLowerCase() as keyof typeof conteo;
+    if (k in conteo) conteo[k] = g._count._all;
+  }
+
+  const pendingMasViejoH = masViejoPending
+    ? (ahora - masViejoPending.createdAt.getTime()) / (60 * 60 * 1000)
+    : null;
+
+  return {
+    ultimas24h: conteo,
+    totalHistorico,
+    empresas: {
+      activas: empresasActivas,
+      configuradas: empresasConfiguradas,
+    },
+    pendingMasViejoH,
+  };
 }
 
 export function chequearUploads(): ResultadoUploads {

@@ -27,6 +27,7 @@ import {
   BarChart3,
   History,
   Activity,
+  Bot,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -75,6 +76,12 @@ const NAV: NavItem[] = [
         href: '/admin/configuracion/bitacora',
         icon: History,
         roles: STAFF_Y_ALIADO_OWNER,
+      },
+      {
+        label: 'Bot Colpatria',
+        href: '/admin/configuracion/colpatria-jobs',
+        icon: Bot,
+        roles: STAFF,
       },
       {
         label: 'Sistema',
