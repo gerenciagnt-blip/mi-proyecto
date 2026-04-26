@@ -47,12 +47,20 @@ export default async function EditEmpresaPage({ params }: { params: Promise<{ id
             {empresa.nit} — {empresa.nombre}
           </p>
         </div>
-        <Link
-          href={`/admin/empresas/${empresa.id}/config`}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Configuración PILA →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/empresas/${empresa.id}/colpatria`}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Bot Colpatria ARL →
+          </Link>
+          <Link
+            href={`/admin/empresas/${empresa.id}/config`}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Configuración PILA →
+          </Link>
+        </div>
       </header>
       <section className="rounded-lg border border-slate-200 bg-white p-6">
         <EditEmpresaForm empresa={empresa} arls={arls} departamentos={departamentosOpts} />

@@ -108,6 +108,7 @@ model AuditLog {
   // ----- Campos añadidos en Sprint 6 (todos nullable para compat con eventos previos) -----
   /**
    * /**
+   * /**
    * /** Snapshot del rol del usuario al momento del evento.
    */
   userRole          Role?
@@ -223,6 +224,7 @@ model Sucursal {
   /**
    * /**
    * /**
+   * /**
    * Tarifa cobrada al aliado por cada afiliación/mensualidad de régimen
    * ORDINARIO procesada en el período contable. Null = sin configurar (no
    * se puede generar cobro hasta que staff la defina).
@@ -333,6 +335,7 @@ model Empresa {
   // PagoSimple — sincronización con operador PILA
   /**
    * /**
+   * /**
    * /** ID del aportante creado en PagoSimple bajo el usuario master.
    */
   pagosimpleContributorId String?
@@ -340,6 +343,33 @@ model Empresa {
    * Última vez que se sincronizaron datos con el operador.
    */
   pagosimpleSyncedAt      DateTime?
+
+  // ===== Bot Colpatria ARL (Sprint 8) =====
+  // Cada empresa planilla afiliada a Colpatria ARL tiene credenciales
+  // propias del portal. El bot las usa para iniciar sesión y procesar
+  // afiliaciones automáticamente. Se llenan desde
+  // /admin/empresas/[id]/colpatria por ADMIN únicamente.
+  /**
+   * /** Si true, las afiliaciones nuevas/reactivadas de esta empresa
+   * disparan automáticamente el bot. Si false, el bot ignora la empresa
+   * (útil para empresas que aún no tienen credenciales o para pausar).
+   */
+  colpatriaActivo        Boolean   @default(false)
+  /**
+   * Usuario del portal Colpatria ARL para esta empresa.
+   */
+  colpatriaUsuario       String?
+  /**
+   * Password encriptado con AES-256-GCM (key en COLPATRIA_ENC_KEY del
+   * env). Nunca se devuelve a la UI — la UI solo muestra
+   * "configurado / no configurado".
+   */
+  colpatriaPasswordEnc   String?
+  /**
+   * Última vez que se cambió la credencial — para detectar logins que
+   * fallan tras una rotación de password.
+   */
+  colpatriaPasswordSetAt DateTime?
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos     EmpresaNivelRiesgo[]
@@ -355,9 +385,11 @@ model Empresa {
   afiliaciones                Afiliacion[]
   planillas                   Planilla[]
   carterasConsolidado         CarteraConsolidado[]
-  incapacidades               Incapacidad[]           @relation("IncapacidadEmpresa")
+  incapacidades               Incapacidad[]            @relation("IncapacidadEmpresa")
   movimientosIncapacidad      MovimientoIncapacidad[]
-  movimientosDetallePagadoCon MovimientoIncDetalle[]  @relation("MovDetallePagadoCon")
+  movimientosDetallePagadoCon MovimientoIncDetalle[]   @relation("MovDetallePagadoCon")
+  colpatriaSesion             ColpatriaSesion?
+  colpatriaJobs               ColpatriaAfiliacionJob[]
 
   @@index([arlId])
   @@index([departamentoId])
@@ -767,6 +799,7 @@ model Afiliacion {
   serviciosAdicionales AfiliacionServicio[]
   liquidaciones        Liquidacion[]
   soportes             SoporteAfiliacion[]
+  colpatriaJobs        ColpatriaAfiliacionJob[]
 
   @@index([cotizanteId])
   @@index([empresaId])
@@ -1197,6 +1230,7 @@ model Planilla {
 
   // PagoSimple — integración con operador PILA
   /**
+   * /**
    * /**
    * /** payroll_number devuelto por POST /payroll/validate.
    */
@@ -2153,4 +2187,140 @@ model CronRun {
   @@index([jobName, startedAt])
   @@index([startedAt])
   @@map("cron_runs")
+}
+
+// =========================================================================
+// BOT COLPATRIA ARL (Sprint 8)
+// =========================================================================
+//
+// Automatización del portal Colpatria ARL: cuando un aliado crea una
+// afiliación nueva o reactiva una INACTIVA→ACTIVA con modalidad
+// DEPENDIENTE y la empresa tiene `colpatriaActivo=true`, se crea un
+// `ColpatriaAfiliacionJob` con status PENDING. Un worker Playwright
+// (apps/bot-colpatria) los procesa periódicamente: login → navega al
+// formulario → llena los campos → submit → descarga PDF de soporte → lo
+// asocia a la afiliación.
+//
+// `ColpatriaSesion` cachea las cookies de sesión del portal por empresa
+// para evitar 1 login por cada afiliación (con 50–70 al día sería
+// ruidoso para Colpatria y aumentaría riesgo de bloqueo).
+
+/**
+ * Sesión activa con el portal Colpatria ARL para una empresa. Una sola
+ * fila por empresa (relación 1:1). Los cookies son JSON encriptado con
+ * la misma clave `COLPATRIA_ENC_KEY` que protege el password.
+ */
+model ColpatriaSesion {
+  id         String    @id @default(cuid())
+  empresaId  String    @unique
+  /**
+   * Cookies serializadas (JSON Playwright storageState), encriptadas.
+   */
+  cookiesEnc String
+  /**
+   * Cuándo se creó la sesión — para detectar sesiones muy viejas.
+   */
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  /**
+   * Estimación de cuándo va a expirar la sesión en el portal. Si es
+   * null o ya pasó, el worker hace login fresco antes de procesar.
+   */
+  expiraEn   DateTime?
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@map("colpatria_sesiones")
+}
+
+enum ColpatriaJobStatus {
+  /**
+   * Job creado pero el worker aún no lo agarró.
+   */
+  PENDING
+  /**
+   * Worker procesando ahora — locked para evitar doble ejecución.
+   */
+  RUNNING
+  /**
+   * Procesado OK, PDF descargado y guardado.
+   */
+  SUCCESS
+  /**
+   * Falló de forma definitiva (no reintentar automático). El operador
+   * decide si reintentar manualmente.
+   */
+  FAILED
+  /**
+   * Falló por causa transitoria (timeout, sesión expirada, captcha
+   * inesperado). Se reintenta automáticamente hasta `MAX_INTENTOS`.
+   */
+  RETRYABLE
+}
+
+/**
+ * Job que el bot Colpatria debe procesar.
+ * Reglas clave:
+ * - Una afiliación puede tener varios jobs si los anteriores fallaron
+ * y se reintenta — `intento` los distingue.
+ * - El `payload` es un snapshot del estado al momento de crear el job.
+ * Si la afiliación cambia después, el job sigue con lo que tenía —
+ * el operador decide si crear uno nuevo.
+ * - `screenshotsPaths` guarda paths relativos al UPLOADS_DIR donde el
+ * worker dejó capturas de cada paso (login, form llenado, submit,
+ * resultado). Útil para diagnosticar fallos.
+ */
+model ColpatriaAfiliacionJob {
+  id               String             @id @default(cuid())
+  afiliacionId     String
+  empresaId        String
+  status           ColpatriaJobStatus @default(PENDING)
+  /**
+   * Intento N de M. 1 para el primer job, 2+ si se reintentó.
+   */
+  intento          Int                @default(1)
+  /**
+   * Snapshot de los datos de la afiliación al momento de crear el
+   * job. Lo que el bot le pasa al portal.
+   */
+  payload          Json
+  /**
+   * Cuándo el worker arrancó este intento.
+   */
+  startedAt        DateTime?
+  /**
+   * Cuándo el worker terminó (OK o falló).
+   */
+  finishedAt       DateTime?
+  /**
+   * Duración total en ms.
+   */
+  durationMs       Int?
+  /**
+   * Path al PDF descargado del portal (relativo a UPLOADS_DIR), null
+   * hasta que el job termine en SUCCESS.
+   */
+  pdfPath          String?
+  /**
+   * Array JSON de paths a screenshots por paso.
+   */
+  screenshotsPaths Json?
+  /**
+   * Mensaje de error humano si falló.
+   */
+  error            String?
+  /**
+   * Stack/payload extra para diagnóstico.
+   */
+  errorDetalle     Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  afiliacion Afiliacion @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
+  empresa    Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([afiliacionId])
+  @@index([empresaId, status])
+  @@map("colpatria_afiliacion_jobs")
 }
