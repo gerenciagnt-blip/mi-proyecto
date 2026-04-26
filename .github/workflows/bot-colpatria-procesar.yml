@@ -1,0 +1,103 @@
+name: Bot Colpatria — procesar jobs pendientes
+
+# Corre cada 15 min en horario laboral Colombia (8 AM–6 PM, lun–vie).
+# Colombia = UTC-5, sin DST → 8 AM Col = 13:00 UTC, 6 PM Col = 23:00 UTC.
+# Cron expression: minuto 0/15/30/45 entre 13:00 y 22:45 UTC, lun–vie.
+# Fuera de ese rango (noches/fines) NO corre — los jobs PENDING esperan
+# al siguiente horario laboral.
+#
+# También se puede disparar manual desde la UI de Actions con
+# workflow_dispatch.
+#
+# El worker Playwright real se implementa en Sprint 8.3. Hasta entonces,
+# este workflow está esqueleteado y no procesa nada (sale 0 OK con
+# mensaje "worker no implementado").
+
+on:
+  schedule:
+    # 0/15 min, horas 13–22 UTC, lun–vie. La última corrida del día es 22:45 UTC = 5:45 PM Col.
+    - cron: '0/15 13-22 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: 'Cuántos jobs procesar como máximo en esta corrida'
+        required: false
+        default: '20'
+        type: string
+
+jobs:
+  procesar:
+    name: Procesar jobs PENDING
+    runs-on: ubuntu-latest
+    timeout-minutes: 25 # margen — 20 jobs × 1 min cada uno
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UPLOADS_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
+      COLPATRIA_BASE_URL: ${{ secrets.COLPATRIA_BASE_URL }}
+      COLPATRIA_HEADLESS: 'true'
+      COLPATRIA_ENC_KEY: ${{ secrets.COLPATRIA_ENC_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      # Misma validación que los otros workflows — falla con mensaje
+      # claro si el secret DATABASE_URL viene mal escapado.
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL OK"
+
+      - name: Validate COLPATRIA_ENC_KEY presence
+        run: |
+          if [ -z "${{ secrets.COLPATRIA_ENC_KEY }}" ]; then
+            echo "::error::COLPATRIA_ENC_KEY no configurado en secrets de GitHub"
+            exit 1
+          fi
+          echo "✓ COLPATRIA_ENC_KEY presente"
+
+      # El worker Playwright real (Sprint 8.3) instala Chromium e implementa
+      # el flujo. Hasta entonces dejamos un step placeholder para que
+      # exista la infraestructura del cron sin procesar nada.
+      - name: Procesar jobs Colpatria (placeholder hasta Sprint 8.3)
+        working-directory: apps/bot-colpatria
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          if [ -d "apps/bot-colpatria" ]; then
+            cd apps/bot-colpatria
+            LIMITE="${{ inputs.limite || '20' }}"
+            pnpm exec tsx src/index.ts procesar --limite "$LIMITE"
+          else
+            echo "::warning::apps/bot-colpatria aún no existe (Sprint 8.3 pendiente). Skip."
+            exit 0
+          fi
