@@ -45,20 +45,14 @@ export function LoginForm() {
         />
       </div>
 
-      {state.error && (
+      {state?.error && (
         <Alert variant="danger">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{state.error}</span>
         </Alert>
       )}
 
-      <Button
-        type="submit"
-        variant="gradient"
-        size="lg"
-        className="w-full"
-        disabled={isPending}
-      >
+      <Button type="submit" variant="gradient" size="lg" className="w-full" disabled={isPending}>
         {isPending ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
