@@ -8,6 +8,7 @@ import { registrarAuditoria, calcularDiff } from '@/lib/auditoria';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
 import { dispararSoporteAfiliacion } from '@/lib/soporte-af/dispatch';
+import { dispararColpatriaSiAplica } from '@/lib/colpatria/disparos';
 import type { AfiliacionSnapshot } from '@/lib/soporte-af/disparos';
 import {
   guardarDocumentoSoporteAf,
@@ -522,6 +523,12 @@ export async function createAfiliacionAction(
     if (disparo) {
       await adjuntarSoportesAliado(disparo.id, autor.id, formData);
     }
+
+    // Bot Colpatria ARL — dispara si modalidad=DEPENDIENTE + estado=ACTIVA
+    // + empresa.colpatriaActivo + ARL=Colpatria. Best-effort: si falla
+    // el disparo, la afiliación ya está creada y el operador puede
+    // disparar manualmente desde la UI más adelante.
+    void dispararColpatriaSiAplica({ evento: 'CREAR', afiliacionId });
   } catch (e) {
     return {
       error:
@@ -700,6 +707,14 @@ export async function updateAfiliacionAction(
     if (disparo) {
       await adjuntarSoportesAliado(disparo.id, autor.id, formData);
     }
+
+    // Bot Colpatria ARL — dispara solo en transición INACTIVA → ACTIVA
+    // (reactivación). Si la afiliación ya estaba ACTIVA, no se dispara
+    // aunque cambie otra cosa — el bot ya la procesó cuando se creó/
+    // reactivó la última vez.
+    if (existing.estado === 'INACTIVA' && afParsed.data.estado === 'ACTIVA') {
+      void dispararColpatriaSiAplica({ evento: 'REACTIVAR', afiliacionId });
+    }
   } catch {
     return { error: 'Error al actualizar' };
   }
@@ -859,6 +874,9 @@ export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
         despues: toSoporteAfSnapshot({ ...base, estado: 'ACTIVA' }),
         autorUserId: autor.id,
       });
+
+      // Bot Colpatria ARL — toggle pasó a ACTIVA = reactivación.
+      void dispararColpatriaSiAplica({ evento: 'REACTIVAR', afiliacionId });
     }
   }
 
