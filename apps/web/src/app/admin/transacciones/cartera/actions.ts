@@ -4,13 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth, requireStaff } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { registrarAuditoria } from '@/lib/auditoria';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
-import {
-  puedeCerrarPeriodo,
-  debeFacturarseEnPeriodo,
-  opcionesFacturacion,
-} from './helpers';
+import { puedeCerrarPeriodo, debeFacturarseEnPeriodo, opcionesFacturacion } from './helpers';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -66,10 +63,7 @@ export async function registrarGestionAction(
   return { ok: true };
 }
 
-export async function listarGestionesAction(
-  cotizanteId: string,
-  periodoId: string,
-) {
+export async function listarGestionesAction(cotizanteId: string, periodoId: string) {
   await requireAuth();
 
   // Scope: un aliado no puede listar gestiones de cotizantes de otra sucursal.
@@ -109,9 +103,7 @@ export async function listarGestionesAction(
  * Estas facturas quedan en estado EMITIDO; pueden anularse después para
  * emitir una factura normal.
  */
-export async function cerrarPeriodoMasivoAction(
-  periodoId: string,
-): Promise<ActionState> {
+export async function cerrarPeriodoMasivoAction(periodoId: string): Promise<ActionState> {
   // El cierre masivo marca el período como CERRADO (global) y afecta
   // afiliaciones cross-sucursal. Sólo ADMIN/SOPORTE pueden ejecutarlo.
   await requireStaff();
@@ -143,9 +135,7 @@ export async function cerrarPeriodoMasivoAction(
     select: { cotizanteId: true },
   });
   const facturadosIds = new Set(
-    cotizantesConFactura
-      .map((c) => c.cotizanteId)
-      .filter((x): x is string => x != null),
+    cotizantesConFactura.map((c) => c.cotizanteId).filter((x): x is string => x != null),
   );
 
   const cotizantesPendientes = await prisma.cotizante.findMany({
@@ -283,23 +273,22 @@ export async function cerrarPeriodoMasivoAction(
       errores++;
       const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       erroresDetalle.push({ cotizanteId: c.id, mensaje });
-      console.error(
-        `[cerrarPeriodoMasivo] cotizante=${c.id} error:`,
-        mensaje,
-      );
+      console.error(`[cerrarPeriodoMasivo] cotizante=${c.id} error:`, mensaje);
     }
   }
 
-  // Persistir errores en AuditLog para trazabilidad posterior
+  // Persistir errores en AuditLog para trazabilidad posterior — usa el
+  // helper central que captura rol/sucursal/IP del actor automáticamente.
   if (erroresDetalle.length > 0) {
-    await prisma.auditLog.create({
-      data: {
-        entidad: 'PeriodoContable',
-        entidadId: periodoId,
-        accion: 'CIERRE_MASIVO_ERRORES',
-        userId,
-        descripcion: `${erroresDetalle.length} cotizantes fallaron en cierre masivo`,
-        cambios: { errores: erroresDetalle.slice(0, 100) },
+    await registrarAuditoria({
+      entidad: 'PeriodoContable',
+      entidadId: periodoId,
+      accion: 'CIERRE_MASIVO_ERRORES',
+      descripcion: `${erroresDetalle.length} cotizantes fallaron en cierre masivo`,
+      cambios: {
+        antes: {},
+        despues: { errores: erroresDetalle.slice(0, 100) },
+        campos: ['errores'],
       },
     });
   }

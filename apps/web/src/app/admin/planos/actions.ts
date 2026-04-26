@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import type { Prisma, TipoPlanilla } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { registrarAuditoria } from '@/lib/auditoria';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
 import { planillasParaAfiliacion, banderasSubsistemas } from '@/lib/planos/politicas';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
@@ -414,17 +415,15 @@ export async function generarPlanillasAction(periodoId: string): Promise<ActionS
     }
   }
 
-  // Log de errores para trazabilidad
+  // Log de errores para trazabilidad — usa el helper central que captura
+  // rol/sucursal/IP del actor automáticamente.
   if (errores.length > 0 || sinAgrupar.length > 0) {
-    await prisma.auditLog.create({
-      data: {
-        entidad: 'Planilla',
-        entidadId: periodoId,
-        accion: 'GENERAR_PLANILLAS_ERRORES',
-        userId,
-        descripcion: `${errores.length} errores al crear + ${sinAgrupar.length} comprobantes sin agrupar`,
-        cambios: { errores, sinAgrupar },
-      },
+    await registrarAuditoria({
+      entidad: 'Planilla',
+      entidadId: periodoId,
+      accion: 'GENERAR_PLANILLAS_ERRORES',
+      descripcion: `${errores.length} errores al crear + ${sinAgrupar.length} comprobantes sin agrupar`,
+      cambios: { antes: {}, despues: { errores, sinAgrupar }, campos: ['errores', 'sinAgrupar'] },
     });
   }
 

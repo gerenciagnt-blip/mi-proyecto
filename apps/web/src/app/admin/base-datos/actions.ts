@@ -1,10 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { registrarAuditoria, calcularDiff } from '@/lib/auditoria';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
 import { dispararSoporteAfiliacion } from '@/lib/soporte-af/dispatch';
@@ -74,7 +74,7 @@ function toSoporteAfSnapshot(src: {
       ? src.fechaIngreso.toISOString().slice(0, 10)
       : String(src.fechaIngreso).slice(0, 10);
   return {
-    estado: (src.estado === 'ACTIVA' ? 'ACTIVA' : 'INACTIVA'),
+    estado: src.estado === 'ACTIVA' ? 'ACTIVA' : 'INACTIVA',
     fechaIngreso: fechaIso,
     empresaId: src.empresaId ?? null,
     nivelRiesgo: src.nivelRiesgo,
@@ -236,9 +236,7 @@ async function validateAfiliacion(
     const nivelesOK = new Set(empresa.nivelesPermitidos.map((n) => n.nivel));
     const tiposOK = new Set(empresa.tiposPermitidos.map((t) => t.tipoCotizanteId));
     const subtiposOK = new Set(empresa.subtiposPermitidos.map((s) => s.subtipoId));
-    const actividadesOK = new Set(
-      empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId),
-    );
+    const actividadesOK = new Set(empresa.actividadesPermitidas.map((a) => a.actividadEconomicaId));
 
     if (nivelesOK.size > 0 && !nivelesOK.has(data.nivelRiesgo as never)) {
       return `El nivel ${data.nivelRiesgo} no está permitido en esta empresa`;
@@ -312,6 +310,11 @@ async function validateAfiliacion(
 }
 
 // ============ Audit log helper ============
+// Adaptador delgado: este módulo ya tenía un `logAudit` que solo capturaba
+// userId/userName. Ahora lo redirigimos al helper central
+// `registrarAuditoria` (Sprint 6.1) que captura además rol, sucursal del
+// actor e IP automáticamente desde la sesión y headers. Mantenemos la
+// firma para no tocar todos los call sites.
 
 async function currentUser() {
   const { auth } = await import('@/auth');
@@ -321,24 +324,56 @@ async function currentUser() {
     : { id: null, name: null };
 }
 
+type DiffEstandar = {
+  antes: Record<string, unknown>;
+  despues: Record<string, unknown>;
+  campos: string[];
+};
+
 async function logAudit(params: {
   entidad: string;
   entidadId: string;
   accion: string;
   descripcion?: string;
   cambios?: unknown;
+  /** Sucursal del recurso afectado (si aplica) — para que el aliado_owner
+   *  vea el evento en su bitácora aunque el actor sea staff. */
+  entidadSucursalId?: string | null;
 }) {
-  const u = await currentUser();
-  await prisma.auditLog.create({
-    data: {
-      entidad: params.entidad,
-      entidadId: params.entidadId,
-      accion: params.accion,
-      userId: u.id,
-      userName: u.name,
-      descripcion: params.descripcion,
-      cambios: params.cambios as Prisma.InputJsonValue | undefined,
-    },
+  // Si `cambios` ya viene en formato { antes, despues, campos } (como
+  // produce el wrapper Sprint 6.2 o `calcularDiff`), lo pasamos tal cual.
+  // Si trae otra forma (legacy con sólo `despues` o un objeto plano), lo
+  // envolvemos para no perder información — el modal de detalle lo
+  // renderizará como diff.
+  let diff: DiffEstandar | null = null;
+  if (params.cambios && typeof params.cambios === 'object') {
+    const c = params.cambios as Record<string, unknown>;
+    const tieneShapeEstandar =
+      'antes' in c &&
+      'despues' in c &&
+      'campos' in c &&
+      typeof c.antes === 'object' &&
+      typeof c.despues === 'object' &&
+      Array.isArray(c.campos);
+    if (tieneShapeEstandar) {
+      diff = {
+        antes: c.antes as Record<string, unknown>,
+        despues: c.despues as Record<string, unknown>,
+        campos: c.campos as string[],
+      };
+    } else {
+      // Caso legacy: shape libre. Lo guardamos en `despues` para no perderlo.
+      diff = { antes: {}, despues: c, campos: Object.keys(c) };
+    }
+  }
+
+  await registrarAuditoria({
+    entidad: params.entidad,
+    entidadId: params.entidadId,
+    accion: params.accion,
+    descripcion: params.descripcion,
+    entidadSucursalId: params.entidadSucursalId ?? null,
+    cambios: diff,
   });
 }
 
@@ -467,6 +502,7 @@ export async function createAfiliacionAction(
       accion: 'CREAR',
       descripcion: `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
       cambios: { despues: normalized },
+      entidadSucursalId: sucursalIdCotizante,
     });
 
     // Soporte · Afiliaciones — dispatch automático si queda ACTIVA.
@@ -526,16 +562,10 @@ export async function updateAfiliacionAction(
   // pertenece a su sucursal. STAFF puede editar cualquiera.
   const scope = await getUserScope();
   if (!scope) return { error: 'Sesión inválida' };
-  if (
-    scope.tipo === 'SUCURSAL' &&
-    existing.cotizante.sucursalId !== scope.sucursalId
-  ) {
+  if (scope.tipo === 'SUCURSAL' && existing.cotizante.sucursalId !== scope.sucursalId) {
     return { error: 'No tienes permiso sobre esta afiliación' };
   }
-  if (
-    scope.tipo === 'SUCURSAL' &&
-    afParsed.data.cuentaCobroId
-  ) {
+  if (scope.tipo === 'SUCURSAL' && afParsed.data.cuentaCobroId) {
     const cc = await prisma.cuentaCobro.findUnique({
       where: { id: afParsed.data.cuentaCobroId },
       select: { sucursalId: true },
@@ -629,13 +659,23 @@ export async function updateAfiliacionAction(
       }
     });
 
-    await logAudit({
-      entidad: 'Afiliacion',
-      entidadId: afiliacionId,
-      accion: 'EDITAR',
-      descripcion: 'Afiliación actualizada',
-      cambios: { antes: existing, despues: afParsed.data },
-    });
+    // Diff fino — solo campos cambiados, no objetos completos. La función
+    // pura `calcularDiff` también filtra null/undefined equivalentes y
+    // normaliza Decimals.
+    const diff = calcularDiff(
+      existing as unknown as Record<string, unknown>,
+      afParsed.data as unknown as Record<string, unknown>,
+    );
+    if (diff) {
+      await logAudit({
+        entidad: 'Afiliacion',
+        entidadId: afiliacionId,
+        accion: 'EDITAR',
+        descripcion: `Afiliación actualizada (${diff.campos.length} campo(s))`,
+        cambios: diff,
+        entidadSucursalId: existing.cotizante?.sucursalId ?? null,
+      });
+    }
 
     // Soporte · Afiliaciones — dispatch si la edición cumple condiciones.
     const autor = await currentUser();
@@ -688,10 +728,7 @@ export async function listarSoportesPorAfiliacionAction(afiliacionId: string) {
     select: { cotizante: { select: { sucursalId: true } } },
   });
   if (!af) return { error: 'Afiliación no encontrada' as const };
-  if (
-    scope.tipo === 'SUCURSAL' &&
-    af.cotizante.sucursalId !== scope.sucursalId
-  ) {
+  if (scope.tipo === 'SUCURSAL' && af.cotizante.sucursalId !== scope.sucursalId) {
     return { error: 'Sin permiso' as const };
   }
 
@@ -789,7 +826,12 @@ export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
     entidadId: afiliacionId,
     accion: 'TOGGLE',
     descripcion: `Estado cambiado de ${a.estado} a ${nuevoEstado}`,
-    cambios: { antes: { estado: a.estado }, despues: { estado: nuevoEstado } },
+    cambios: {
+      antes: { estado: a.estado },
+      despues: { estado: nuevoEstado },
+      campos: ['estado'],
+    },
+    entidadSucursalId: a.cotizante.sucursalId,
   });
 
   // Soporte · Afiliaciones — si el toggle deja ACTIVA, dispara REACTIVACION.

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { registrarAuditoria } from '@/lib/auditoria';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 
@@ -84,9 +85,7 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
   // Scope: si es SUCURSAL, sólo liquida sus propias afiliaciones.
   const scope = await getUserScope();
   const cotizanteScope =
-    scope?.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope?.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
   // Wipe liquidaciones BORRADOR (y sus comprobantes BORRADOR que las
   // referencien) para regenerar limpio. Cascade de liquidacion borra sus
@@ -126,26 +125,25 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
       else skipped++; // afiliación aún no arranca en este período
     } catch (err) {
       errores++;
-      const mensaje =
-        err instanceof Error ? err.message : 'Error desconocido';
+      const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       erroresDetalle.push({ afiliacionId: a.id, mensaje });
       // Log en consola (server) para debugging inmediato
-      console.error(
-        `[liquidarPeriodo] afiliacion=${a.id} error:`,
-        mensaje,
-      );
+      console.error(`[liquidarPeriodo] afiliacion=${a.id} error:`, mensaje);
     }
   }
 
-  // Persistir errores en AuditLog para trazabilidad posterior
+  // Persistir errores en AuditLog para trazabilidad posterior — usa el
+  // helper central que captura rol/sucursal/IP del actor automáticamente.
   if (erroresDetalle.length > 0) {
-    await prisma.auditLog.create({
-      data: {
-        entidad: 'PeriodoContable',
-        entidadId: periodoId,
-        accion: 'LIQUIDAR_ERRORES',
-        descripcion: `${erroresDetalle.length} afiliaciones fallaron en liquidación masiva`,
-        cambios: { errores: erroresDetalle.slice(0, 100) }, // limita payload
+    await registrarAuditoria({
+      entidad: 'PeriodoContable',
+      entidadId: periodoId,
+      accion: 'LIQUIDAR_ERRORES',
+      descripcion: `${erroresDetalle.length} afiliaciones fallaron en liquidación masiva`,
+      cambios: {
+        antes: {},
+        despues: { errores: erroresDetalle.slice(0, 100) },
+        campos: ['errores'],
       },
     });
   }
@@ -185,10 +183,7 @@ export async function recalcularLiquidacionAction(liquidacionId: string) {
   // Scope: SUCURSAL sólo recalcula SUS liquidaciones.
   const scope = await getUserScope();
   if (!scope) return;
-  if (
-    scope.tipo === 'SUCURSAL' &&
-    liq.afiliacion.cotizante.sucursalId !== scope.sucursalId
-  ) {
+  if (scope.tipo === 'SUCURSAL' && liq.afiliacion.cotizante.sucursalId !== scope.sucursalId) {
     return;
   }
 
@@ -207,10 +202,7 @@ export async function recalcularLiquidacionAction(liquidacionId: string) {
 /**
  * Cambia el estado de una liquidación (BORRADOR → REVISADA y viceversa).
  */
-export async function marcarRevisadaAction(
-  liquidacionId: string,
-  revisada: boolean,
-) {
+export async function marcarRevisadaAction(liquidacionId: string, revisada: boolean) {
   await requireAuth();
 
   // Scope: SUCURSAL sólo revisa SUS liquidaciones.
@@ -245,9 +237,7 @@ export async function marcarRevisadaAction(
  *   4. MENSUALIDAD · ASESOR_COMERCIAL → uno por asesor con liquidaciones
  *                                    asignadas (reporte/comisión — informativo)
  */
-export async function generarComprobantesPeriodoAction(
-  periodoId: string,
-): Promise<ActionState> {
+export async function generarComprobantesPeriodoAction(periodoId: string): Promise<ActionState> {
   await requireAuth();
 
   const periodo = await prisma.periodoContable.findUnique({ where: { id: periodoId } });
@@ -261,9 +251,7 @@ export async function generarComprobantesPeriodoAction(
       ? { afiliacion: { cotizante: { sucursalId: scope.sucursalId } } }
       : {};
   const cotizanteScope =
-    scope?.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope?.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
   const liquidaciones = await prisma.liquidacion.findMany({
     where: { periodoId, ...afScope },
@@ -410,7 +398,8 @@ export async function generarComprobantesPeriodoAction(
         totalEmpleador: totales.empleador,
         totalTrabajador: totales.trabajador,
         totalGeneral: totales.general,
-        observaciones: 'Reporte informativo — las liquidaciones cobran por su comprobante individual o de CC',
+        observaciones:
+          'Reporte informativo — las liquidaciones cobran por su comprobante individual o de CC',
         liquidaciones: {
           create: liqs.map((l) => ({ liquidacionId: l.id })),
         },
@@ -420,7 +409,10 @@ export async function generarComprobantesPeriodoAction(
   }
 
   revalidatePath('/admin/transacciones');
-  return { ok: true, mensaje: `${creados} comprobante${creados === 1 ? '' : 's'} generado${creados === 1 ? '' : 's'}` };
+  return {
+    ok: true,
+    mensaje: `${creados} comprobante${creados === 1 ? '' : 's'} generado${creados === 1 ? '' : 's'}`,
+  };
 }
 
 /**
@@ -449,8 +441,7 @@ async function comprobanteAccesibleEnScope(comprobanteId: string): Promise<boole
   if (c.cuentaCobro) return c.cuentaCobro.sucursalId === scope.sucursalId;
   if (c.asesorComercial) {
     return (
-      c.asesorComercial.sucursalId === null ||
-      c.asesorComercial.sucursalId === scope.sucursalId
+      c.asesorComercial.sucursalId === null || c.asesorComercial.sucursalId === scope.sucursalId
     );
   }
   return false;
