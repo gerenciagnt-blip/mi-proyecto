@@ -16,10 +16,10 @@ datasource db {
 // de un nivel, se le asigna además un `RolCustom` con su propia matriz
 // de permisos.
 enum Role {
-  ADMIN         // staff plataforma — ve todo, sin sucursal
-  SOPORTE       // staff plataforma — mismos permisos base que ADMIN pero con matriz configurable
-  ALIADO_OWNER  // dueño del aliado — ve toda su sucursal
-  ALIADO_USER   // [DEPRECADO] usar ALIADO_OWNER + rolCustom. Se mantiene por retrocompatibilidad.
+  ADMIN // staff plataforma — ve todo, sin sucursal
+  SOPORTE // staff plataforma — mismos permisos base que ADMIN pero con matriz configurable
+  ALIADO_OWNER // dueño del aliado — ve toda su sucursal
+  ALIADO_USER // [DEPRECADO] usar ALIADO_OWNER + rolCustom. Se mantiene por retrocompatibilidad.
 }
 
 enum TipoPersona {
@@ -86,19 +86,52 @@ enum FormaPago {
 
 // Bitácora transversal — registra cambios sobre entidades del sistema.
 // Patrón simple: guardamos antes/después como JSON para auditoría.
+//
+// Visibilidad (Sprint 6):
+//   - STAFF (ADMIN/SOPORTE) → todo
+//   - ALIADO_OWNER → solo eventos donde userSucursalId = su sucursal
+//                    O entidadSucursalId = su sucursal
+//   - ALIADO_USER → sin acceso
+//
+// Retención: cron mensual purga filas con createdAt > 12 meses (Sprint 6.6).
 model AuditLog {
-  id         String   @id @default(cuid())
-  entidad    String // ej. "Afiliacion"
-  entidadId  String
-  accion     String // "CREAR" | "EDITAR" | "ELIMINAR" | "TOGGLE"
-  userId     String?
-  userName   String?
+  id          String   @id @default(cuid())
+  entidad     String // ej. "Afiliacion"
+  entidadId   String
+  accion      String // "CREAR" | "EDITAR" | "ELIMINAR" | "TOGGLE" — string libre
+  userId      String?
+  userName    String?
   descripcion String?
-  cambios    Json? // { antes: {...}, despues: {...}, campos: [...] }
-  createdAt  DateTime @default(now())
+  cambios     Json? // { antes: {...}, despues: {...}, campos: [...] }
+  createdAt   DateTime @default(now())
+
+  // ----- Campos añadidos en Sprint 6 (todos nullable para compat con eventos previos) -----
+  /**
+   * /** Snapshot del rol del usuario al momento del evento.
+   */
+  userRole          Role?
+  /**
+   * Sucursal del usuario al momento del evento. Null si era staff sin sucursal.
+   */
+  userSucursalId    String?
+  /**
+   * Sucursal a la que pertenece la entidad al momento del evento. Null si
+   * la entidad es global (catálogos, asesores globales, empresas planilla).
+   */
+  entidadSucursalId String?
+  /**
+   * IP del cliente para auditoría legal. Best-effort.
+   */
+  ip                String?
+
+  user            User?     @relation("AuditActor", fields: [userId], references: [id], onDelete: SetNull)
+  userSucursal    Sucursal? @relation("AuditActorSucursal", fields: [userSucursalId], references: [id], onDelete: SetNull)
+  entidadSucursal Sucursal? @relation("AuditEntidadSucursal", fields: [entidadSucursalId], references: [id], onDelete: SetNull)
 
   @@index([entidad, entidadId])
-  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([userSucursalId, createdAt])
+  @@index([entidadSucursalId, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
 }
@@ -108,13 +141,13 @@ model AuditLog {
 // `success` permite diferenciar intentos exitosos y correctos (para
 // limpiar contador) de los fallidos (que suman al bloqueo).
 model LoginAttempt {
-  id         String   @id @default(cuid())
-  email      String // normalizado a lowercase
-  ip         String?
-  userAgent  String?
-  success    Boolean  @default(false)
-  motivo     String? // "password_wrong" | "user_inactive" | "unknown_email" | "rate_limited"
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  email     String // normalizado a lowercase
+  ip        String?
+  userAgent String?
+  success   Boolean  @default(false)
+  motivo    String? // "password_wrong" | "user_inactive" | "unknown_email" | "rate_limited"
+  createdAt DateTime @default(now())
 
   @@index([email, createdAt])
   @@index([createdAt])
@@ -173,33 +206,41 @@ model Sucursal {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users              User[]
-  cuentasCobro       CuentaCobro[]
-  comprobanteFormato ComprobanteFormato?
-  mediosPago         MedioPago[]
-  asesoresComerciales AsesorComercial[]
+  users                User[]
+  cuentasCobro         CuentaCobro[]
+  comprobanteFormato   ComprobanteFormato?
+  mediosPago           MedioPago[]
+  asesoresComerciales  AsesorComercial[]
   serviciosAdicionales ServicioAdicional[]
-  cotizantes         Cotizante[]
-  planillas          Planilla[]
-  carterasAsignadas  CarteraDetallado[]
-  incapacidades      Incapacidad[]
-  soportesAfiliacion SoporteAfiliacion[]
+  cotizantes           Cotizante[]
+  planillas            Planilla[]
+  carterasAsignadas    CarteraDetallado[]
+  incapacidades        Incapacidad[]
+  soportesAfiliacion   SoporteAfiliacion[]
 
   // Finanzas
   /**
+   * /**
    * Tarifa cobrada al aliado por cada afiliación/mensualidad de régimen
    * ORDINARIO procesada en el período contable. Null = sin configurar (no
    * se puede generar cobro hasta que staff la defina).
    */
-  tarifaOrdinario  Decimal?              @db.Decimal(12, 2)
-  /** Tarifa equivalente para régimen RESOLUCION (Decreto 2616 / EPS+ARL). */
-  tarifaResolucion Decimal?              @db.Decimal(12, 2)
-  cobrosAliado     CobroAliado[]
+  tarifaOrdinario    Decimal?               @db.Decimal(12, 2)
+  /**
+   * Tarifa equivalente para régimen RESOLUCION (Decreto 2616 / EPS+ARL).
+   */
+  tarifaResolucion   Decimal?               @db.Decimal(12, 2)
+  cobrosAliado       CobroAliado[]
   movimientosDetalle MovimientoIncDetalle[]
 
   // Notificaciones dirigidas a esta sucursal (todos los usuarios que
   // pertenecen a ella las verán como destino).
-  notificaciones   Notificacion[]      @relation("NotificacionSucursal")
+  notificaciones Notificacion[] @relation("NotificacionSucursal")
+
+  // Bitácora — eventos donde el usuario actor o la entidad afectada
+  // pertenecía a esta sucursal al momento del evento.
+  auditLogsComoActorSucursal   AuditLog[] @relation("AuditActorSucursal")
+  auditLogsComoEntidadSucursal AuditLog[] @relation("AuditEntidadSucursal")
 
   @@map("sucursales")
 }
@@ -224,24 +265,25 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sucursal            Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  rolCustom           RolCustom?       @relation(fields: [rolCustomId], references: [id], onDelete: SetNull)
-  empresas            UsuarioEmpresa[]
-  comprobantesCreados Comprobante[]    @relation("ComprobantesCreados")
-  planillasCreadas    Planilla[]       @relation("PlanillasCreadas")
-  carterasCreadas     CarteraConsolidado[] @relation("CarterasCreadas")
-  carterasGestiones   CarteraGestion[]     @relation("CarterasGestionesUser")
-  incapacidadesCreadas    Incapacidad[]        @relation("IncapacidadesCreadas")
-  incapacidadesGestiones  IncapacidadGestion[] @relation("IncapacidadGestionesUser")
-  soportesAfCreados       SoporteAfiliacion[]       @relation("SoporteAfCreator")
-  soportesAfGestionados   SoporteAfiliacion[]       @relation("SoporteAfGestor")
-  soportesAfGestionesUser SoporteAfGestion[]        @relation("SoporteAfGestionUser")
-  soportesAfDocsUser      SoporteAfDocumento[]      @relation("SoporteAfDocUser")
-  cobrosAliadoCreados     CobroAliado[]             @relation("CobroAliadoCreator")
-  cobrosAliadoDocsUser    CobroAliadoDocumento[]    @relation("CobroAliadoDocUser")
-  movimientosIncCreados   MovimientoIncapacidad[]   @relation("MovIncCreator")
+  sucursal                Sucursal?                    @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  rolCustom               RolCustom?                   @relation(fields: [rolCustomId], references: [id], onDelete: SetNull)
+  empresas                UsuarioEmpresa[]
+  comprobantesCreados     Comprobante[]                @relation("ComprobantesCreados")
+  planillasCreadas        Planilla[]                   @relation("PlanillasCreadas")
+  carterasCreadas         CarteraConsolidado[]         @relation("CarterasCreadas")
+  carterasGestiones       CarteraGestion[]             @relation("CarterasGestionesUser")
+  incapacidadesCreadas    Incapacidad[]                @relation("IncapacidadesCreadas")
+  incapacidadesGestiones  IncapacidadGestion[]         @relation("IncapacidadGestionesUser")
+  soportesAfCreados       SoporteAfiliacion[]          @relation("SoporteAfCreator")
+  soportesAfGestionados   SoporteAfiliacion[]          @relation("SoporteAfGestor")
+  soportesAfGestionesUser SoporteAfGestion[]           @relation("SoporteAfGestionUser")
+  soportesAfDocsUser      SoporteAfDocumento[]         @relation("SoporteAfDocUser")
+  cobrosAliadoCreados     CobroAliado[]                @relation("CobroAliadoCreator")
+  cobrosAliadoDocsUser    CobroAliadoDocumento[]       @relation("CobroAliadoDocUser")
+  movimientosIncCreados   MovimientoIncapacidad[]      @relation("MovIncCreator")
   movimientosDetDocsUser  MovimientoDetalleDocumento[] @relation("MovDetDocUser")
-  notificaciones          Notificacion[]            @relation("NotificacionDestino")
+  notificaciones          Notificacion[]               @relation("NotificacionDestino")
+  auditLogsComoActor      AuditLog[]                   @relation("AuditActor")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -250,9 +292,9 @@ model User {
 
 // --- Empresa cliente — global, administrada solo por ADMIN ---
 model Empresa {
-  id        String   @id @default(cuid())
-  nit       String   @unique // único globalmente
-  nombre    String // razón social
+  id     String @id @default(cuid())
+  nit    String @unique // único globalmente
+  nombre String // razón social
 
   // Identificación adicional (Fase 1.5.1 — nullable para migración no destructiva)
   dv              String?
@@ -274,39 +316,45 @@ model Empresa {
   email          String?
 
   // PILA
-  ciiuPrincipal           String?
-  arlId                   String?
-  /** Fecha de inicio de actividades de la empresa — requerida por
-   * PagoSimple al crear el aportante. */
-  fechaInicioActividades  DateTime?
-  exoneraLey1607          Boolean @default(false) // exoneración de aportes Ley 1607 de 2012
-  arl              EntidadSgss?  @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
-  departamentoRef  Departamento? @relation("EmpresaDepto", fields: [departamentoId], references: [id], onDelete: SetNull)
-  municipioRef     Municipio?    @relation("EmpresaMuni", fields: [municipioId], references: [id], onDelete: SetNull)
+  ciiuPrincipal          String?
+  arlId                  String?
+  /**
+   * Fecha de inicio de actividades de la empresa — requerida por
+   * PagoSimple al crear el aportante.
+   */
+  fechaInicioActividades DateTime?
+  exoneraLey1607         Boolean       @default(false) // exoneración de aportes Ley 1607 de 2012
+  arl                    EntidadSgss?  @relation("EmpresaArl", fields: [arlId], references: [id], onDelete: SetNull)
+  departamentoRef        Departamento? @relation("EmpresaDepto", fields: [departamentoId], references: [id], onDelete: SetNull)
+  municipioRef           Municipio?    @relation("EmpresaMuni", fields: [municipioId], references: [id], onDelete: SetNull)
 
   // PagoSimple — sincronización con operador PILA
-  /** ID del aportante creado en PagoSimple bajo el usuario master. */
+  /**
+   * /** ID del aportante creado en PagoSimple bajo el usuario master.
+   */
   pagosimpleContributorId String?
-  /** Última vez que se sincronizaron datos con el operador. */
+  /**
+   * Última vez que se sincronizaron datos con el operador.
+   */
   pagosimpleSyncedAt      DateTime?
 
   // Relaciones de "permitidos" (Fase 1.5.3)
-  nivelesPermitidos   EmpresaNivelRiesgo[]
+  nivelesPermitidos     EmpresaNivelRiesgo[]
   actividadesPermitidas EmpresaActividad[]
-  tiposPermitidos     EmpresaTipoCotizante[]
-  subtiposPermitidos  EmpresaSubtipoCotizante[]
+  tiposPermitidos       EmpresaTipoCotizante[]
+  subtiposPermitidos    EmpresaSubtipoCotizante[]
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accesos      UsuarioEmpresa[]
-  afiliaciones Afiliacion[]
-  planillas    Planilla[]
-  carterasConsolidado CarteraConsolidado[]
-  incapacidades Incapacidad[] @relation("IncapacidadEmpresa")
-  movimientosIncapacidad       MovimientoIncapacidad[]
-  movimientosDetallePagadoCon  MovimientoIncDetalle[] @relation("MovDetallePagadoCon")
+  accesos                     UsuarioEmpresa[]
+  afiliaciones                Afiliacion[]
+  planillas                   Planilla[]
+  carterasConsolidado         CarteraConsolidado[]
+  incapacidades               Incapacidad[]           @relation("IncapacidadEmpresa")
+  movimientosIncapacidad      MovimientoIncapacidad[]
+  movimientosDetallePagadoCon MovimientoIncDetalle[]  @relation("MovDetallePagadoCon")
 
   @@index([arlId])
   @@index([departamentoId])
@@ -318,7 +366,7 @@ model Empresa {
 model EmpresaNivelRiesgo {
   empresaId String
   nivel     NivelRiesgo
-  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresa   Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
 
   @@id([empresaId, nivel])
   @@map("empresa_nivel_riesgo")
@@ -386,11 +434,11 @@ model EntidadSgss {
   updatedAt      DateTime        @updatedAt
 
   // Relaciones — empresas cuyo ARL actual es esta entidad
-  empresasComoArl     Empresa[]    @relation("EmpresaArl")
-  afiliacionesComoEps Afiliacion[] @relation("AfilEps")
-  afiliacionesComoAfp Afiliacion[] @relation("AfilAfp")
-  afiliacionesComoArl Afiliacion[] @relation("AfilArl")
-  afiliacionesComoCcf Afiliacion[] @relation("AfilCcf")
+  empresasComoArl      Empresa[]     @relation("EmpresaArl")
+  afiliacionesComoEps  Afiliacion[]  @relation("AfilEps")
+  afiliacionesComoAfp  Afiliacion[]  @relation("AfilAfp")
+  afiliacionesComoArl  Afiliacion[]  @relation("AfilArl")
+  afiliacionesComoCcf  Afiliacion[]  @relation("AfilCcf")
   // Snapshots en incapacidades
   incapacidadesComoEps Incapacidad[] @relation("IncapacidadEps")
   incapacidadesComoAfp Incapacidad[] @relation("IncapacidadAfp")
@@ -430,18 +478,18 @@ enum RegimenPlan {
 // en una afiliación (p.ej. "EPS + ARL", "EPS + AFP + ARL"). El plan
 // determina qué campos de entidades son requeridos/visibles en el form.
 model PlanSgss {
-  id          String   @id @default(cuid())
-  codigo      String   @unique
+  id          String      @id @default(cuid())
+  codigo      String      @unique
   nombre      String
   descripcion String?
-  incluyeEps  Boolean  @default(false)
-  incluyeAfp  Boolean  @default(false)
-  incluyeArl  Boolean  @default(false)
-  incluyeCcf  Boolean  @default(false)
+  incluyeEps  Boolean     @default(false)
+  incluyeAfp  Boolean     @default(false)
+  incluyeArl  Boolean     @default(false)
+  incluyeCcf  Boolean     @default(false)
   regimen     RegimenPlan @default(AMBOS)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   afiliaciones Afiliacion[]
 
@@ -549,7 +597,7 @@ model MedioPago {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  sucursal     Sucursal?    @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  sucursal     Sucursal?     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   comprobantes Comprobante[]
   cobrosAliado CobroAliado[]
 
@@ -616,47 +664,49 @@ model Subtipo {
 // --- Cotizante (cliente afiliado) y Afiliación (Fase 2.1) ---
 
 model Cotizante {
-  id                 String        @id @default(cuid())
+  id                      String        @id @default(cuid())
   /**
    * Sucursal dueña del registro (multi-tenant). Cada sucursal maneja sus
    * propios cotizantes — la misma persona puede existir como dos registros
    * en sucursales distintas. sucursalId=null se reserva para cotizantes
    * legados sin asignar (staff los puede migrar desde la UI).
    */
-  sucursalId         String?
-  tipoDocumento      TipoDocumento
-  numeroDocumento    String
-  fechaExpedicionDoc DateTime?
-  primerNombre       String
-  segundoNombre      String?
-  primerApellido     String
-  segundoApellido    String?
-  fechaNacimiento    DateTime
-  genero             Genero
-  telefono           String?
-  celular            String?
-  email              String?
-  direccion          String?
-  municipioId        String?
-  departamentoId     String?
-  /** ID del aportante INDEPENDIENTE creado en PagoSimple (aplica solo a
-      cotizantes con modalidad independiente; null para dependientes). */
+  sucursalId              String?
+  tipoDocumento           TipoDocumento
+  numeroDocumento         String
+  fechaExpedicionDoc      DateTime?
+  primerNombre            String
+  segundoNombre           String?
+  primerApellido          String
+  segundoApellido         String?
+  fechaNacimiento         DateTime
+  genero                  Genero
+  telefono                String?
+  celular                 String?
+  email                   String?
+  direccion               String?
+  municipioId             String?
+  departamentoId          String?
+  /**
+   * ID del aportante INDEPENDIENTE creado en PagoSimple (aplica solo a
+   * cotizantes con modalidad independiente; null para dependientes).
+   */
   pagosimpleContributorId String?
   pagosimpleSyncedAt      DateTime?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
-  sucursal     Sucursal?        @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  afiliaciones Afiliacion[]
-  comprobantes Comprobante[]
-  gestionesCartera GestionCartera[]
-  planillas    Planilla[]
-  carterasDetallado CarteraDetallado[]
-  incapacidades Incapacidad[]
+  sucursal           Sucursal?              @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  afiliaciones       Afiliacion[]
+  comprobantes       Comprobante[]
+  gestionesCartera   GestionCartera[]
+  planillas          Planilla[]
+  carterasDetallado  CarteraDetallado[]
+  incapacidades      Incapacidad[]
   soportesAfiliacion SoporteAfiliacion[]
   movimientosDetalle MovimientoIncDetalle[]
-  municipio    Municipio?    @relation(fields: [municipioId], references: [id], onDelete: SetNull)
-  departamento Departamento? @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
+  municipio          Municipio?             @relation(fields: [municipioId], references: [id], onDelete: SetNull)
+  departamento       Departamento?          @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
 
   @@unique([sucursalId, tipoDocumento, numeroDocumento])
   @@index([sucursalId])
@@ -832,23 +882,23 @@ enum FormaPagoTransaccion {
 // corre la liquidación, revisa y eventualmente cierra. SMLV y tarifas
 // vigentes al momento de abrir quedan denormalizadas en cada liquidación.
 model PeriodoContable {
-  id           String        @id @default(cuid())
-  anio         Int
-  mes          Int // 1..12
-  estado       EstadoPeriodo @default(ABIERTO)
-  smlvSnapshot Decimal       @db.Decimal(12, 2) // SMLV vigente al abrir
+  id            String        @id @default(cuid())
+  anio          Int
+  mes           Int // 1..12
+  estado        EstadoPeriodo @default(ABIERTO)
+  smlvSnapshot  Decimal       @db.Decimal(12, 2) // SMLV vigente al abrir
   observaciones String?
-  abiertoEn    DateTime      @default(now())
-  cerradoEn    DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  abiertoEn     DateTime      @default(now())
+  cerradoEn     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  liquidaciones Liquidacion[]
-  comprobantes  Comprobante[]
-  gestionesCartera GestionCartera[]
-  planillas     Planilla[]
+  liquidaciones      Liquidacion[]
+  comprobantes       Comprobante[]
+  gestionesCartera   GestionCartera[]
+  planillas          Planilla[]
   soportesAfiliacion SoporteAfiliacion[]
-  cobrosAliado  CobroAliado[]
+  cobrosAliado       CobroAliado[]
 
   @@unique([anio, mes])
   @@index([estado])
@@ -859,29 +909,29 @@ model PeriodoContable {
 // desglose en `LiquidacionConcepto`. El `ibc` es la base de cotización
 // del período (puede ser distinta al salario por novedades futuras).
 model Liquidacion {
-  id              String            @id @default(cuid())
-  periodoId       String
-  afiliacionId    String
-  tipo            TipoLiquidacion   @default(MENSUALIDAD)
-  ibc             Decimal           @db.Decimal(12, 2)
+  id                String            @id @default(cuid())
+  periodoId         String
+  afiliacionId      String
+  tipo              TipoLiquidacion   @default(MENSUALIDAD)
+  ibc               Decimal           @db.Decimal(12, 2)
   // Período al que corresponde el APORTE SGSS (clave para el plano PILA).
   // Puede diferir del `periodoId` cuando es un independiente con forma
   // de pago VENCIDO: se factura en el mes siguiente pero cotiza por el
   // mes anterior. NULL → mismo mes que el período contable.
   periodoAporteAnio Int?
   periodoAporteMes  Int?
-  diasCotizados   Int               @default(30) // sobre mes PILA de 30 días
-  diaDesde        Int? // día (1..30) de inicio del periodo cotizado; NULL = mes completo
-  diaHasta        Int? // día (1..30) de fin del periodo cotizado; NULL = mes completo
-  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0)
-  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0)
-  totalGeneral    Decimal           @db.Decimal(14, 2) @default(0)
-  totalPagado     Decimal           @db.Decimal(14, 2) @default(0)
-  estado          EstadoLiquidacion @default(BORRADOR)
-  observaciones   String?
-  calculadoEn     DateTime          @default(now())
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  diasCotizados     Int               @default(30) // sobre mes PILA de 30 días
+  diaDesde          Int? // día (1..30) de inicio del periodo cotizado; NULL = mes completo
+  diaHasta          Int? // día (1..30) de fin del periodo cotizado; NULL = mes completo
+  totalEmpleador    Decimal           @default(0) @db.Decimal(14, 2)
+  totalTrabajador   Decimal           @default(0) @db.Decimal(14, 2)
+  totalGeneral      Decimal           @default(0) @db.Decimal(14, 2)
+  totalPagado       Decimal           @default(0) @db.Decimal(14, 2)
+  estado            EstadoLiquidacion @default(BORRADOR)
+  observaciones     String?
+  calculadoEn       DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   periodo      PeriodoContable          @relation(fields: [periodoId], references: [id], onDelete: Cascade)
   afiliacion   Afiliacion               @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
@@ -901,18 +951,18 @@ model Liquidacion {
 // `aCargoEmpleador` indica si el valor pesa sobre el empleador (para
 // dependientes) o sobre el trabajador/aportante.
 model LiquidacionConcepto {
-  id               String   @id @default(cuid())
-  liquidacionId    String
-  concepto         String // EPS | AFP | ARL | CCF | SENA | ICBF | FSP | ADMIN
-  subconcepto      String? // ej. "EPS-empleador 8.5%" vs "EPS-trabajador 4%"
-  base             Decimal  @db.Decimal(12, 2)
+  id              String   @id @default(cuid())
+  liquidacionId   String
+  concepto        String // EPS | AFP | ARL | CCF | SENA | ICBF | FSP | ADMIN
+  subconcepto     String? // ej. "EPS-empleador 8.5%" vs "EPS-trabajador 4%"
+  base            Decimal  @db.Decimal(12, 2)
   // Decimal(8,4) para soportar hasta 9999.9999. El concepto ADMIN usa
   // 100.0000 ya que no es realmente un porcentaje sino un valor fijo.
-  porcentaje       Decimal  @db.Decimal(8, 4)
-  valor            Decimal  @db.Decimal(14, 2)
-  aCargoEmpleador  Boolean  @default(true)
-  observaciones    String?
-  createdAt        DateTime @default(now())
+  porcentaje      Decimal  @db.Decimal(8, 4)
+  valor           Decimal  @db.Decimal(14, 2)
+  aCargoEmpleador Boolean  @default(true)
+  observaciones   String?
+  createdAt       DateTime @default(now())
 
   liquidacion Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
 
@@ -980,15 +1030,15 @@ model Comprobante {
   asesorComercialId String?
   // Totales denormalizados — se desglosan para facturación y reporte.
   // totalGeneral = totalSgss + totalAdmon + totalServicios
-  totalSgss       Decimal           @db.Decimal(14, 2) @default(0)
-  totalAdmon      Decimal           @db.Decimal(14, 2) @default(0)
-  totalServicios  Decimal           @db.Decimal(14, 2) @default(0)
-  totalEmpleador  Decimal           @db.Decimal(14, 2) @default(0) // (legado — no se muestra en UI)
-  totalTrabajador Decimal           @db.Decimal(14, 2) @default(0) // (legado — no se muestra en UI)
-  totalGeneral    Decimal           @db.Decimal(14, 2) @default(0)
-  totalPagado     Decimal           @db.Decimal(14, 2) @default(0)
-  estado          EstadoComprobante @default(BORRADOR)
-  observaciones   String?
+  totalSgss         Decimal               @default(0) @db.Decimal(14, 2)
+  totalAdmon        Decimal               @default(0) @db.Decimal(14, 2)
+  totalServicios    Decimal               @default(0) @db.Decimal(14, 2)
+  totalEmpleador    Decimal               @default(0) @db.Decimal(14, 2) // (legado — no se muestra en UI)
+  totalTrabajador   Decimal               @default(0) @db.Decimal(14, 2) // (legado — no se muestra en UI)
+  totalGeneral      Decimal               @default(0) @db.Decimal(14, 2)
+  totalPagado       Decimal               @default(0) @db.Decimal(14, 2)
+  estado            EstadoComprobante     @default(BORRADOR)
+  observaciones     String?
 
   // Pre-facturación y procesamiento
   numeroComprobanteExt String? // número impreso / externo ingresado por el admin
@@ -1002,26 +1052,26 @@ model Comprobante {
   // Override de valor administración en la pre-factura (afecta sólo la
   // transacción, no el valor guardado en la afiliación). Si es NULL, se
   // usó el valor default de la afiliación.
-  valorAdminOverride  Decimal? @db.Decimal(12, 2)
+  valorAdminOverride Decimal? @db.Decimal(12, 2)
 
   // Marca que al procesar esta factura se inactivó al cotizante (novedad
   // de retiro). Al anular se reactiva.
-  aplicaNovedadRetiro Boolean  @default(false)
+  aplicaNovedadRetiro Boolean @default(false)
 
   // Marca que esta factura se creó durante el cierre masivo del período.
   // Al anularse, el período se reabre automáticamente.
-  esCierreMasivo      Boolean  @default(false)
+  esCierreMasivo Boolean @default(false)
 
   // Número de planilla PILA asignado cuando se procesa en el módulo de
   // Planos. Mientras NULL, la transacción se muestra "En proceso".
-  numeroPlanilla      String?
+  numeroPlanilla String?
 
   // Usuario que creó (procesó) el comprobante. SetNull si el usuario
   // se elimina para no perder el registro.
-  createdById         String?
+  createdById String?
 
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   periodo         PeriodoContable          @relation(fields: [periodoId], references: [id], onDelete: Cascade)
   cotizante       Cotizante?               @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
@@ -1098,8 +1148,8 @@ enum TipoPlanilla {
 
 enum EstadoPlanilla {
   CONSOLIDADO // Recién creada, pendiente de pago
-  PAGADA      // Pago confirmado — se guarda numeroPlanillaExt y fecha
-  ANULADA     // Al anular se libera el vínculo con los comprobantes
+  PAGADA // Pago confirmado — se guarda numeroPlanillaExt y fecha
+  ANULADA // Al anular se libera el vínculo con los comprobantes
 }
 
 // Planilla PILA — un registro agrupa los comprobantes de UN aportante
@@ -1121,20 +1171,20 @@ model Planilla {
   // Nro. de planilla asignado por el operador PILA al confirmar el pago
   numeroPlanillaExt  String?
   // Aportante: exactamente UNO de estos está poblado según tipoPlanilla
-  empresaId          String?        // NOT NULL si tipo = E (dependientes)
-  cotizanteId        String?        // NOT NULL si tipo = I/Y (independiente)
+  empresaId          String? // NOT NULL si tipo = E (dependientes)
+  cotizanteId        String? // NOT NULL si tipo = I/Y (independiente)
   // Período de APORTE (puede diferir del contable para indep vencido)
   periodoAporteAnio  Int
   periodoAporteMes   Int
   // Totales snapshot por subsistema
-  totalSalud         Decimal        @db.Decimal(14, 2) @default(0)
-  totalPension       Decimal        @db.Decimal(14, 2) @default(0)
-  totalArl           Decimal        @db.Decimal(14, 2) @default(0)
-  totalCcf           Decimal        @db.Decimal(14, 2) @default(0)
-  totalSena          Decimal        @db.Decimal(14, 2) @default(0)
-  totalIcbf          Decimal        @db.Decimal(14, 2) @default(0)
-  totalFsp           Decimal        @db.Decimal(14, 2) @default(0)
-  totalGeneral       Decimal        @db.Decimal(14, 2) @default(0)
+  totalSalud         Decimal        @default(0) @db.Decimal(14, 2)
+  totalPension       Decimal        @default(0) @db.Decimal(14, 2)
+  totalArl           Decimal        @default(0) @db.Decimal(14, 2)
+  totalCcf           Decimal        @default(0) @db.Decimal(14, 2)
+  totalSena          Decimal        @default(0) @db.Decimal(14, 2)
+  totalIcbf          Decimal        @default(0) @db.Decimal(14, 2)
+  totalFsp           Decimal        @default(0) @db.Decimal(14, 2)
+  totalGeneral       Decimal        @default(0) @db.Decimal(14, 2)
   cantidadCotizantes Int            @default(0)
   estado             EstadoPlanilla @default(CONSOLIDADO)
   generadoEn         DateTime       @default(now())
@@ -1143,26 +1193,38 @@ model Planilla {
   observaciones      String?
 
   // PagoSimple — integración con operador PILA
-  /** payroll_number devuelto por POST /payroll/validate. */
-  pagosimpleNumero             String?
-  /** PIN asignado en marcación asistida (si aplica). */
-  pagosimplePin                String?
-  /** Estado de la última validación: OK, CON_ERRORES, etc. */
-  pagosimpleEstadoValidacion   String?
-  /** URL PSE de pago (se cachea al generarla). */
-  pagosimplePaymentUrl         String?
-  /** Totales calculados por el operador (GET /payroll/total). Pueden
+  /**
+   * /** payroll_number devuelto por POST /payroll/validate.
+   */
+  pagosimpleNumero           String?
+  /**
+   * PIN asignado en marcación asistida (si aplica).
+   */
+  pagosimplePin              String?
+  /**
+   * Estado de la última validación: OK, CON_ERRORES, etc.
+   */
+  pagosimpleEstadoValidacion String?
+  /**
+   * URL PSE de pago (se cachea al generarla).
+   */
+  pagosimplePaymentUrl       String?
+  /**
+   * Totales calculados por el operador (GET /payroll/total). Pueden
    * diferir de los locales por ajustes de validación o mora.
    * `pagosimpleTotalSgss` = total sin mora; `pagosimpleTotalMora` =
-   * intereses por días vencidos; `pagosimpleTotalPagar` = total a girar. */
-  pagosimpleTotalSgss          Decimal?  @db.Decimal(14, 2)
-  pagosimpleTotalMora          Decimal?  @db.Decimal(14, 2)
-  pagosimpleTotalPagar         Decimal?  @db.Decimal(14, 2)
-  /** Última vez que se sincronizaron datos con el operador. */
-  pagosimpleSyncedAt           DateTime?
+   * intereses por días vencidos; `pagosimpleTotalPagar` = total a girar.
+   */
+  pagosimpleTotalSgss        Decimal?  @db.Decimal(14, 2)
+  pagosimpleTotalMora        Decimal?  @db.Decimal(14, 2)
+  pagosimpleTotalPagar       Decimal?  @db.Decimal(14, 2)
+  /**
+   * Última vez que se sincronizaron datos con el operador.
+   */
+  pagosimpleSyncedAt         DateTime?
 
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   periodo      PeriodoContable       @relation(fields: [periodoId], references: [id], onDelete: Restrict)
   sucursal     Sucursal?             @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
@@ -1207,7 +1269,9 @@ model PlanillaComprobante {
 // confirma que la deuda es válida; a partir de ese estado aparecen en el
 // módulo Administrativo del aliado dueño de la sucursal asignada.
 
-/** Tipo de entidad SGSS emisora del estado de cuenta. */
+/**
+ * Tipo de entidad SGSS emisora del estado de cuenta.
+ */
 enum CarteraTipoEntidad {
   EPS
   AFP
@@ -1217,22 +1281,23 @@ enum CarteraTipoEntidad {
 
 /**
  * Estado del detallado (por línea) y también del consolidado.
- *
- *   - EN_CONCILIACION      recién importado; soporte lo revisa
- *   - CONCILIADA           soporte respondió a la entidad / descartó la deuda
- *   - CARTERA_REAL         soporte confirmó: es deuda real → aparece en el aliado
- *   - PAGADA_CARTERA_REAL  el aliado pagó la cartera real confirmada
+ * - EN_CONCILIACION      recién importado; soporte lo revisa
+ * - CONCILIADA           soporte respondió a la entidad / descartó la deuda
+ * - CARTERA_REAL         soporte confirmó: es deuda real → aparece en el aliado
+ * - PAGADA_CARTERA_REAL  el aliado pagó la cartera real confirmada
  */
 enum CarteraEstado {
-  EN_CONCILIACION                                              // estado inicial — recién importado o sin respuesta
-  CONCILIADA                                                   // ya cerrado con la entidad (consolidado o línea)
-  ENVIADA                                                      // consolidado: soporte respondió a la entidad, espera confirmación
-  MORA_REAL                                                    // línea: deuda probable confirmada, visible al aliado
-  CARTERA_REAL                                                 // línea: deuda firme, visible al aliado
-  PAGADA_CARTERA_REAL                                          // línea: el aliado pagó la deuda
+  EN_CONCILIACION // estado inicial — recién importado o sin respuesta
+  CONCILIADA // ya cerrado con la entidad (consolidado o línea)
+  ENVIADA // consolidado: soporte respondió a la entidad, espera confirmación
+  MORA_REAL // línea: deuda probable confirmada, visible al aliado
+  CARTERA_REAL // línea: deuda firme, visible al aliado
+  PAGADA_CARTERA_REAL // línea: el aliado pagó la deuda
 }
 
-/** Origen del PDF — detectado por el parser; MANUAL = el staff lo mapeó a mano. */
+/**
+ * Origen del PDF — detectado por el parser; MANUAL = el staff lo mapeó a mano.
+ */
 enum CarteraOrigenPdf {
   PROTECCION
   SALUD_TOTAL
@@ -1242,7 +1307,9 @@ enum CarteraOrigenPdf {
   MANUAL
 }
 
-/** Quién registró la gestión: staff de soporte o el aliado dueño de la sucursal. */
+/**
+ * Quién registró la gestión: staff de soporte o el aliado dueño de la sucursal.
+ */
 enum CarteraAccionadaPor {
   SOPORTE
   ALIADO
@@ -1252,29 +1319,28 @@ enum CarteraAccionadaPor {
  * Cabecera del estado de cuenta importado. Un consolidado agrupa todas
  * las líneas (CarteraDetallado) de un mismo PDF: la entidad emisora, la
  * empresa afectada y el período de corte.
- *
  * La unique `(empresaNit, entidadNombre, periodoHasta)` bloquea re-imports
  * silenciosos: si el staff sube dos veces el mismo estado de cuenta, el
  * action exige confirmación explícita para reemplazar.
  */
 model CarteraConsolidado {
   id                  String             @id @default(cuid())
-  consecutivo         String             @unique              // CC-000001 (sequence Postgres)
+  consecutivo         String             @unique // CC-000001 (sequence Postgres)
   fechaRegistro       DateTime           @default(now())
   tipoEntidad         CarteraTipoEntidad
-  entidadNombre       String                                   // "Salud Total EPS"
-  entidadNit          String?                                  // NIT de la entidad (si el PDF lo trae)
-  empresaNit          String                                   // NIT empleador reportado en el PDF
-  empresaRazonSocial  String                                   // razón social del PDF (denormalizada)
-  empresaId           String?                                  // match con Empresa en BD (si existe)
-  periodoDesde        String?                                  // "AAAA-MM" — inicio de la ventana reportada
-  periodoHasta        String?                                  // "AAAA-MM" — corte del estado de cuenta
+  entidadNombre       String // "Salud Total EPS"
+  entidadNit          String? // NIT de la entidad (si el PDF lo trae)
+  empresaNit          String // NIT empleador reportado en el PDF
+  empresaRazonSocial  String // razón social del PDF (denormalizada)
+  empresaId           String? // match con Empresa en BD (si existe)
+  periodoDesde        String? // "AAAA-MM" — inicio de la ventana reportada
+  periodoHasta        String? // "AAAA-MM" — corte del estado de cuenta
   cantidadRegistros   Int                @default(0)
   valorTotalInformado Decimal            @db.Decimal(15, 2)
   estado              CarteraEstado      @default(EN_CONCILIACION)
   origenPdf           CarteraOrigenPdf?
-  archivoOrigenPath   String?                                  // ruta relativa al PDF archivado
-  archivoOrigenHash   String?                                  // sha-256 para trazabilidad
+  archivoOrigenPath   String? // ruta relativa al PDF archivado
+  archivoOrigenHash   String? // sha-256 para trazabilidad
   observaciones       String?
   createdById         String?
   createdAt           DateTime           @default(now())
@@ -1295,7 +1361,6 @@ model CarteraConsolidado {
  * Una línea del estado de cuenta = un cotizante + un período + un valor.
  * El estado es por línea (no solo por consolidado) — solo las líneas
  * marcadas CARTERA_REAL aparecen en el módulo Administrativo del aliado.
- *
  * `sucursalAsignadaId` se auto-matchea por cédula contra la BD; queda
  * editable para que soporte la reasigne si el auto-match falla.
  */
@@ -1305,12 +1370,12 @@ model CarteraDetallado {
   tipoDocumento      TipoDocumento
   numeroDocumento    String
   nombreCompleto     String
-  periodoCobro       String                                   // "AAAA-MM"
+  periodoCobro       String // "AAAA-MM"
   valorCobro         Decimal       @db.Decimal(15, 2)
-  ibc                Decimal?      @db.Decimal(15, 2)         // IBC reportado (solo algunos formatos)
-  novedad            String?                                   // IGE, NVL, etc. (texto libre)
+  ibc                Decimal?      @db.Decimal(15, 2) // IBC reportado (solo algunos formatos)
+  novedad            String? // IGE, NVL, etc. (texto libre)
   sucursalAsignadaId String?
-  cotizanteId        String?                                   // match con Cotizante en BD (opcional)
+  cotizanteId        String? // match con Cotizante en BD (opcional)
   estado             CarteraEstado @default(EN_CONCILIACION)
   observaciones      String?
   createdAt          DateTime      @default(now())
@@ -1338,7 +1403,7 @@ model CarteraGestion {
   id           String              @id @default(cuid())
   detalladoId  String
   accionadaPor CarteraAccionadaPor
-  nuevoEstado  CarteraEstado?                               // si la gestión promovió el estado
+  nuevoEstado  CarteraEstado? // si la gestión promovió el estado
   descripcion  String
   userId       String?
   userName     String?
@@ -1371,11 +1436,11 @@ enum IncapacidadTipo {
 
 /**
  * Estados de una incapacidad — flujo típico:
- *   RADICADA      aliado envío formulario + documentos
- *   EN_REVISION   soporte la esta revisando (puede pedir ajustes)
- *   APROBADA      soporte validó, entidad pagará
- *   PAGADA        el aliado / cotizante recibió el pago
- *   RECHAZADA     la entidad la negó definitivamente
+ * RADICADA      aliado envío formulario + documentos
+ * EN_REVISION   soporte la esta revisando (puede pedir ajustes)
+ * APROBADA      soporte validó, entidad pagará
+ * PAGADA        el aliado / cotizante recibió el pago
+ * RECHAZADA     la entidad la negó definitivamente
  */
 enum IncapacidadEstado {
   RADICADA
@@ -1385,7 +1450,9 @@ enum IncapacidadEstado {
   RECHAZADA
 }
 
-/** Tipos de adjunto permitidos en una radicación. */
+/**
+ * Tipos de adjunto permitidos en una radicación.
+ */
 enum IncapacidadDocumentoTipo {
   COPIA_CEDULA
   CERTIFICADO_INCAPACIDAD
@@ -1395,7 +1462,9 @@ enum IncapacidadDocumentoTipo {
   FURIPS_SOAT
 }
 
-/** Quién ejecutó la gestión en la bitácora. */
+/**
+ * Quién ejecutó la gestión en la bitácora.
+ */
 enum IncapacidadAccionadaPor {
   SOPORTE
   ALIADO
@@ -1407,46 +1476,50 @@ enum IncapacidadAccionadaPor {
  * del cotizante, la incapacidad conserva lo que se reportó.
  */
 model Incapacidad {
-  id                 String            @id @default(cuid())
-  consecutivo        String            @unique              // INC-000001
-  fechaRadicacion    DateTime          @default(now())
+  id              String   @id @default(cuid())
+  consecutivo     String   @unique // INC-000001
+  fechaRadicacion DateTime @default(now())
 
-  /** Sucursal que radica (tenant owner). */
-  sucursalId         String
-  /** Cotizante afectado — match por tipoDoc+numDoc al radicar. */
-  cotizanteId        String
-  tipo               IncapacidadTipo
+  /**
+   * Sucursal que radica (tenant owner).
+   */
+  sucursalId  String
+  /**
+   * Cotizante afectado — match por tipoDoc+numDoc al radicar.
+   */
+  cotizanteId String
+  tipo        IncapacidadTipo
 
   // --- Fechas del período de incapacidad ---
-  fechaInicio        DateTime
-  fechaFin           DateTime
-  diasIncapacidad    Int
+  fechaInicio     DateTime
+  fechaFin        DateTime
+  diasIncapacidad Int
 
   // --- Snapshots de la afiliación al momento de radicar ---
-  empresaPlanillaId  String?                               // Empresa (si dependiente)
-  empresaPlanillaNombreSnap String?                        // nombre denormalizado
-  epsId              String?
-  afpId              String?
-  arlId              String?
-  ccfId              String?
-  fechaAfiliacionSnap DateTime?                            // fecha de afiliación del cotizante
+  empresaPlanillaId         String? // Empresa (si dependiente)
+  empresaPlanillaNombreSnap String? // nombre denormalizado
+  epsId                     String?
+  afpId                     String?
+  arlId                     String?
+  ccfId                     String?
+  fechaAfiliacionSnap       DateTime? // fecha de afiliación del cotizante
 
-  estado             IncapacidadEstado @default(RADICADA)
-  observaciones      String?
-  createdById        String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  estado        IncapacidadEstado @default(RADICADA)
+  observaciones String?
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
-  sucursal         Sucursal           @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  cotizante        Cotizante          @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
-  empresaPlanilla  Empresa?           @relation("IncapacidadEmpresa", fields: [empresaPlanillaId], references: [id], onDelete: SetNull)
-  eps              EntidadSgss?       @relation("IncapacidadEps", fields: [epsId], references: [id], onDelete: SetNull)
-  afp              EntidadSgss?       @relation("IncapacidadAfp", fields: [afpId], references: [id], onDelete: SetNull)
-  arl              EntidadSgss?       @relation("IncapacidadArl", fields: [arlId], references: [id], onDelete: SetNull)
-  ccf              EntidadSgss?       @relation("IncapacidadCcf", fields: [ccfId], references: [id], onDelete: SetNull)
-  createdBy        User?              @relation("IncapacidadesCreadas", fields: [createdById], references: [id], onDelete: SetNull)
-  documentos       IncapacidadDocumento[]
-  gestiones        IncapacidadGestion[]
+  sucursal           Sucursal               @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cotizante          Cotizante              @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
+  empresaPlanilla    Empresa?               @relation("IncapacidadEmpresa", fields: [empresaPlanillaId], references: [id], onDelete: SetNull)
+  eps                EntidadSgss?           @relation("IncapacidadEps", fields: [epsId], references: [id], onDelete: SetNull)
+  afp                EntidadSgss?           @relation("IncapacidadAfp", fields: [afpId], references: [id], onDelete: SetNull)
+  arl                EntidadSgss?           @relation("IncapacidadArl", fields: [arlId], references: [id], onDelete: SetNull)
+  ccf                EntidadSgss?           @relation("IncapacidadCcf", fields: [ccfId], references: [id], onDelete: SetNull)
+  createdBy          User?                  @relation("IncapacidadesCreadas", fields: [createdById], references: [id], onDelete: SetNull)
+  documentos         IncapacidadDocumento[]
+  gestiones          IncapacidadGestion[]
   movimientosDetalle MovimientoIncDetalle[]
 
   @@index([sucursalId])
@@ -1463,18 +1536,20 @@ model Incapacidad {
  * marca `eliminado=true` (el registro queda como evidencia).
  */
 model IncapacidadDocumento {
-  id                   String                    @id @default(cuid())
-  incapacidadId        String
-  tipo                 IncapacidadDocumentoTipo
-  archivoPath          String                                       // relativo a UPLOADS_DIR
-  archivoHash          String                                       // sha-256 hex
-  archivoMime          String                                       // ej. image/jpeg, application/pdf
-  archivoSize          Int                                          // bytes
-  archivoNombreOriginal String                                      // tal como lo subió el usuario
-  /** `true` cuando el archivo físico ya fue eliminado por retención. */
-  eliminado            Boolean                   @default(false)
-  eliminadoEn          DateTime?
-  createdAt            DateTime                  @default(now())
+  id                    String                   @id @default(cuid())
+  incapacidadId         String
+  tipo                  IncapacidadDocumentoTipo
+  archivoPath           String // relativo a UPLOADS_DIR
+  archivoHash           String // sha-256 hex
+  archivoMime           String // ej. image/jpeg, application/pdf
+  archivoSize           Int // bytes
+  archivoNombreOriginal String // tal como lo subió el usuario
+  /**
+   * `true` cuando el archivo físico ya fue eliminado por retención.
+   */
+  eliminado             Boolean                  @default(false)
+  eliminadoEn           DateTime?
+  createdAt             DateTime                 @default(now())
 
   incapacidad Incapacidad @relation(fields: [incapacidadId], references: [id], onDelete: Cascade)
 
@@ -1484,16 +1559,18 @@ model IncapacidadDocumento {
   @@map("incapacidad_documentos")
 }
 
-/** Bitácora de gestiones sobre una incapacidad (aliado o soporte). */
+/**
+ * Bitácora de gestiones sobre una incapacidad (aliado o soporte).
+ */
 model IncapacidadGestion {
-  id             String                  @id @default(cuid())
-  incapacidadId  String
-  accionadaPor   IncapacidadAccionadaPor
-  nuevoEstado    IncapacidadEstado?
-  descripcion    String
-  userId         String?
-  userName       String?
-  createdAt      DateTime                @default(now())
+  id            String                  @id @default(cuid())
+  incapacidadId String
+  accionadaPor  IncapacidadAccionadaPor
+  nuevoEstado   IncapacidadEstado?
+  descripcion   String
+  userId        String?
+  userName      String?
+  createdAt     DateTime                @default(now())
 
   incapacidad Incapacidad @relation(fields: [incapacidadId], references: [id], onDelete: Cascade)
   user        User?       @relation("IncapacidadGestionesUser", fields: [userId], references: [id], onDelete: SetNull)
@@ -1515,23 +1592,27 @@ model IncapacidadGestion {
  * disparos simultáneos (ej. una edición que cambia empresa + plan SGSS).
  */
 enum SoporteAfTipoDisparo {
-  NUEVA                  // creación de afiliación ACTIVA
-  REACTIVACION           // INACTIVA → ACTIVA
+  NUEVA // creación de afiliación ACTIVA
+  REACTIVACION // INACTIVA → ACTIVA
   CAMBIO_FECHA_INGRESO
   CAMBIO_EMPRESA
   CAMBIO_NIVEL_ARL
   CAMBIO_PLAN_SGSS
 }
 
-/** Estados del flujo de atención de soporte. */
+/**
+ * Estados del flujo de atención de soporte.
+ */
 enum SoporteAfEstado {
-  EN_PROCESO    // default al recibirse del aliado
-  PROCESADA     // soporte validó y cerró
-  RECHAZADA     // soporte rechazó definitivamente
-  NOVEDAD       // soporte marcó "requiere ajuste del aliado"
+  EN_PROCESO // default al recibirse del aliado
+  PROCESADA // soporte validó y cerró
+  RECHAZADA // soporte rechazó definitivamente
+  NOVEDAD // soporte marcó "requiere ajuste del aliado"
 }
 
-/** Quién ejecutó la gestión / subida de documento. */
+/**
+ * Quién ejecutó la gestión / subida de documento.
+ */
 enum SoporteAfAccionadaPor {
   SOPORTE
   ALIADO
@@ -1543,43 +1624,43 @@ enum SoporteAfAccionadaPor {
  * para que soporte vea qué cambió, y un consecutivo global SOP-AF-000001.
  */
 model SoporteAfiliacion {
-  id                String   @id @default(cuid())
-  consecutivo       String   @unique                 // SOP-AF-000001
-  fechaRadicacion   DateTime @default(now())         // recibido + hora
+  id              String   @id @default(cuid())
+  consecutivo     String   @unique // SOP-AF-000001
+  fechaRadicacion DateTime @default(now()) // recibido + hora
 
-  afiliacionId      String
-  cotizanteId       String
-  sucursalId        String                            // desnormalizado para filtro rápido
-  createdById       String?                           // aliado dueño que disparó
+  afiliacionId String
+  cotizanteId  String
+  sucursalId   String // desnormalizado para filtro rápido
+  createdById  String? // aliado dueño que disparó
 
-  disparos          SoporteAfTipoDisparo[]
-  snapshotAntes     Json?
-  snapshotDespues   Json?
+  disparos        SoporteAfTipoDisparo[]
+  snapshotAntes   Json?
+  snapshotDespues Json?
 
   // Snapshots ligeros para la tabla (evitan joins pesados)
-  modalidadSnap     Modalidad
-  planNombreSnap    String?
-  regimenSnap       Regimen?
+  modalidadSnap  Modalidad
+  planNombreSnap String?
+  regimenSnap    Regimen?
 
-  estado                 SoporteAfEstado @default(EN_PROCESO)
-  estadoObservaciones    String?
-  gestionadoPorId        String?
-  gestionadoEn           DateTime?
+  estado              SoporteAfEstado @default(EN_PROCESO)
+  estadoObservaciones String?
+  gestionadoPorId     String?
+  gestionadoEn        DateTime?
 
-  periodoId              String?
+  periodoId String?
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   afiliacion    Afiliacion       @relation(fields: [afiliacionId], references: [id], onDelete: Restrict)
   cotizante     Cotizante        @relation(fields: [cotizanteId], references: [id], onDelete: Restrict)
   sucursal      Sucursal         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   createdBy     User?            @relation("SoporteAfCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  gestionadoPor User?            @relation("SoporteAfGestor",  fields: [gestionadoPorId], references: [id], onDelete: SetNull)
+  gestionadoPor User?            @relation("SoporteAfGestor", fields: [gestionadoPorId], references: [id], onDelete: SetNull)
   periodo       PeriodoContable? @relation(fields: [periodoId], references: [id], onDelete: SetNull)
 
-  documentos    SoporteAfDocumento[]
-  gestiones     SoporteAfGestion[]
+  documentos SoporteAfDocumento[]
+  gestiones  SoporteAfGestion[]
 
   @@index([sucursalId, estado])
   @@index([periodoId])
@@ -1600,16 +1681,16 @@ model SoporteAfDocumento {
   id                    String                @id @default(cuid())
   soporteAfId           String
   accionadaPor          SoporteAfAccionadaPor
-  descripcion           String?                          // etiqueta libre opcional
-  archivoPath           String                           // relativo a UPLOADS_DIR
-  archivoHash           String                           // sha-256 hex
+  descripcion           String? // etiqueta libre opcional
+  archivoPath           String // relativo a UPLOADS_DIR
+  archivoHash           String // sha-256 hex
   archivoMime           String
   archivoSize           Int
   archivoNombreOriginal String
-  eliminado             Boolean  @default(false)
+  eliminado             Boolean               @default(false)
   eliminadoEn           DateTime?
-  userId                String?                          // quien subió
-  createdAt             DateTime @default(now())
+  userId                String? // quien subió
+  createdAt             DateTime              @default(now())
 
   soporteAf SoporteAfiliacion @relation(fields: [soporteAfId], references: [id], onDelete: Cascade)
   user      User?             @relation("SoporteAfDocUser", fields: [userId], references: [id], onDelete: SetNull)
@@ -1619,16 +1700,18 @@ model SoporteAfDocumento {
   @@map("soporte_afiliacion_documentos")
 }
 
-/** Bitácora de gestiones (aliado o soporte) sobre una solicitud. */
+/**
+ * Bitácora de gestiones (aliado o soporte) sobre una solicitud.
+ */
 model SoporteAfGestion {
-  id             String                @id @default(cuid())
-  soporteAfId    String
-  accionadaPor   SoporteAfAccionadaPor
-  nuevoEstado    SoporteAfEstado?
-  descripcion    String
-  userId         String?
-  userName       String?
-  createdAt      DateTime @default(now())
+  id           String                @id @default(cuid())
+  soporteAfId  String
+  accionadaPor SoporteAfAccionadaPor
+  nuevoEstado  SoporteAfEstado?
+  descripcion  String
+  userId       String?
+  userName     String?
+  createdAt    DateTime              @default(now())
 
   soporteAf SoporteAfiliacion @relation(fields: [soporteAfId], references: [id], onDelete: Cascade)
   user      User?             @relation("SoporteAfGestionUser", fields: [userId], references: [id], onDelete: SetNull)
@@ -1644,7 +1727,9 @@ model SoporteAfGestion {
 
 // --- Cobro Aliados ---------------------------------------------------------
 
-/** Estados del ciclo de cobro al aliado. */
+/**
+ * Estados del ciclo de cobro al aliado.
+ */
 enum CobroAliadoEstado {
   PENDIENTE // generado, el aliado no ha pagado
   PAGADO // el aliado pagó — staff conciliado
@@ -1654,11 +1739,11 @@ enum CobroAliadoEstado {
 
 /**
  * Tipo de concepto en un cobro — determina el origen del ítem:
- *   AFILIACION_PROCESADA  — cada SoporteAfiliacion con estado PROCESADA
- *                           en el período contable.
- *   MENSUALIDAD          — cada Comprobante tipo RECIBO/CXC emitido en
- *                           el período (respeta la regla: si la afiliación
- *                           tiene retiro con duración ≤5 días no cobra).
+ * AFILIACION_PROCESADA  — cada SoporteAfiliacion con estado PROCESADA
+ * en el período contable.
+ * MENSUALIDAD          — cada Comprobante tipo RECIBO/CXC emitido en
+ * el período (respeta la regla: si la afiliación
+ * tiene retiro con duración ≤5 días no cobra).
  */
 enum CobroAliadoConceptoTipo {
   AFILIACION_PROCESADA
@@ -1669,31 +1754,32 @@ enum CobroAliadoConceptoTipo {
  * Cobro mensual al aliado por uso de la plataforma.
  * Se genera automáticamente al cerrar el período contable (último día mes
  * 23:59). Plazo de pago: día 15 del mes siguiente. Día 16 → bloqueo.
- *
  * Las tarifas vienen de Sucursal.tarifaOrdinario / tarifaResolucion y se
  * congelan al momento de generar (por si después cambian, el cobro queda
  * con los valores históricos).
  */
 model CobroAliado {
-  id              String    @id @default(cuid())
-  consecutivo     String    @unique // CA-000001
-  sucursalId      String
-  periodoId       String
-  fechaGenerado   DateTime  @default(now())
-  fechaLimite     DateTime // día 15 del mes siguiente (calculado al generar)
-  fechaPagado     DateTime?
-  /** Si se bloqueó la sucursal por falta de pago, cuándo. */
-  fechaBloqueo    DateTime?
+  id            String    @id @default(cuid())
+  consecutivo   String    @unique // CA-000001
+  sucursalId    String
+  periodoId     String
+  fechaGenerado DateTime  @default(now())
+  fechaLimite   DateTime // día 15 del mes siguiente (calculado al generar)
+  fechaPagado   DateTime?
+  /**
+   * Si se bloqueó la sucursal por falta de pago, cuándo.
+   */
+  fechaBloqueo  DateTime?
 
   // Conteos del período (denormalizado para reporte rápido)
-  cantAfiliaciones  Int     @default(0)
-  cantMensualidades Int     @default(0)
+  cantAfiliaciones  Int @default(0)
+  cantMensualidades Int @default(0)
 
   // Subtotales por tipo (denormalizado)
   valorAfiliaciones  Decimal @default(0) @db.Decimal(12, 2)
   valorMensualidades Decimal @default(0) @db.Decimal(12, 2)
 
-  totalCobro     Decimal @db.Decimal(12, 2)
+  totalCobro Decimal @db.Decimal(12, 2)
 
   estado         CobroAliadoEstado @default(PENDIENTE)
   medioPagoId    String?
@@ -1730,9 +1816,13 @@ model CobroAliadoConcepto {
   cobroId      String
   tipo         CobroAliadoConceptoTipo
   descripcion  String? // texto libre (ej. "Mensualidad mayo — Juan Pérez")
-  /** FK informativo: afiliacionId o comprobanteId del registro origen. */
+  /**
+   * FK informativo: afiliacionId o comprobanteId del registro origen.
+   */
   referenciaId String?
-  /** Régimen aplicado (ORDINARIO/RESOLUCION) — determina qué tarifa usa. */
+  /**
+   * Régimen aplicado (ORDINARIO/RESOLUCION) — determina qué tarifa usa.
+   */
   regimen      Regimen?
   cantidad     Int                     @default(1)
   valorUnit    Decimal                 @db.Decimal(12, 2)
@@ -1769,7 +1859,9 @@ model CobroAliadoDocumento {
 
 // --- Movimientos Incapacidades --------------------------------------------
 
-/** Estados de un movimiento bancario. */
+/**
+ * Estados de un movimiento bancario.
+ */
 enum MovimientoIncEstado {
   PENDIENTE // recién importado, aún no se ha desglosado ni conciliado
   CONCILIADO // suma de sus detalles = valor total del movimiento
@@ -1782,27 +1874,27 @@ enum MovimientoIncEstado {
  * desde Excel/PDF de extractos bancarios.
  */
 model MovimientoIncapacidad {
-  id           String              @id @default(cuid())
-  consecutivo  String              @unique // MI-000001
-  empresaId    String? // empresa planilla asociada (si se identifica al importar)
-  fechaIngreso DateTime // fecha del movimiento en el banco
-  concepto     String // referencia/descripción del extracto
-  valor        Decimal             @db.Decimal(14, 2)
-  estado       MovimientoIncEstado @default(PENDIENTE)
-  bancoOrigen  String? // "Bancolombia", "Davivienda", etc.
+  id            String              @id @default(cuid())
+  consecutivo   String              @unique // MI-000001
+  empresaId     String? // empresa planilla asociada (si se identifica al importar)
+  fechaIngreso  DateTime // fecha del movimiento en el banco
+  concepto      String // referencia/descripción del extracto
+  valor         Decimal             @db.Decimal(14, 2)
+  estado        MovimientoIncEstado @default(PENDIENTE)
+  bancoOrigen   String? // "Bancolombia", "Davivienda", etc.
   /**
    * Hash del registro en el extracto — previene duplicados al re-importar.
    * Formato: sha256(banco|fecha|valor|concepto).
    */
-  hashIdentidad String?              @unique
+  hashIdentidad String?             @unique
   observaciones String?
 
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  empresa   Empresa? @relation(fields: [empresaId], references: [id], onDelete: SetNull)
-  createdBy User?    @relation("MovIncCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  empresa   Empresa?               @relation(fields: [empresaId], references: [id], onDelete: SetNull)
+  createdBy User?                  @relation("MovIncCreator", fields: [createdById], references: [id], onDelete: SetNull)
   detalles  MovimientoIncDetalle[]
 
   @@index([estado])
@@ -1813,14 +1905,18 @@ model MovimientoIncapacidad {
 
 // --- Detalle de Movimientos -----------------------------------------------
 
-/** Forma en que se liquida el pago de la incapacidad. */
+/**
+ * Forma en que se liquida el pago de la incapacidad.
+ */
 enum MovimientoFormaPago {
   PAGO_COTIZANTE // se transfiere al cotizante directamente
   PAGO_ALIADO // se transfiere al aliado (él lo paga al cotizante)
   CRUCE_COBRO_ALIADO // se aplica al cobro pendiente del aliado
 }
 
-/** Estado del detalle (registro individual dentro del movimiento). */
+/**
+ * Estado del detalle (registro individual dentro del movimiento).
+ */
 enum MovimientoDetalleEstado {
   PENDIENTE
   EN_PROCESO
@@ -1830,10 +1926,9 @@ enum MovimientoDetalleEstado {
 /**
  * Desglose individual de un movimiento bancario — un registro por cotizante
  * pagado dentro del depósito. Calcula retenciones automáticas:
- *   retencion4x1000  = subtotal * 0.4%
- *   retencionImpuesto = subtotal * 3.5%
- *   totalPagar       = subtotal - retencion4x1000 - retencionImpuesto
- *
+ * retencion4x1000  = subtotal * 0.4%
+ * retencionImpuesto = subtotal * 3.5%
+ * totalPagar       = subtotal - retencion4x1000 - retencionImpuesto
  * Si se encuentra match por tipoDocumento+numeroDocumento, se asocia la
  * incapacidad correspondiente (SoporteIncapacidades).
  */
@@ -1865,18 +1960,20 @@ model MovimientoIncDetalle {
   formaPago          MovimientoFormaPago
   estado             MovimientoDetalleEstado @default(PENDIENTE)
   fechaPago          DateTime?
-  /** Empresa planilla usada como "pagada mediante". */
+  /**
+   * Empresa planilla usada como "pagada mediante".
+   */
   pagadoConEmpresaId String?
   observaciones      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  movimiento  MovimientoIncapacidad @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
-  cotizante   Cotizante?            @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
-  incapacidad Incapacidad?          @relation(fields: [incapacidadId], references: [id], onDelete: SetNull)
-  sucursal    Sucursal?             @relation(fields: [sucursalId], references: [id], onDelete: SetNull)
-  pagadoConEmpresa Empresa?         @relation("MovDetallePagadoCon", fields: [pagadoConEmpresaId], references: [id], onDelete: SetNull)
+  movimiento       MovimientoIncapacidad @relation(fields: [movimientoId], references: [id], onDelete: Cascade)
+  cotizante        Cotizante?            @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
+  incapacidad      Incapacidad?          @relation(fields: [incapacidadId], references: [id], onDelete: SetNull)
+  sucursal         Sucursal?             @relation(fields: [sucursalId], references: [id], onDelete: SetNull)
+  pagadoConEmpresa Empresa?              @relation("MovDetallePagadoCon", fields: [pagadoConEmpresaId], references: [id], onDelete: SetNull)
 
   documentos MovimientoDetalleDocumento[]
 
@@ -1888,7 +1985,9 @@ model MovimientoIncDetalle {
   @@map("movimiento_inc_detalle")
 }
 
-/** Soportes de pago individual (comprobante de transferencia, etc.). */
+/**
+ * Soportes de pago individual (comprobante de transferencia, etc.).
+ */
 model MovimientoDetalleDocumento {
   id                    String   @id @default(cuid())
   detalleId             String
@@ -1925,21 +2024,31 @@ model MovimientoDetalleDocumento {
 // con un set adicional `NotificacionLeida` (user × notificacion).
 
 enum NotificacionTipo {
-  /** Soporte: el aliado creó/modificó/reactivó una afiliación ACTIVA. */
+  /**
+   * Soporte: el aliado creó/modificó/reactivó una afiliación ACTIVA.
+   */
   SOPORTE_NUEVA_AFILIACION
-  /** Soporte: el aliado radicó una nueva incapacidad. */
+  /**
+   * Soporte: el aliado radicó una nueva incapacidad.
+   */
   SOPORTE_NUEVA_INCAPACIDAD
-  /** Soporte: el aliado registró una gestión sobre una línea de cartera. */
+  /**
+   * Soporte: el aliado registró una gestión sobre una línea de cartera.
+   */
   SOPORTE_RESPUESTA_CARTERA
-  /** Aliado: soporte marcó una línea como MORA_REAL o CARTERA_REAL. */
+  /**
+   * Aliado: soporte marcó una línea como MORA_REAL o CARTERA_REAL.
+   */
   ALIADO_CARTERA_ASIGNADA
-  /** Aliado: soporte registró una gestión sobre una incapacidad de la sucursal. */
+  /**
+   * Aliado: soporte registró una gestión sobre una incapacidad de la sucursal.
+   */
   ALIADO_GESTION_INCAPACIDAD
 }
 
 model Notificacion {
-  id    String           @id @default(cuid())
-  tipo  NotificacionTipo
+  id   String           @id @default(cuid())
+  tipo NotificacionTipo
 
   // Targeting — al menos uno se llena.
   destinoUserId     String?
@@ -1948,15 +2057,19 @@ model Notificacion {
 
   titulo    String
   mensaje   String
-  /** Ruta a la que llevar al usuario al hacer click ("/admin/..."). */
+  /**
+   * Ruta a la que llevar al usuario al hacer click ("/admin/...").
+   */
   href      String?
-  /** Datos extra (consecutivo, IDs, etc.). */
+  /**
+   * Datos extra (consecutivo, IDs, etc.).
+   */
   metadatos Json?
 
   createdAt DateTime @default(now())
 
-  destinoUser     User?     @relation("NotificacionDestino", fields: [destinoUserId], references: [id], onDelete: Cascade)
-  destinoSucursal Sucursal? @relation("NotificacionSucursal", fields: [destinoSucursalId], references: [id], onDelete: Cascade)
+  destinoUser     User?                 @relation("NotificacionDestino", fields: [destinoUserId], references: [id], onDelete: Cascade)
+  destinoSucursal Sucursal?             @relation("NotificacionSucursal", fields: [destinoSucursalId], references: [id], onDelete: Cascade)
   lecturas        NotificacionLectura[]
 
   @@index([destinoUserId, createdAt])
