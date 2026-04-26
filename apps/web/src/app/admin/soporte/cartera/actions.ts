@@ -14,6 +14,7 @@ import {
 } from '@/lib/cartera/normalizer';
 import type { ParsedCartera } from '@/lib/cartera/types';
 import { emitirNotificacion } from '@/lib/notificaciones';
+import { auditarEvento } from '@/lib/auditoria';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -205,6 +206,49 @@ export async function gestionarLineaAction(
     });
   });
 
+  // Bitácora — solo si hubo cambio de estado o reasignación de sucursal.
+  // Las gestiones puramente de comentario ya quedan en CarteraGestion;
+  // duplicarlas acá es ruido. Sí registramos los eventos de plata real:
+  // promoción de estado y reasignación de sucursal (mueve cartera entre
+  // aliados).
+  if (Object.keys(cambios).length > 0) {
+    const partes: string[] = [];
+    if (cambios.estado) partes.push(`estado ${linea.estado} → ${cambios.estado}`);
+    if (cambios.sucursalAsignadaId !== undefined) {
+      partes.push(
+        `sucursal ${linea.sucursalAsignadaId ?? 'sin asignar'} → ${cambios.sucursalAsignadaId ?? 'sin asignar'}`,
+      );
+    }
+    const antes: Record<string, unknown> = {};
+    const despues: Record<string, unknown> = {};
+    const camposCambiados: string[] = [];
+    if (cambios.estado) {
+      antes.estado = linea.estado;
+      despues.estado = cambios.estado;
+      camposCambiados.push('estado');
+    }
+    if (cambios.sucursalAsignadaId !== undefined) {
+      antes.sucursalAsignadaId = linea.sucursalAsignadaId;
+      despues.sucursalAsignadaId = cambios.sucursalAsignadaId;
+      camposCambiados.push('sucursalAsignadaId');
+    }
+    await auditarEvento({
+      entidad: 'CarteraDetallado',
+      entidadId: detalladoId,
+      accion: 'GESTIONAR_SOPORTE',
+      // El evento debe verlo el aliado que recibe (despues) y el que pierde
+      // (antes) si hubo reasignación. Por simplicidad capturamos el estado
+      // efectivo después del cambio — el actor es staff y el filtro de
+      // visibilidad ya considera entidadSucursalId.
+      entidadSucursalId:
+        cambios.sucursalAsignadaId !== undefined
+          ? cambios.sucursalAsignadaId
+          : linea.sucursalAsignadaId,
+      descripcion: `Soporte gestionó: ${partes.join(' · ')} — ${desc.slice(0, 80)}`,
+      cambios: { antes, despues, campos: camposCambiados },
+    });
+  }
+
   // Notificar al aliado si la línea acaba de pasar a MORA_REAL o CARTERA_REAL
   // y tiene una sucursal asignada (efectiva, considerando el cambio en este
   // mismo request).
@@ -316,11 +360,42 @@ export async function anularConsolidadoAction(consolidadoId: string): Promise<Ac
   await requireStaff();
   const existe = await prisma.carteraConsolidado.findUnique({
     where: { id: consolidadoId },
-    select: { id: true, consecutivo: true },
+    select: {
+      id: true,
+      consecutivo: true,
+      empresaNit: true,
+      entidadNombre: true,
+      cantidadRegistros: true,
+      valorTotalInformado: true,
+    },
   });
   if (!existe) return { error: 'Consolidado no encontrado' };
 
   await prisma.carteraConsolidado.delete({ where: { id: consolidadoId } });
+
+  // Bitácora — borrar un consolidado destruye TODAS sus líneas y gestiones
+  // por cascade. Es operación irreversible que afecta plata/cartera real.
+  // Como el consolidado puede contener líneas de varias sucursales,
+  // entidadSucursalId queda null (el aliado afectado lo verá como evento
+  // de "su recurso desapareció" gracias al filtro userSucursalId del
+  // actor staff — ver `whereAuditoriaSegunScope`).
+  await auditarEvento({
+    entidad: 'CarteraConsolidado',
+    entidadId: consolidadoId,
+    accion: 'ANULAR',
+    entidadSucursalId: null,
+    descripcion: `Consolidado ${existe.consecutivo} anulado · ${existe.entidadNombre} (NIT ${existe.empresaNit}) · ${existe.cantidadRegistros} líneas`,
+    cambios: {
+      antes: {
+        consecutivo: existe.consecutivo,
+        cantidadRegistros: existe.cantidadRegistros,
+        valorTotalInformado: existe.valorTotalInformado.toString(),
+      },
+      despues: {},
+      campos: ['consecutivo', 'cantidadRegistros', 'valorTotalInformado'],
+    },
+  });
+
   revalidatePath('/admin/soporte/cartera');
   revalidatePath('/admin/administrativo/cartera');
   return { ok: true, mensaje: `${existe.consecutivo} anulado` };

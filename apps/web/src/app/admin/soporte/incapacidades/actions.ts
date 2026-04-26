@@ -5,6 +5,7 @@ import type { IncapacidadEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { emitirNotificacion } from '@/lib/notificaciones';
+import { auditarEvento } from '@/lib/auditoria';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -68,6 +69,26 @@ export async function gestionSoporteIncapAction(
     });
   });
 
+  // Bitácora — solo registramos cambios de estado (las notas sin cambio
+  // ya quedan en IncapacidadGestion). Los cambios de estado son los
+  // momentos de plata: aprobada/pagada/rechazada determinan si el
+  // cotizante recibe o no su incapacidad.
+  if (cambio) {
+    const labelEstado = cambio.replaceAll('_', ' ').toLowerCase();
+    await auditarEvento({
+      entidad: 'Incapacidad',
+      entidadId: incapacidadId,
+      accion: 'GESTIONAR_SOPORTE',
+      entidadSucursalId: inc.sucursalId,
+      descripcion: `Soporte cambió ${inc.consecutivo} a ${labelEstado} · ${desc.slice(0, 80)}`,
+      cambios: {
+        antes: { estado: inc.estado },
+        despues: { estado: cambio },
+        campos: ['estado'],
+      },
+    });
+  }
+
   // Notificar al aliado dueño/usuario de la sucursal: soporte gestionó
   // su incapacidad. Adjuntamos el contexto del cotizante para que el
   // aliado entienda de qué incapacidad se trata sin abrir el detalle.
@@ -97,10 +118,35 @@ export async function anularIncapacidadAction(incapacidadId: string): Promise<Ac
   await requireStaff();
   const inc = await prisma.incapacidad.findUnique({
     where: { id: incapacidadId },
-    select: { id: true, consecutivo: true },
+    select: {
+      id: true,
+      consecutivo: true,
+      estado: true,
+      sucursalId: true,
+      tipo: true,
+    },
   });
   if (!inc) return { error: 'Incapacidad no encontrada' };
+
   await prisma.incapacidad.delete({ where: { id: incapacidadId } });
+
+  await auditarEvento({
+    entidad: 'Incapacidad',
+    entidadId: incapacidadId,
+    accion: 'ANULAR',
+    entidadSucursalId: inc.sucursalId,
+    descripcion: `Incapacidad ${inc.consecutivo} (${inc.tipo}) eliminada (estaba en ${inc.estado})`,
+    cambios: {
+      antes: {
+        consecutivo: inc.consecutivo,
+        estado: inc.estado,
+        tipo: inc.tipo,
+      },
+      despues: {},
+      campos: ['consecutivo', 'estado', 'tipo'],
+    },
+  });
+
   revalidatePath('/admin/soporte/incapacidades');
   revalidatePath('/admin/administrativo/incapacidades');
   return { ok: true };

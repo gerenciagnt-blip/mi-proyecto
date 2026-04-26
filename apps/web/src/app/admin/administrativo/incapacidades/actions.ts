@@ -16,6 +16,7 @@ import {
   IncapacidadDocumentoTipoEnum,
 } from '@/lib/incapacidades/validations';
 import { emitirNotificacion } from '@/lib/notificaciones';
+import { auditarCreate } from '@/lib/auditoria';
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -304,6 +305,24 @@ export async function radicarIncapacidadAction(
       descripcion: `Radicación inicial · ${archivos.length} documento(s) adjunto(s).`,
       userId,
       userName,
+    },
+  });
+
+  // Bitácora — radicación. Snapshot con los campos clave (consecutivo,
+  // tipo, fechas, días). No metemos los documentos en el diff porque van
+  // como tabla aparte; el conteo en `descripcion` ya es suficiente.
+  await auditarCreate({
+    entidad: 'Incapacidad',
+    entidadId: incapacidad.id,
+    entidadSucursalId: cotizante.sucursalId,
+    descripcion: `Incapacidad ${consecutivo} radicada · ${d.tipo.replaceAll('_', ' ').toLowerCase()} · ${dias} día(s) · ${archivos.length} doc(s)`,
+    despues: {
+      consecutivo,
+      tipo: d.tipo,
+      fechaInicio: d.fechaInicio.toISOString().slice(0, 10),
+      fechaFin: d.fechaFin.toISOString().slice(0, 10),
+      diasIncapacidad: dias,
+      cotizanteId: cotizante.id,
     },
   });
 

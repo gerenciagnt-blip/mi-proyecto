@@ -6,6 +6,7 @@ import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { emitirNotificacion } from '@/lib/notificaciones';
+import { auditarEvento } from '@/lib/auditoria';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -100,6 +101,26 @@ export async function gestionarCarteraAliadoAction(
       },
     });
   });
+
+  // Bitácora — solo si hubo cambio de estado (la gestión sin cambio ya
+  // queda en CarteraGestion, y duplicarla acá es ruido).
+  if (nuevoEstado) {
+    await auditarEvento({
+      entidad: 'CarteraDetallado',
+      entidadId: detalladoId,
+      accion: 'GESTIONAR_ALIADO',
+      entidadSucursalId: linea.sucursalAsignadaId,
+      descripcion:
+        nuevoEstado === 'PAGADA_CARTERA_REAL'
+          ? `Aliado marcó como PAGADA · ${desc.slice(0, 80)}`
+          : `Aliado revertió pago a CARTERA_REAL · ${desc.slice(0, 80)}`,
+      cambios: {
+        antes: { estado: linea.estado },
+        despues: { estado: nuevoEstado },
+        campos: ['estado'],
+      },
+    });
+  }
 
   // Notificar a SOPORTE: el aliado registró una gestión sobre cartera.
   // Adjuntamos el contexto del cotizante para que soporte abra directo el
