@@ -1,0 +1,84 @@
+name: Auditoría purge (monthly)
+
+# Corre el día 1 de cada mes a las 5 AM UTC (≈ 12 AM Colombia).
+# El día 1 está bien porque ya pasaron las cargas pesadas del cierre
+# del mes anterior y la BD está más tranquila.
+# También dispara manual desde la UI de Actions.
+on:
+  schedule:
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry run (solo cuenta, no borra)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      meses:
+        description: 'Umbral en meses (default 12)'
+        required: false
+        default: '12'
+        type: string
+
+jobs:
+  purge:
+    name: Limpieza bitácora
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      # Misma verificación que el job diario de retención — si el secret
+      # DATABASE_URL viene mal, falla con mensaje claro.
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql:// (longitud=${#DATABASE_URL_RAW}). Re-edita el secret en GitHub → Settings → Secrets."
+            exit 1
+          fi
+          echo "✓ DATABASE_URL tiene forma válida (longitud=${#DATABASE_URL_RAW})"
+
+      - name: Run auditoria purge
+        working-directory: apps/cli
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          MESES="${{ inputs.meses || '12' }}"
+          if [ "${{ inputs.dry }}" = "true" ]; then
+            pnpm exec tsx src/index.ts auditoria:purge --dry --meses "$MESES"
+          else
+            pnpm exec tsx src/index.ts auditoria:purge --meses "$MESES"
+          fi

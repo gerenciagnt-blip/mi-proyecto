@@ -4,6 +4,7 @@ import { APP_NAME, APP_VERSION } from '@pila/core';
 import { adminCreateCommand } from './commands/admin-create.js';
 import { resetPasswordCommand } from './commands/reset-password.js';
 import { retentionRunCommand } from './commands/retention-run.js';
+import { auditoriaPurgeCommand } from './commands/auditoria-purge.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
@@ -60,6 +61,15 @@ program
   .option('--module <modulo>', 'Solo ejecuta un módulo (incapacidades | soporte-af | all)', 'all')
   .action(async (options: { dry?: boolean; module?: string }) => {
     await retentionRunCommand(options);
+  });
+
+program
+  .command('auditoria:purge')
+  .description('Purga registros de bitácora con más de N meses (default 12)')
+  .option('--dry', 'Simula sin borrar (solo cuenta candidatos)')
+  .option('--meses <n>', 'Umbral en meses (default 12)', (v) => (v ? parseInt(v, 10) : undefined))
+  .action(async (options: { dry?: boolean; meses?: number }) => {
+    await auditoriaPurgeCommand(options);
   });
 
 program
