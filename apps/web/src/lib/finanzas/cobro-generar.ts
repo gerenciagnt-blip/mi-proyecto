@@ -41,8 +41,11 @@ type AfiliacionMinima = {
   regimen: Regimen | null;
 };
 
-/** Regla de exclusión: duración de afiliación < 6 días → no cobra mensualidad. */
-function excluirPorRetiroCorto(af: AfiliacionMinima): boolean {
+/**
+ * Regla de exclusión: duración de afiliación < 6 días → no cobra mensualidad.
+ * Exportado para tests — no usar fuera del módulo finanzas.
+ */
+export function excluirPorRetiroCorto(af: AfiliacionMinima): boolean {
   if (!af.fechaRetiro) return false;
   const msDia = 1000 * 60 * 60 * 24;
   const diff = af.fechaRetiro.getTime() - af.fechaIngreso.getTime();
@@ -50,8 +53,10 @@ function excluirPorRetiroCorto(af: AfiliacionMinima): boolean {
   return dias < DIAS_MINIMOS_MENSUALIDAD;
 }
 
-/** yyyy-mm-15 del mes SIGUIENTE al período. */
-function calcularFechaLimite(periodoAnio: number, periodoMes: number): Date {
+/**
+ * yyyy-mm-15 del mes SIGUIENTE al período. Exportado para tests.
+ */
+export function calcularFechaLimite(periodoAnio: number, periodoMes: number): Date {
   // mes en período es 1..12; siguiente mes puede rollear a enero del año sig.
   const anio = periodoMes === 12 ? periodoAnio + 1 : periodoAnio;
   const mes = periodoMes === 12 ? 1 : periodoMes + 1;

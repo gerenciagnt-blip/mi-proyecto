@@ -124,6 +124,92 @@ export async function listarRecientes(
   }));
 }
 
+export type ListarHistoricoFiltros = {
+  tipo?: NotificacionTipo;
+  /** "todas" | "leidas" | "no_leidas" */
+  estadoLectura?: 'todas' | 'leidas' | 'no_leidas';
+  /** Texto a buscar en título o mensaje (case-insensitive). */
+  q?: string;
+  desde?: Date;
+  hasta?: Date;
+  /** Paginación 1-indexed. */
+  page?: number;
+  pageSize?: number;
+};
+
+export type ListarHistoricoResult = {
+  items: NotificacionResumen[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+/**
+ * Lista paginada con filtros para la página /admin/notificaciones.
+ * No es lo mismo que `listarRecientes` (que solo trae las últimas 20 sin
+ * filtros, para el dropdown de la campana). Esta query es más cara —
+ * usarla solo en la página completa.
+ */
+export async function listarHistorico(
+  userId: string,
+  role: Role,
+  sucursalId: string | null,
+  filtros: ListarHistoricoFiltros = {},
+): Promise<ListarHistoricoResult> {
+  const page = Math.max(1, filtros.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, filtros.pageSize ?? 25));
+
+  const where: Prisma.NotificacionWhereInput = {
+    ...whereVisibles(userId, role, sucursalId),
+  };
+  if (filtros.tipo) where.tipo = filtros.tipo;
+  if (filtros.q && filtros.q.trim().length > 0) {
+    const q = filtros.q.trim();
+    where.OR = [
+      { titulo: { contains: q, mode: 'insensitive' } },
+      { mensaje: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+  if (filtros.desde || filtros.hasta) {
+    where.createdAt = {};
+    if (filtros.desde) where.createdAt.gte = filtros.desde;
+    if (filtros.hasta) where.createdAt.lte = filtros.hasta;
+  }
+  if (filtros.estadoLectura === 'leidas') {
+    where.lecturas = { some: { userId } };
+  } else if (filtros.estadoLectura === 'no_leidas') {
+    where.lecturas = { none: { userId } };
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.notificacion.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { lecturas: { where: { userId }, select: { id: true } } },
+    }),
+    prisma.notificacion.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((r) => ({
+      id: r.id,
+      tipo: r.tipo,
+      titulo: r.titulo,
+      mensaje: r.mensaje,
+      href: r.href,
+      createdAt: r.createdAt,
+      leida: r.lecturas.length > 0,
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
 /** Marca una notificación como leída por un usuario (idempotente). */
 export async function marcarLeida(notificacionId: string, userId: string): Promise<void> {
   // Validamos que el usuario realmente sea destinatario antes de crear la

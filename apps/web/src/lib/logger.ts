@@ -29,6 +29,39 @@ import { pino, type Logger } from 'pino';
 const isDev = process.env.NODE_ENV !== 'production';
 
 /**
+ * Hook a Sentry: cuando un log con nivel >= 50 (error/fatal) sale, se
+ * captura también en Sentry. Lazy import para no cargar el SDK si no
+ * está configurado.
+ *
+ * No hacemos `await` — el envío a Sentry es fire-and-forget y no debe
+ * bloquear ni romper el flujo del logger.
+ */
+async function forwardToSentry(level: number, obj: unknown): Promise<void> {
+  // Niveles pino: trace=10, debug=20, info=30, warn=40, error=50, fatal=60
+  if (level < 50) return;
+  if (!process.env.SENTRY_DSN) return;
+  try {
+    const { captureError } = await import('./sentry');
+    // Si el log incluyó un Error en el objeto, lo capturamos como tal.
+    let err: unknown = obj;
+    let extra: Record<string, unknown> | undefined;
+    if (obj && typeof obj === 'object') {
+      const objWithErr = obj as Record<string, unknown>;
+      if (objWithErr.err instanceof Error) {
+        err = objWithErr.err;
+        extra = { ...objWithErr };
+        delete extra.err;
+      } else {
+        extra = { ...objWithErr };
+      }
+    }
+    await captureError(err, extra);
+  } catch {
+    // Silencioso: no debemos provocar más errores desde el logger.
+  }
+}
+
+/**
  * Lista de propiedades que NUNCA se loggean. Si aparecen en un objeto
  * pasado a un log, se reemplazan por "[REDACTED]". Cubre los nombres
  * típicos de credenciales que circulan por el código (PagoSimple,
@@ -55,6 +88,17 @@ export const logger: Logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
   base: { service: '@pila/web' },
   redact: { paths: REDACT_KEYS, censor: '[REDACTED]' },
+  // Hook a Sentry — se llama después de cada log emitido. No bloquea.
+  hooks: {
+    logMethod(args, method, levelNum) {
+      if (levelNum >= 50) {
+        // El primer arg de pino es el objeto extra (si lo hay) o el mensaje.
+        const obj = typeof args[0] === 'object' ? args[0] : undefined;
+        void forwardToSentry(levelNum, obj);
+      }
+      method.apply(this, args);
+    },
+  },
   ...(isDev
     ? {
         transport: {

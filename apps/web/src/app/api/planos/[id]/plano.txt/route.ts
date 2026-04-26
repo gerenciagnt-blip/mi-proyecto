@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { generarPlano } from '@/lib/planos/generar';
+import { cargarPlanillaParaPlano, cotizantesConMensualidadPrevia } from '@/lib/planos/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,85 +25,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   await requireStaff();
   const { id } = await params;
 
-  const planilla = await prisma.planilla.findUnique({
-    where: { id },
-    include: {
-      periodo: true,
-      empresa: {
-        include: {
-          departamentoRef: { select: { codigo: true } },
-          municipioRef: { select: { codigo: true } },
-          arl: { select: { codigo: true, codigoMinSalud: true } },
-        },
-      },
-      cotizante: {
-        include: {
-          departamento: { select: { codigo: true } },
-          municipio: { select: { codigo: true } },
-        },
-      },
-      sucursal: { select: { codigo: true, nombre: true } },
-      createdBy: {
-        include: {
-          sucursal: { select: { codigo: true, nombre: true } },
-        },
-      },
-      comprobantes: {
-        include: {
-          comprobante: {
-            include: {
-              cuentaCobro: {
-                include: {
-                  sucursal: { select: { codigo: true, nombre: true } },
-                },
-              },
-              liquidaciones: {
-                include: {
-                  liquidacion: {
-                    include: {
-                      afiliacion: {
-                        include: {
-                          cotizante: {
-                            include: {
-                              departamento: { select: { codigo: true } },
-                              municipio: { select: { codigo: true } },
-                            },
-                          },
-                          empresa: {
-                            include: {
-                              departamentoRef: { select: { codigo: true } },
-                              municipioRef: { select: { codigo: true } },
-                              arl: { select: { codigo: true, codigoMinSalud: true } },
-                            },
-                          },
-                          tipoCotizante: { select: { codigo: true } },
-                          subtipo: { select: { codigo: true } },
-                          planSgss: {
-                            select: {
-                              incluyeEps: true,
-                              incluyeAfp: true,
-                              incluyeArl: true,
-                              incluyeCcf: true,
-                            },
-                          },
-                          actividadEconomica: { select: { codigoCiiu: true } },
-                          eps: { select: { codigo: true, codigoMinSalud: true } },
-                          afp: { select: { codigo: true, codigoMinSalud: true } },
-                          arl: { select: { codigo: true, codigoMinSalud: true } },
-                          ccf: { select: { codigo: true, codigoMinSalud: true } },
-                        },
-                      },
-                      conceptos: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
+  const planilla = await cargarPlanillaParaPlano(id);
 
   if (!planilla) {
     return NextResponse.json({ error: 'Planilla no existe' }, { status: 404 });
@@ -112,11 +34,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Planilla anulada — plano no disponible' }, { status: 410 });
   }
 
-  // ----- Query de mensualidades previas para marcar ING -----
   // Un cotizante es "primera mensualidad" si NO tiene otra mensualidad
-  // procesada fuera de esta planilla. Se busca a través de las
-  // liquidaciones (porque un comprobante EMPRESA_CC puede tener el
-  // cotizanteId en null pero la liquidación sí lo referencia).
+  // procesada fuera de esta planilla. La regla está en queries.ts.
   const cotizanteIds = Array.from(
     new Set(
       planilla.comprobantes
@@ -125,32 +44,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ),
   );
   const comprobanteIdsPlanilla = planilla.comprobantes.map((cp) => cp.comprobanteId);
-
-  let cotizantesConMensualidadPrevia = new Set<string>();
-  if (cotizanteIds.length > 0) {
-    const liqsPrevias = await prisma.liquidacion.findMany({
-      where: {
-        tipo: 'MENSUALIDAD',
-        afiliacion: { cotizanteId: { in: cotizanteIds } },
-        comprobantes: {
-          some: {
-            comprobante: {
-              estado: { not: 'ANULADO' },
-              procesadoEn: { not: null },
-              id: { notIn: comprobanteIdsPlanilla },
-            },
-          },
-        },
-      },
-      select: { afiliacion: { select: { cotizanteId: true } } },
-    });
-    cotizantesConMensualidadPrevia = new Set(
-      liqsPrevias.map((l) => l.afiliacion.cotizanteId).filter((x): x is string => x != null),
-    );
-  }
+  const conMensualidadPrevia = await cotizantesConMensualidadPrevia(
+    cotizanteIds,
+    comprobanteIdsPlanilla,
+  );
 
   try {
-    const { contenido, filename } = generarPlano(planilla, cotizantesConMensualidadPrevia);
+    const { contenido, filename } = generarPlano(planilla, conMensualidadPrevia);
     return new NextResponse(contenido, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',

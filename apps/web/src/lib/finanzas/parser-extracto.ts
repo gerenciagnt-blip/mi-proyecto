@@ -93,25 +93,59 @@ function parseDateLoose(v: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Convierte un string monetario a número, manejando los formatos típicos
+ * que aparecen en extractos:
+ *
+ *   "1,234,567"     → 1234567   (US miles)
+ *   "1.234.567"     → 1234567   (LatAm miles)
+ *   "70,100.00"     → 70100     (US miles + decimal)
+ *   "1.234,56"      → 1234.56   (LatAm miles + decimal)
+ *   "500,000"       → 500000    (LatAm/COP miles, NO decimal)
+ *   "100.50"        → 100.50    (decimal anglo)
+ *   "$ 7,390,115"   → 7390115   (con prefijo de moneda)
+ *
+ * Heurística: el ÚLTIMO separador (último `,` o `.`) decide si es decimal
+ * o miles según cuántos dígitos lo siguen.
+ *   - 1 o 2 dígitos después → decimal.
+ *   - 3 dígitos exactos → miles (es el patrón de bloques de 3).
+ *   - Otra cantidad → ambiguo, asumimos miles (ej. "1234567" no llega acá).
+ *
+ * Truncamos a entero después porque para finanzas PILA los movimientos no
+ * llevan centavos. El llamador puede usar el valor con decimales si lo
+ * necesita — la función NO trunca.
+ */
 function parseValorLoose(v: unknown): number | null {
   if (typeof v === 'number') return v;
   if (typeof v !== 'string') return null;
-  let s = v.trim();
+  const s0 = v.trim();
+  if (!s0) return null;
+  const s = s0.replace(/\$|\s|COP/gi, '');
   if (!s) return null;
-  // Quita símbolos y espacios: "$1.234.567,89" o "1,234,567.89"
-  s = s.replace(/\$|\s|COP/gi, '');
-  // Si tiene coma y punto, la última separa decimal
+
   const lastComma = s.lastIndexOf(',');
   const lastDot = s.lastIndexOf('.');
-  if (lastComma > lastDot) {
-    // "1.234,56" → decimal es coma
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else {
-    // "1,234.56" o "1234.56"
-    s = s.replace(/,/g, '');
+
+  // Sin separadores: número crudo.
+  if (lastComma === -1 && lastDot === -1) {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
   }
-  const n = Number(s);
-  return isNaN(n) ? null : n;
+
+  const lastSepIdx = Math.max(lastComma, lastDot);
+  const digitosDespuesDelUltimoSep = s.length - lastSepIdx - 1;
+
+  if (digitosDespuesDelUltimoSep === 1 || digitosDespuesDelUltimoSep === 2) {
+    // El último separador es decimal. Los anteriores son miles → se quitan.
+    const intPart = s.slice(0, lastSepIdx).replace(/[.,]/g, '');
+    const decPart = s.slice(lastSepIdx + 1);
+    const n = Number(`${intPart}.${decPart}`);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // 3 o más dígitos después del último separador → todo es miles.
+  const n = Number(s.replace(/[.,]/g, ''));
+  return Number.isFinite(n) ? n : null;
 }
 
 function hashMovimiento(banco: string, fecha: Date, valor: number, concepto: string): string {

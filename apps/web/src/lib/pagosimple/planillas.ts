@@ -28,6 +28,7 @@ import { pagosimpleRequest } from './client';
 import { getBaseAuthHeaders, getFullAuthHeaders } from './auth';
 import { requirePagosimpleConfig } from './config';
 import { generarPlano } from '@/lib/planos/generar';
+import { cargarPlanillaParaPlano, cotizantesConMensualidadPrevia } from '@/lib/planos/queries';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('pagosimple:planillas');
@@ -75,88 +76,14 @@ function extractPayrollIds(resp: PayrollValidateResponse): {
 async function obtenerContenidoPlano(
   planillaId: string,
 ): Promise<{ contenido: string; filename: string } | { error: string }> {
-  const planilla = await prisma.planilla.findUnique({
-    where: { id: planillaId },
-    include: {
-      periodo: true,
-      empresa: {
-        include: {
-          departamentoRef: { select: { codigo: true } },
-          municipioRef: { select: { codigo: true } },
-          arl: { select: { codigo: true, codigoMinSalud: true } },
-        },
-      },
-      cotizante: {
-        include: {
-          departamento: { select: { codigo: true } },
-          municipio: { select: { codigo: true } },
-        },
-      },
-      sucursal: { select: { codigo: true, nombre: true } },
-      createdBy: {
-        include: { sucursal: { select: { codigo: true, nombre: true } } },
-      },
-      comprobantes: {
-        include: {
-          comprobante: {
-            include: {
-              cuentaCobro: {
-                include: { sucursal: { select: { codigo: true, nombre: true } } },
-              },
-              liquidaciones: {
-                include: {
-                  liquidacion: {
-                    include: {
-                      afiliacion: {
-                        include: {
-                          cotizante: {
-                            include: {
-                              departamento: { select: { codigo: true } },
-                              municipio: { select: { codigo: true } },
-                            },
-                          },
-                          empresa: {
-                            include: {
-                              departamentoRef: { select: { codigo: true } },
-                              municipioRef: { select: { codigo: true } },
-                              arl: { select: { codigo: true, codigoMinSalud: true } },
-                            },
-                          },
-                          tipoCotizante: { select: { codigo: true } },
-                          subtipo: { select: { codigo: true } },
-                          planSgss: {
-                            select: {
-                              incluyeEps: true,
-                              incluyeAfp: true,
-                              incluyeArl: true,
-                              incluyeCcf: true,
-                            },
-                          },
-                          actividadEconomica: { select: { codigoCiiu: true } },
-                          eps: { select: { codigo: true, codigoMinSalud: true } },
-                          afp: { select: { codigo: true, codigoMinSalud: true } },
-                          arl: { select: { codigo: true, codigoMinSalud: true } },
-                          ccf: { select: { codigo: true, codigoMinSalud: true } },
-                        },
-                      },
-                      conceptos: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
+  const planilla = await cargarPlanillaParaPlano(planillaId);
 
   if (!planilla) return { error: 'Planilla no encontrada.' };
   if (planilla.estado === 'ANULADA') {
     return { error: 'La planilla está anulada — no se puede enviar a PagoSimple.' };
   }
 
-  // Cotizantes con mensualidad previa (para flag ING)
+  // Cotizantes con mensualidad previa (para flag ING en la línea cotizante)
   const cotizanteIds = Array.from(
     new Set(
       planilla.comprobantes
@@ -165,30 +92,12 @@ async function obtenerContenidoPlano(
     ),
   );
   const comprobanteIdsPlanilla = planilla.comprobantes.map((cp) => cp.comprobanteId);
-  let cotizantesConMensualidadPrevia = new Set<string>();
-  if (cotizanteIds.length > 0) {
-    const liqsPrevias = await prisma.liquidacion.findMany({
-      where: {
-        tipo: 'MENSUALIDAD',
-        afiliacion: { cotizanteId: { in: cotizanteIds } },
-        comprobantes: {
-          some: {
-            comprobante: {
-              estado: { not: 'ANULADO' },
-              procesadoEn: { not: null },
-              id: { notIn: comprobanteIdsPlanilla },
-            },
-          },
-        },
-      },
-      select: { afiliacion: { select: { cotizanteId: true } } },
-    });
-    cotizantesConMensualidadPrevia = new Set(
-      liqsPrevias.map((l) => l.afiliacion.cotizanteId).filter((x): x is string => x != null),
-    );
-  }
+  const conMensualidadPrevia = await cotizantesConMensualidadPrevia(
+    cotizanteIds,
+    comprobanteIdsPlanilla,
+  );
 
-  const { contenido, filename } = generarPlano(planilla, cotizantesConMensualidadPrevia);
+  const { contenido, filename } = generarPlano(planilla, conMensualidadPrevia);
   return { contenido, filename };
 }
 

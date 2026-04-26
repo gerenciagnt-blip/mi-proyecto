@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -144,6 +145,17 @@ export function NotificacionesBell() {
               </button>
             )}
           </header>
+
+          {/* Footer con link al histórico completo */}
+          <footer className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-center">
+            <Link
+              href="/admin/notificaciones"
+              onClick={() => setOpen(false)}
+              className="text-[11px] font-medium text-brand-blue hover:underline"
+            >
+              Ver histórico completo →
+            </Link>
+          </footer>
 
           <div className="max-h-[420px] overflow-y-auto">
             {loading && items.length === 0 ? (
