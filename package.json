@@ -16,6 +16,7 @@
     "db:migrate": "pnpm --filter @pila/db prisma:migrate",
     "db:studio": "pnpm --filter @pila/db prisma:studio",
     "cli": "pnpm --filter @pila/cli start --",
+    "bot-colpatria": "pnpm --filter @pila/bot-colpatria start --",
     "test": "pnpm -r --if-present test",
     "prepare": "husky"
   },
@@ -24,6 +25,9 @@
       "prettier --write"
     ],
     "apps/cli/**/*.ts": [
+      "prettier --write"
+    ],
+    "apps/bot-colpatria/**/*.ts": [
       "prettier --write"
     ],
     "packages/**/*.{ts,tsx}": [

@@ -1,0 +1,26 @@
+{
+  "name": "@pila/bot-colpatria",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "dotenv -e ../../.env -- tsx src/index.ts",
+    "test-login": "dotenv -e ../../.env -- tsx src/index.ts test-login",
+    "procesar": "dotenv -e ../../.env -- tsx src/index.ts procesar",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pila/core": "workspace:*",
+    "@pila/db": "workspace:*",
+    "commander": "^13.0.0",
+    "playwright": "^1.49.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "dotenv-cli": "^8.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
