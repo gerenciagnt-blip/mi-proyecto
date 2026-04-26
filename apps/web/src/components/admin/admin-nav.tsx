@@ -26,6 +26,7 @@ import {
   DollarSign,
   BarChart3,
   History,
+  Activity,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -37,6 +38,8 @@ const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
 /** Staff + dueño aliado — para entradas que el aliado debe poder ver
  *  scopeadas a su sucursal (ej. bitácora). */
 const STAFF_Y_ALIADO_OWNER: Role[] = ['ADMIN', 'SOPORTE', 'ALIADO_OWNER'];
+/** Solo ADMIN — operaciones internas/sistema. */
+const ADMIN_ONLY: Role[] = ['ADMIN'];
 
 type NavItem = {
   label: string;
@@ -72,6 +75,12 @@ const NAV: NavItem[] = [
         href: '/admin/configuracion/bitacora',
         icon: History,
         roles: STAFF_Y_ALIADO_OWNER,
+      },
+      {
+        label: 'Sistema',
+        href: '/admin/sistema',
+        icon: Activity,
+        roles: ADMIN_ONLY,
       },
     ],
   },
