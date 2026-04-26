@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
-import { registrarAuditoria } from '@/lib/auditoria';
+import { registrarAuditoria, auditarEvento } from '@/lib/auditoria';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 
@@ -465,8 +465,42 @@ export async function marcarComprobanteEmitidoAction(comprobanteId: string) {
 export async function anularComprobanteAction(comprobanteId: string) {
   await requireAuth();
   if (!(await comprobanteAccesibleEnScope(comprobanteId))) return;
+
+  // Capturamos info antes del cambio para la bitácora — la sucursal se
+  // resuelve por el cotizante o cuenta de cobro asociados.
+  const antes = await prisma.comprobante.findUnique({
+    where: { id: comprobanteId },
+    select: {
+      consecutivo: true,
+      estado: true,
+      totalGeneral: true,
+      cotizante: { select: { sucursalId: true } },
+      cuentaCobro: { select: { sucursalId: true } },
+    },
+  });
+
   await prisma.comprobante.update({
     where: { id: comprobanteId },
     data: { estado: 'ANULADO' },
   });
+
+  if (antes) {
+    // Anular un comprobante es operación de alto impacto contable —
+    // queda registrada con el estado previo, el total y el consecutivo.
+    await auditarEvento({
+      entidad: 'Comprobante',
+      entidadId: comprobanteId,
+      accion: 'ANULAR',
+      entidadSucursalId: antes.cotizante?.sucursalId ?? antes.cuentaCobro?.sucursalId ?? null,
+      descripcion: `Comprobante ${antes.consecutivo} anulado (estaba en ${antes.estado})`,
+      cambios: {
+        antes: {
+          estado: antes.estado,
+          totalGeneral: antes.totalGeneral.toString(),
+        },
+        despues: { estado: 'ANULADO' },
+        campos: ['estado'],
+      },
+    });
+  }
 }

@@ -5,25 +5,21 @@ import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { auth } from '@/auth';
+import { auditarEvento } from '@/lib/auditoria';
 import {
   calcularLiquidacion,
   persistirLiquidacion,
   type CalcResult,
 } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
-import {
-  debeFacturarseEnPeriodo,
-  opcionesFacturacion,
-} from '../cartera/helpers';
+import { debeFacturarseEnPeriodo, opcionesFacturacion } from '../cartera/helpers';
 
 /**
  * Para cada cotizante de la lista, indica si YA tiene alguna MENSUALIDAD
  * procesada (en cualquier período). Usado para aplicar la regla interna
  * de ARL obligatoria en la primera mensualidad.
  */
-async function cotizantesConMensualidad(
-  cotizanteIds: string[],
-): Promise<Set<string>> {
+async function cotizantesConMensualidad(cotizanteIds: string[]): Promise<Set<string>> {
   if (cotizanteIds.length === 0) return new Set();
   const rows = await prisma.comprobante.findMany({
     where: {
@@ -35,9 +31,7 @@ async function cotizantesConMensualidad(
     select: { cotizanteId: true },
     distinct: ['cotizanteId'],
   });
-  return new Set(
-    rows.map((r) => r.cotizanteId).filter((x): x is string => x != null),
-  );
+  return new Set(rows.map((r) => r.cotizanteId).filter((x): x is string => x != null));
 }
 
 // ============ Tipos compartidos ============
@@ -84,8 +78,7 @@ export async function buscarCotizanteAction(
 
   // Scope: un aliado sólo encuentra cotizantes de su sucursal.
   const scope = await getUserScope();
-  const cotizanteScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cotizanteScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
 
   const cotizante = await prisma.cotizante.findFirst({
     where: { numeroDocumento: doc, ...cotizanteScope },
@@ -175,8 +168,7 @@ export async function listarCuentasCobroAction(
 
   // Scope: aliado sólo ve SUS cuentas de cobro.
   const scope = await getUserScope();
-  const ccScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const ccScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
 
   let excluirIds = new Set<string>();
   if (soloSinMovimiento) {
@@ -243,9 +235,7 @@ export async function listarAsesoresAction(
       select: { asesorComercialId: true },
     });
     excluirIds = new Set(
-      conMovimiento
-        .map((c) => c.asesorComercialId)
-        .filter((id): id is string => id != null),
+      conMovimiento.map((c) => c.asesorComercialId).filter((id): id is string => id != null),
     );
   }
 
@@ -327,9 +317,7 @@ export type PreviewResult = {
  * destinatario elegidos. Sirve para mostrar la tabla-preview antes de
  * pre-facturar. No crea registros en BD.
  */
-export async function previsualizarTransaccionAction(
-  input: PreviewInput,
-): Promise<PreviewResult> {
+export async function previsualizarTransaccionAction(input: PreviewInput): Promise<PreviewResult> {
   await requireAuth();
 
   const periodo = await prisma.periodoContable.findUnique({
@@ -341,9 +329,7 @@ export async function previsualizarTransaccionAction(
   const scope = await getUserScope();
   if (!scope) return { error: 'Sesión inválida' };
   const afScopeCotizante =
-    scope.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
   // Recopila las afiliaciones a liquidar
   let afIds: string[] = [];
@@ -395,10 +381,7 @@ export async function previsualizarTransaccionAction(
           where: { id: input.asesorComercialId },
           select: { sucursalId: true },
         });
-        if (
-          !asesor ||
-          (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)
-        ) {
+        if (!asesor || (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)) {
           return { error: 'No tienes permiso sobre este asesor' };
         }
       }
@@ -461,9 +444,7 @@ export async function previsualizarTransaccionAction(
 
   // Para el flag ARL obligatoria: mapea qué cotizantes ya tienen mensualidad
   const cotIds = Array.from(
-    new Set(
-      afiliaciones.map((a) => a.cotizanteId).filter((x): x is string => x != null),
-    ),
+    new Set(afiliaciones.map((a) => a.cotizanteId).filter((x): x is string => x != null)),
   );
   const conMens = await cotizantesConMensualidad(cotIds);
 
@@ -620,9 +601,7 @@ export type ProcesarResult = {
  * crea/actualiza las liquidaciones y emite UN comprobante consolidado
  * con los datos de pre-factura.
  */
-export async function procesarTransaccionAction(
-  input: ProcesarInput,
-): Promise<ProcesarResult> {
+export async function procesarTransaccionAction(input: ProcesarInput): Promise<ProcesarResult> {
   await requireAuth();
   const session = await auth();
   const userId = session?.user?.id ?? null;
@@ -647,9 +626,7 @@ export async function procesarTransaccionAction(
   const scope = await getUserScope();
   if (!scope) return { error: 'Sesión inválida' };
   const afScopeCotizante =
-    scope.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
   switch (input.tipo) {
     case 'INDIVIDUAL': {
@@ -709,10 +686,7 @@ export async function procesarTransaccionAction(
           where: { id: input.asesorComercialId },
           select: { sucursalId: true },
         });
-        if (
-          !asesor ||
-          (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)
-        ) {
+        if (!asesor || (asesor.sucursalId !== null && asesor.sucursalId !== scope.sucursalId)) {
           return { error: 'No tienes permiso sobre este asesor' };
         }
       }
@@ -782,8 +756,7 @@ export async function procesarTransaccionAction(
       );
 
       // ARL interna obligatoria si: es primera mensualidad OR hay novedad de retiro
-      const aplicaArlObligatoria =
-        !!input.aplicaNovedadRetiro || esPrimeraMensualidad;
+      const aplicaArlObligatoria = !!input.aplicaNovedadRetiro || esPrimeraMensualidad;
       const r = await persistirLiquidacion(prisma, {
         periodoId: input.periodoId,
         afiliacionId: afId,
@@ -866,8 +839,7 @@ export async function procesarTransaccionAction(
   const fechaPago = input.fechaPago ? parseFechaLocal(input.fechaPago) : ahora;
 
   // La novedad de retiro sólo aplica a INDIVIDUAL (un cotizante).
-  const aplicaNovedadRetiro =
-    input.tipo === 'INDIVIDUAL' && !!input.aplicaNovedadRetiro;
+  const aplicaNovedadRetiro = input.tipo === 'INDIVIDUAL' && !!input.aplicaNovedadRetiro;
 
   const comprobante = await prisma.$transaction(async (tx) => {
     const comp = await tx.comprobante.create({
@@ -890,13 +862,10 @@ export async function procesarTransaccionAction(
         formaPago: input.formaPago,
         fechaPago,
         medioPagoId:
-          input.formaPago === 'POR_MEDIO_PAGO' && input.medioPagoId
-            ? input.medioPagoId
-            : null,
+          input.formaPago === 'POR_MEDIO_PAGO' && input.medioPagoId ? input.medioPagoId : null,
         procesadoEn: ahora,
         emitidoEn: ahora,
-        valorAdminOverride:
-          input.valorAdminOverride != null ? input.valorAdminOverride : null,
+        valorAdminOverride: input.valorAdminOverride != null ? input.valorAdminOverride : null,
         aplicaNovedadRetiro,
         createdById: userId,
         liquidaciones: { create: liqIds.map((id) => ({ liquidacionId: id })) },
@@ -976,25 +945,21 @@ export async function anularTransaccionAction(
       (comp.cotizante && comp.cotizante.sucursalId === mia) ||
       (comp.cuentaCobro && comp.cuentaCobro.sucursalId === mia) ||
       (comp.asesorComercial &&
-        (comp.asesorComercial.sucursalId === null ||
-          comp.asesorComercial.sucursalId === mia));
+        (comp.asesorComercial.sucursalId === null || comp.asesorComercial.sucursalId === mia));
     if (!permitido) return { error: 'No tienes permiso sobre este comprobante' };
   }
 
   // Bloqueo por planilla pagada (definitivo)
   const pagada = comp.planillas.find((p) => p.planilla.estado === 'PAGADA');
   if (pagada) {
-    const num =
-      pagada.planilla.numeroPlanillaExt ?? pagada.planilla.consecutivo;
+    const num = pagada.planilla.numeroPlanillaExt ?? pagada.planilla.consecutivo;
     return {
       error: `No se puede anular: el comprobante ya fue pagado al operador PILA en la planilla ${num}.`,
     };
   }
 
   // Bloqueo por planilla guardada (provisional — se desbloquea al anular la planilla)
-  const guardada = comp.planillas.find(
-    (p) => p.planilla.estado === 'CONSOLIDADO',
-  );
+  const guardada = comp.planillas.find((p) => p.planilla.estado === 'CONSOLIDADO');
   if (guardada) {
     return {
       error: `Bloqueado: el comprobante está en la planilla ${guardada.planilla.consecutivo} (Guardada). Anula la planilla en Planos → Guardado antes de anular la transacción.`,
@@ -1031,6 +996,36 @@ export async function anularTransaccionAction(
         });
       }
     }
+  });
+
+  // Bitácora — anulación de comprobante con todos los efectos colaterales:
+  // reactivación de afiliaciones (si aplicaba novedad de retiro) y reapertura
+  // de período (si era MENSUALIDAD y estaba cerrado).
+  const sucursalEntidad =
+    comp.cotizante?.sucursalId ??
+    comp.cuentaCobro?.sucursalId ??
+    comp.asesorComercial?.sucursalId ??
+    null;
+  const efectos: string[] = [];
+  if (comp.aplicaNovedadRetiro && comp.cotizanteId) {
+    efectos.push('reactivó afiliaciones inactivas del cotizante');
+  }
+  if (comp.tipo === 'MENSUALIDAD') {
+    efectos.push('puede haber reabierto el período si estaba cerrado');
+  }
+  await auditarEvento({
+    entidad: 'Comprobante',
+    entidadId: comprobanteId,
+    accion: 'ANULAR_TRANSACCION',
+    entidadSucursalId: sucursalEntidad,
+    descripcion:
+      `Transacción anulada (tipo ${comp.tipo})` +
+      (efectos.length > 0 ? ` · ${efectos.join('; ')}` : ''),
+    cambios: {
+      antes: { estado: comp.estado, tipo: comp.tipo },
+      despues: { estado: 'ANULADO' },
+      campos: ['estado'],
+    },
   });
 
   revalidatePath('/admin/transacciones');

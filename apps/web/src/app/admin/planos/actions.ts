@@ -5,7 +5,7 @@ import { prisma } from '@pila/db';
 import type { Prisma, TipoPlanilla } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
-import { registrarAuditoria } from '@/lib/auditoria';
+import { registrarAuditoria, auditarEvento } from '@/lib/auditoria';
 import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
 import { planillasParaAfiliacion, banderasSubsistemas } from '@/lib/planos/politicas';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
@@ -534,7 +534,14 @@ export async function anularPlanillaAction(planillaId: string): Promise<ActionSt
 
   const planilla = await prisma.planilla.findUnique({
     where: { id: planillaId },
-    select: { estado: true, sucursalId: true },
+    select: {
+      estado: true,
+      sucursalId: true,
+      consecutivo: true,
+      tipoPlanilla: true,
+      totalGeneral: true,
+      _count: { select: { comprobantes: true } },
+    },
   });
   if (!planilla) return { error: 'Planilla no existe' };
   if (planilla.estado === 'PAGADA') {
@@ -558,6 +565,25 @@ export async function anularPlanillaAction(planillaId: string): Promise<ActionSt
     data: {
       estado: 'ANULADA',
       comprobantes: { deleteMany: {} },
+    },
+  });
+
+  // Bitácora — anulación es operación crítica (libera comprobantes para
+  // re-agruparse y afecta cierre del período).
+  await auditarEvento({
+    entidad: 'Planilla',
+    entidadId: planillaId,
+    accion: 'ANULAR',
+    entidadSucursalId: planilla.sucursalId,
+    descripcion: `Planilla ${planilla.consecutivo} (${planilla.tipoPlanilla}) anulada · ${planilla._count.comprobantes} comprobantes liberados`,
+    cambios: {
+      antes: {
+        estado: planilla.estado,
+        totalGeneral: planilla.totalGeneral.toString(),
+        comprobantes: planilla._count.comprobantes,
+      },
+      despues: { estado: 'ANULADA', comprobantes: 0 },
+      campos: ['estado', 'comprobantes'],
     },
   });
 
