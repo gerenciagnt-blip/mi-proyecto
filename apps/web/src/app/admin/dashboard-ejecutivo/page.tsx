@@ -19,6 +19,7 @@ import { cargarAlertasInactividad } from '@/lib/alertas/inactividad';
 import { Alert } from '@/components/ui/alert';
 import { KpiCard } from './kpi-card';
 import { AlertasInactividadSection } from './alertas-inactividad';
+import { AutoSubmitSelect } from './auto-submit-select';
 
 export const metadata = { title: 'Dashboard ejecutivo — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -143,10 +144,9 @@ export default async function DashboardEjecutivoPage({
             <form method="GET" action="/admin/dashboard-ejecutivo">
               <input type="hidden" name="anio" value={anio} />
               <input type="hidden" name="mes" value={mes} />
-              <select
+              <AutoSubmitSelect
                 name="sucursalId"
                 defaultValue={sucursalId ?? ''}
-                onChange={(e) => e.currentTarget.form?.submit()}
                 className="h-9 min-w-[260px] rounded-lg border border-slate-300 bg-white px-2 text-xs"
               >
                 <option value="">Todas las sucursales (consolidado)</option>
@@ -155,7 +155,7 @@ export default async function DashboardEjecutivoPage({
                     {s.codigo} — {s.nombre}
                   </option>
                 ))}
-              </select>
+              </AutoSubmitSelect>
             </form>
           </label>
         )}
@@ -164,10 +164,9 @@ export default async function DashboardEjecutivoPage({
           <form method="GET" action="/admin/dashboard-ejecutivo">
             <input type="hidden" name="sucursalId" value={sucursalId ?? ''} />
             <input type="hidden" name="mes" value={mes} />
-            <select
+            <AutoSubmitSelect
               name="anio"
               defaultValue={anio}
-              onChange={(e) => e.currentTarget.form?.submit()}
               className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs"
             >
               {[anio - 2, anio - 1, anio, anio + 1].map((y) => (
@@ -175,7 +174,7 @@ export default async function DashboardEjecutivoPage({
                   {y}
                 </option>
               ))}
-            </select>
+            </AutoSubmitSelect>
           </form>
         </label>
         <label className="flex flex-col gap-1">
@@ -183,10 +182,9 @@ export default async function DashboardEjecutivoPage({
           <form method="GET" action="/admin/dashboard-ejecutivo">
             <input type="hidden" name="sucursalId" value={sucursalId ?? ''} />
             <input type="hidden" name="anio" value={anio} />
-            <select
+            <AutoSubmitSelect
               name="mes"
               defaultValue={mes}
-              onChange={(e) => e.currentTarget.form?.submit()}
               className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs"
             >
               {MESES.map((m, i) => (
@@ -194,7 +192,7 @@ export default async function DashboardEjecutivoPage({
                   {m}
                 </option>
               ))}
-            </select>
+            </AutoSubmitSelect>
           </form>
         </label>
         <span className="ml-auto self-center text-[10px] text-slate-400">
