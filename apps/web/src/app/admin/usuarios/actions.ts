@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
+import { auditarCreate, auditarUpdate, auditarEvento } from '@/lib/auditoria';
 import { UserCreateSchema, UserUpdateSchema, UserPasswordSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
@@ -52,8 +53,9 @@ export async function createUserAction(
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
 
+  let creado;
   try {
-    await prisma.user.create({
+    creado = await prisma.user.create({
       data: {
         email: parsed.data.email,
         name: parsed.data.name,
@@ -70,6 +72,23 @@ export async function createUserAction(
         : 'Error al crear usuario';
     return { error: msg };
   }
+
+  // El passwordHash se filtra automáticamente por el set de campos
+  // sensibles globales del wrapper (auditarCreate). Auditamos el resto.
+  await auditarCreate({
+    entidad: 'User',
+    entidadId: creado.id,
+    entidadSucursalId: creado.sucursalId,
+    descripcion: `Usuario creado: ${creado.email} (rol ${creado.role})`,
+    despues: {
+      email: creado.email,
+      name: creado.name,
+      role: creado.role,
+      sucursalId: creado.sucursalId,
+      rolCustomId: creado.rolCustomId,
+      active: creado.active,
+    },
+  });
 
   revalidatePath('/admin/usuarios');
   return { ok: true };
@@ -173,6 +192,29 @@ export async function updateUserAction(
     return { error: 'Error al actualizar usuario' };
   }
 
+  // Auditamos el cambio del User. passwordHash se filtra automático.
+  // Si en la misma operación se actualizaron tarifas de sucursal, eso lo
+  // registramos aparte como evento de Sucursal.
+  await auditarUpdate({
+    entidad: 'User',
+    entidadId: id,
+    entidadSucursalId: parsed.data.sucursalId ?? existing.sucursalId,
+    antes: {
+      name: existing.name,
+      role: existing.role,
+      sucursalId: existing.sucursalId,
+      rolCustomId: existing.rolCustomId,
+      active: existing.active,
+    },
+    despues: {
+      name: parsed.data.name,
+      role: parsed.data.role,
+      sucursalId: parsed.data.sucursalId,
+      rolCustomId: parsed.data.rolCustomId,
+      active: parsed.data.active,
+    },
+  });
+
   revalidatePath('/admin/usuarios');
   redirect('/admin/usuarios');
 }
@@ -182,7 +224,22 @@ export async function toggleUserAction(id: string) {
   if (session.user.id === id) return; // no permitir auto-desactivar
   const u = await prisma.user.findUnique({ where: { id } });
   if (!u) return;
-  await prisma.user.update({ where: { id }, data: { active: !u.active } });
+  const nuevoEstado = !u.active;
+  await prisma.user.update({ where: { id }, data: { active: nuevoEstado } });
+
+  await auditarEvento({
+    entidad: 'User',
+    entidadId: id,
+    accion: 'TOGGLE',
+    entidadSucursalId: u.sucursalId,
+    descripcion: `Usuario ${u.email} ${nuevoEstado ? 'activado' : 'desactivado'}`,
+    cambios: {
+      antes: { active: u.active },
+      despues: { active: nuevoEstado },
+      campos: ['active'],
+    },
+  });
+
   revalidatePath('/admin/usuarios');
 }
 
@@ -200,8 +257,25 @@ export async function resetPasswordAction(
     return { error: parsed.error.issues[0]?.message ?? 'Contraseña inválida' };
   }
 
+  const u = await prisma.user.findUnique({
+    where: { id },
+    select: { email: true, sucursalId: true },
+  });
+  if (!u) return { error: 'Usuario no existe' };
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   await prisma.user.update({ where: { id }, data: { passwordHash } });
+
+  // Reset de password: registramos el EVENTO pero NO el valor (el hash
+  // está filtrado por el wrapper, pero además aquí no nos interesa
+  // capturarlo — solo "alguien reseteó el password de X").
+  await auditarEvento({
+    entidad: 'User',
+    entidadId: id,
+    accion: 'RESET_PASSWORD',
+    entidadSucursalId: u.sucursalId,
+    descripcion: `Reset de password para ${u.email}`,
+  });
 
   revalidatePath('/admin/usuarios');
   return { ok: true };
