@@ -24,6 +24,7 @@ import {
   ChevronRight,
   LogOut,
   DollarSign,
+  BarChart3,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -48,6 +49,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { label: 'Inicio', href: '/admin', icon: LayoutDashboard },
+  { label: 'Dashboard ejecutivo', href: '/admin/dashboard-ejecutivo', icon: BarChart3 },
   {
     label: 'Configuración',
     icon: Settings,

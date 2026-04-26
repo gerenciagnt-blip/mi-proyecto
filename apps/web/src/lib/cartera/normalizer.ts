@@ -12,6 +12,7 @@
 import { prisma } from '@pila/db';
 import type { TipoDocumento } from '@pila/db';
 import { nextCarteraConsecutivo } from './consecutivo';
+import { sugerirSucursalesBatch } from './sugerir-sucursal';
 import type { ParsedCartera } from './types';
 
 export type ResultadoImport =
@@ -104,9 +105,7 @@ export async function importarParsedCartera(
   //    relacionada con esa empresa via afiliaciones. Si no, buscamos por
   //    número de documento global y tomamos el primero (primer cotizante
   //    encontrado — el staff puede reasignar si es ambiguo).
-  const docsBuscar = Array.from(
-    new Set(parsed.detallado.map((d) => d.numeroDocumento)),
-  );
+  const docsBuscar = Array.from(new Set(parsed.detallado.map((d) => d.numeroDocumento)));
   const cotizantes = docsBuscar.length
     ? await prisma.cotizante.findMany({
         where: { numeroDocumento: { in: docsBuscar } },
@@ -133,6 +132,17 @@ export async function importarParsedCartera(
       });
     }
   }
+
+  // 3.b Sugerencia de sucursal por histórico — para los cotizantes que no
+  //     existen en BD o existen sin sucursalId, miramos las líneas previas
+  //     de cartera con ese mismo numeroDocumento y proponemos la sucursal
+  //     más frecuente. Sólo se incluye si la confianza es alta o media
+  //     (ver `sugerirSucursalesBatch`).
+  const docsParaSugerir = docsBuscar.filter((d) => {
+    const c = cotizanteByDoc.get(d);
+    return !c || !c.sucursalId;
+  });
+  const sugerencias = await sugerirSucursalesBatch(docsParaSugerir);
 
   // 4. Transacción: borra el consolidado anterior (si reemplazo) y crea
   //    el nuevo con todas las líneas del detallado.
@@ -163,6 +173,12 @@ export async function importarParsedCartera(
         detallado: {
           create: parsed.detallado.map((d) => {
             const match = cotizanteByDoc.get(d.numeroDocumento);
+            // Prioridad de asignación de sucursal:
+            //   1. cotizante.sucursalId (si existe en BD)
+            //   2. histórico de cartera (sugerirSucursalesBatch)
+            //   3. null → staff asigna manual
+            const sucursalAsignadaId =
+              match?.sucursalId ?? sugerencias.get(d.numeroDocumento) ?? null;
             return {
               tipoDocumento: d.tipoDocumento,
               numeroDocumento: d.numeroDocumento,
@@ -172,7 +188,7 @@ export async function importarParsedCartera(
               ibc: d.ibc ?? null,
               novedad: d.novedad ?? null,
               cotizanteId: match?.id ?? null,
-              sucursalAsignadaId: match?.sucursalId ?? null,
+              sucursalAsignadaId,
             };
           }),
         },
