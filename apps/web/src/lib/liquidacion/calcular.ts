@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@pila/db';
+import type { Prisma, PilaPrismaClient } from '@pila/db';
 
 // ===== Tipos del motor =====
 
@@ -88,16 +88,7 @@ export type CalcInput = {
 };
 
 export type CalcConcepto = {
-  concepto:
-    | 'EPS'
-    | 'AFP'
-    | 'ARL'
-    | 'CCF'
-    | 'SENA'
-    | 'ICBF'
-    | 'FSP'
-    | 'ADMIN'
-    | 'SERVICIO';
+  concepto: 'EPS' | 'AFP' | 'ARL' | 'CCF' | 'SENA' | 'ICBF' | 'FSP' | 'ADMIN' | 'SERVICIO';
   subconcepto?: string;
   base: number;
   porcentaje: number;
@@ -214,9 +205,7 @@ function pickTarifa(
 
 function specificity(t: TarifaRow): number {
   return (
-    (t.modalidad != null ? 1 : 0) +
-    (t.nivelRiesgo != null ? 1 : 0) +
-    (t.exonera != null ? 1 : 0)
+    (t.modalidad != null ? 1 : 0) + (t.nivelRiesgo != null ? 1 : 0) + (t.exonera != null ? 1 : 0)
   );
 }
 
@@ -439,9 +428,7 @@ export function calcularLiquidacion(
     const t = pickTarifa(tarifas, { concepto: 'ARL', nivelRiesgo: nivel });
     if (t) {
       const arlNombre =
-        modalidad === 'DEPENDIENTE'
-          ? afiliacion.empresa?.arl?.nombre
-          : afiliacion.arl?.nombre;
+        modalidad === 'DEPENDIENTE' ? afiliacion.empresa?.arl?.nombre : afiliacion.arl?.nombre;
       addConcepto({
         concepto: 'ARL',
         subconcepto: arlNombre ?? t.etiqueta ?? `Nivel ${nivel}`,
@@ -557,9 +544,7 @@ export function calcularLiquidacion(
   // Cada concepto ya viene redondeado al múltiplo de 100 hacia arriba,
   // así que los totales son suma directa (y también múltiplos de 100).
   const SGSS = new Set(['EPS', 'AFP', 'FSP', 'ARL', 'CCF', 'SENA', 'ICBF']);
-  const totalSgss = conceptos
-    .filter((c) => SGSS.has(c.concepto))
-    .reduce((s, c) => s + c.valor, 0);
+  const totalSgss = conceptos.filter((c) => SGSS.has(c.concepto)).reduce((s, c) => s + c.valor, 0);
   const totalAdmon = conceptos
     .filter((c) => c.concepto === 'ADMIN')
     .reduce((s, c) => s + c.valor, 0);
@@ -602,7 +587,7 @@ export function calcularLiquidacion(
  * período (fecha de ingreso posterior al último día).
  */
 export async function persistirLiquidacion(
-  prisma: PrismaClient,
+  prisma: PilaPrismaClient,
   opts: {
     periodoId: string;
     afiliacionId: string;
