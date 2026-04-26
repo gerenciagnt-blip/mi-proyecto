@@ -25,6 +25,7 @@ import {
   LogOut,
   DollarSign,
   BarChart3,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -33,6 +34,9 @@ import { logoutAction } from '@/app/dashboard/actions';
 
 /** Conjuntos de roles (para dejar intención clara en la matriz). */
 const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
+/** Staff + dueño aliado — para entradas que el aliado debe poder ver
+ *  scopeadas a su sucursal (ej. bitácora). */
+const STAFF_Y_ALIADO_OWNER: Role[] = ['ADMIN', 'SOPORTE', 'ALIADO_OWNER'];
 
 type NavItem = {
   label: string;
@@ -63,6 +67,12 @@ const NAV: NavItem[] = [
       { label: 'Asesor comercial', href: '/admin/catalogos/asesores', icon: Users2 },
       { label: 'Servicios adicionales', href: '/admin/catalogos/servicios', icon: Sparkles },
       { label: 'Formato comprobante', href: '/admin/catalogos/comprobantes', icon: FileSignature },
+      {
+        label: 'Bitácora',
+        href: '/admin/configuracion/bitacora',
+        icon: History,
+        roles: STAFF_Y_ALIADO_OWNER,
+      },
     ],
   },
   {
