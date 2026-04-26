@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
+import { auditarCreate, auditarEvento } from '@/lib/auditoria';
 import { CuentaCobroSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 import { nextCuentaCobroCodigo } from '@/lib/consecutivo';
@@ -53,7 +54,14 @@ export async function createCuentaCobroAction(
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
     try {
-      await prisma.cuentaCobro.create({ data: parsed.data });
+      const creada = await prisma.cuentaCobro.create({ data: parsed.data });
+      await auditarCreate({
+        entidad: 'CuentaCobro',
+        entidadId: creada.id,
+        entidadSucursalId: creada.sucursalId,
+        descripcion: `Cuenta de cobro creada: ${creada.codigo} · ${creada.razonSocial}`,
+        despues: { ...parsed.data, id: creada.id, codigo: creada.codigo },
+      });
       revalidatePath('/admin/cuentas-cobro');
       return { ok: true };
     } catch (e) {
@@ -79,6 +87,21 @@ export async function toggleCuentaCobroAction(id: string) {
   if (!scope) return;
   if (scope.tipo === 'SUCURSAL' && c.sucursalId !== scope.sucursalId) return;
 
-  await prisma.cuentaCobro.update({ where: { id }, data: { active: !c.active } });
+  const nuevoEstado = !c.active;
+  await prisma.cuentaCobro.update({ where: { id }, data: { active: nuevoEstado } });
+
+  await auditarEvento({
+    entidad: 'CuentaCobro',
+    entidadId: id,
+    accion: 'TOGGLE',
+    entidadSucursalId: c.sucursalId,
+    descripcion: `Cuenta ${c.codigo} ${nuevoEstado ? 'activada' : 'desactivada'}`,
+    cambios: {
+      antes: { active: c.active },
+      despues: { active: nuevoEstado },
+      campos: ['active'],
+    },
+  });
+
   revalidatePath('/admin/cuentas-cobro');
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
+import { auditarCreate, auditarUpdate, auditarEvento } from '@/lib/auditoria';
 import { EmpresaCreateSchema, EmpresaUpdateSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
@@ -49,8 +50,9 @@ export async function createEmpresaAction(
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
 
+  let creada;
   try {
-    await prisma.empresa.create({ data: parsed.data });
+    creada = await prisma.empresa.create({ data: parsed.data });
   } catch (e) {
     const msg =
       e instanceof Error && e.message.includes('Unique')
@@ -58,6 +60,15 @@ export async function createEmpresaAction(
         : 'Error al crear empresa';
     return { error: msg };
   }
+
+  // Empresa es una entidad GLOBAL — no scopeada a sucursal. Por eso
+  // entidadSucursalId queda null y solo STAFF la verá en su bitácora.
+  await auditarCreate({
+    entidad: 'Empresa',
+    entidadId: creada.id,
+    descripcion: `Empresa creada: ${creada.nombre} (NIT ${creada.nit})`,
+    despues: { ...parsed.data, id: creada.id },
+  });
 
   revalidatePath('/admin/empresas');
   return { ok: true };
@@ -78,6 +89,37 @@ export async function updateEmpresaAction(
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
   }
 
+  // Snapshot antes para diff fino — sólo guardamos los campos que el form
+  // controla, no el objeto Prisma completo (evita ruido por campos derivados
+  // tipo `updatedAt` que cambian en cada save).
+  const antes = await prisma.empresa.findUnique({
+    where: { id },
+    select: {
+      nit: true,
+      dv: true,
+      nombre: true,
+      nombreComercial: true,
+      tipoPersona: true,
+      repLegalTipoDoc: true,
+      repLegalNumeroDoc: true,
+      repLegalNombre: true,
+      direccion: true,
+      ciudad: true,
+      departamento: true,
+      departamentoId: true,
+      municipioId: true,
+      telefono: true,
+      email: true,
+      ciiuPrincipal: true,
+      arlId: true,
+      exoneraLey1607: true,
+      fechaInicioActividades: true,
+      pagosimpleContributorId: true,
+      active: true,
+    },
+  });
+  if (!antes) return { error: 'Empresa no encontrada' };
+
   try {
     await prisma.empresa.update({ where: { id }, data: parsed.data });
   } catch (e) {
@@ -85,6 +127,13 @@ export async function updateEmpresaAction(
       e instanceof Error && e.message.includes('Unique') ? 'NIT duplicado' : 'Error al actualizar';
     return { error: msg };
   }
+
+  await auditarUpdate({
+    entidad: 'Empresa',
+    entidadId: id,
+    antes: antes as unknown as Record<string, unknown>,
+    despues: parsed.data as unknown as Record<string, unknown>,
+  });
 
   revalidatePath('/admin/empresas');
   redirect('/admin/empresas');
@@ -94,6 +143,20 @@ export async function toggleEmpresaAction(id: string) {
   await requireStaff();
   const e = await prisma.empresa.findUnique({ where: { id } });
   if (!e) return;
-  await prisma.empresa.update({ where: { id }, data: { active: !e.active } });
+  const nuevoEstado = !e.active;
+  await prisma.empresa.update({ where: { id }, data: { active: nuevoEstado } });
+
+  await auditarEvento({
+    entidad: 'Empresa',
+    entidadId: id,
+    accion: 'TOGGLE',
+    descripcion: `Empresa ${e.nombre} ${nuevoEstado ? 'activada' : 'desactivada'}`,
+    cambios: {
+      antes: { active: e.active },
+      despues: { active: nuevoEstado },
+      campos: ['active'],
+    },
+  });
+
   revalidatePath('/admin/empresas');
 }
