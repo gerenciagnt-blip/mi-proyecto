@@ -20,6 +20,7 @@
 import { unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { prisma } from '@pila/db';
+import { ejecutarComoCronRun } from '../lib/cron-run.js';
 
 const DIAS_RETENCION = 120;
 
@@ -84,6 +85,40 @@ export async function retentionRunCommand(options: {
   dry?: boolean;
   module?: string;
 }): Promise<void> {
+  const dry = Boolean(options.dry);
+  try {
+    // Sólo registramos en CronRun cuando NO es dry — los dry los dispara
+    // el dev y son ruido en el histórico.
+    if (dry) {
+      await ejecutarRetention(options);
+    } else {
+      await ejecutarComoCronRun('retention-daily', async () => {
+        return { output: await ejecutarRetentionConResumen(options) };
+      });
+    }
+    await prisma.$disconnect();
+  } catch (err) {
+    console.error(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+}
+
+async function ejecutarRetentionConResumen(options: {
+  dry?: boolean;
+  module?: string;
+}): Promise<string> {
+  const partes: string[] = [];
+  await ejecutarRetention(options, (modulo, res) => {
+    partes.push(`${modulo}: ${res.eliminados}/${res.evaluados}`);
+  });
+  return partes.join(' · ');
+}
+
+async function ejecutarRetention(
+  options: { dry?: boolean; module?: string },
+  onResultado?: (modulo: string, res: LimpiezaResultado) => void,
+): Promise<void> {
   const modulo: Modulo =
     options.module === 'incapacidades' || options.module === 'soporte-af' ? options.module : 'all';
   const dry = Boolean(options.dry);
@@ -114,6 +149,7 @@ export async function retentionRunCommand(options: {
     );
     reportResultado('  ', res);
     totalErrores += res.errores.length;
+    onResultado?.('incapacidades', res);
   }
 
   if (modulo === 'soporte-af' || modulo === 'all') {
@@ -136,16 +172,16 @@ export async function retentionRunCommand(options: {
     );
     reportResultado('  ', res);
     totalErrores += res.errores.length;
+    onResultado?.('soporte-af', res);
   }
 
   console.log('');
   if (totalErrores > 0) {
-    console.error(`❌ Completó con ${totalErrores} error(es).`);
-    await prisma.$disconnect();
-    process.exit(1);
+    // Lanzamos para que el wrapper de CronRun marque el job como ERROR.
+    // El CLI top-level captura y traduce a exit(1).
+    throw new Error(`Retention completó con ${totalErrores} error(es)`);
   }
   console.log('✅ Completó sin errores.');
-  await prisma.$disconnect();
 }
 
 function reportResultado(prefix: string, r: LimpiezaResultado): void {

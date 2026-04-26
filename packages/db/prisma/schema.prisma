@@ -107,6 +107,7 @@ model AuditLog {
 
   // ----- Campos añadidos en Sprint 6 (todos nullable para compat con eventos previos) -----
   /**
+   * /**
    * /** Snapshot del rol del usuario al momento del evento.
    */
   userRole          Role?
@@ -221,6 +222,7 @@ model Sucursal {
   // Finanzas
   /**
    * /**
+   * /**
    * Tarifa cobrada al aliado por cada afiliación/mensualidad de régimen
    * ORDINARIO procesada en el período contable. Null = sin configurar (no
    * se puede generar cobro hasta que staff la defina).
@@ -330,6 +332,7 @@ model Empresa {
 
   // PagoSimple — sincronización con operador PILA
   /**
+   * /**
    * /** ID del aportante creado en PagoSimple bajo el usuario master.
    */
   pagosimpleContributorId String?
@@ -1194,6 +1197,7 @@ model Planilla {
 
   // PagoSimple — integración con operador PILA
   /**
+   * /**
    * /** payroll_number devuelto por POST /payroll/validate.
    */
   pagosimpleNumero           String?
@@ -2094,4 +2098,59 @@ model NotificacionLectura {
   @@unique([notificacionId, userId])
   @@index([userId])
   @@map("notificacion_lectura")
+}
+
+// =========================================================================
+// CRON RUN — registro de ejecuciones de jobs programados (Sprint 7.4)
+// =========================================================================
+//
+// Cada vez que un job de GitHub Actions corre, el comando CLI registra
+// su ejecución acá: cuándo arrancó, cuánto duró, si terminó OK o falló,
+// y un resumen libre. Esto permite:
+//
+//   - Detectar si un cron MURIÓ silencioso (sin run reciente) — el
+//     status page (Sprint 7.3) muestra alerta visual si el último run
+//     fue hace más del intervalo esperado.
+//   - Auditar histórico: cuántas filas borró el job de retención el mes
+//     pasado, cuánto tomó.
+//   - Diagnosticar fallos: el `error` queda al lado del `output` para
+//     reconstruir qué pasó sin abrir GitHub Actions.
+
+enum CronRunStatus {
+  RUNNING
+  OK
+  ERROR
+}
+
+model CronRun {
+  id         String        @id @default(cuid())
+  /**
+   * Nombre del job. Convención: kebab-case, mismo que el archivo
+   * workflow YAML sin la extensión. Ej.: "retention-daily",
+   * "auditoria-purge-monthly", "uploads-cleanup-weekly".
+   */
+  jobName    String
+  status     CronRunStatus @default(RUNNING)
+  startedAt  DateTime      @default(now())
+  finishedAt DateTime?
+  /**
+   * Duración real en ms. Se rellena al finalizar.
+   */
+  durationMs Int?
+  /**
+   * Resumen humano breve: "120 archivos limpiados", "0 candidatos",
+   * "falló al conectar a S3".
+   */
+  output     String?
+  /**
+   * Stack trace o mensaje de error si status=ERROR.
+   */
+  error      String?
+
+  // Indexes pensados para los reportes del status page:
+  //   - "último run de cada job" → jobName + startedAt desc
+  //   - retención: borramos runs viejos por createdAt
+  @@index([jobName, startedAt])
+  @@index([startedAt])
+  @@map("cron_runs")
 }
