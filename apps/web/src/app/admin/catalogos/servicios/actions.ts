@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope, validarSucursalIdAsignable } from '@/lib/sucursal-scope';
+import { auditarCreate, auditarEvento } from '@/lib/auditoria';
 import { ServicioAdicionalSchema } from '@/lib/validations';
 import { nextServicioAdicionalCodigo } from '@/lib/consecutivo';
 
@@ -43,13 +44,26 @@ export async function createServicioAction(
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
     try {
-      await prisma.servicioAdicional.create({
+      const creado = await prisma.servicioAdicional.create({
         data: {
           codigo: parsed.data.codigo,
           nombre: parsed.data.nombre,
           descripcion: parsed.data.descripcion,
           precio: parsed.data.precio,
           sucursalId: parsed.data.sucursalId ?? null,
+        },
+      });
+      await auditarCreate({
+        entidad: 'ServicioAdicional',
+        entidadId: creado.id,
+        entidadSucursalId: creado.sucursalId,
+        descripcion: `Servicio creado: ${creado.codigo} · ${creado.nombre}${creado.sucursalId ? '' : ' (global)'}`,
+        despues: {
+          codigo: creado.codigo,
+          nombre: creado.nombre,
+          descripcion: creado.descripcion,
+          precio: creado.precio.toString(),
+          sucursalId: creado.sucursalId,
         },
       });
       revalidatePath('/admin/catalogos/servicios');
@@ -71,6 +85,21 @@ export async function toggleServicioAction(id: string) {
   const err = await validarSucursalIdAsignable(s.sucursalId);
   if (err) return;
 
-  await prisma.servicioAdicional.update({ where: { id }, data: { active: !s.active } });
+  const nuevoEstado = !s.active;
+  await prisma.servicioAdicional.update({ where: { id }, data: { active: nuevoEstado } });
+
+  await auditarEvento({
+    entidad: 'ServicioAdicional',
+    entidadId: id,
+    accion: 'TOGGLE',
+    entidadSucursalId: s.sucursalId,
+    descripcion: `Servicio ${s.codigo} ${nuevoEstado ? 'activado' : 'desactivado'}`,
+    cambios: {
+      antes: { active: s.active },
+      despues: { active: nuevoEstado },
+      campos: ['active'],
+    },
+  });
+
   revalidatePath('/admin/catalogos/servicios');
 }

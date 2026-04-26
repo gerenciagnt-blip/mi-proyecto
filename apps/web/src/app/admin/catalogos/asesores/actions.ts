@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope, validarSucursalIdAsignable } from '@/lib/sucursal-scope';
+import { auditarCreate, auditarEvento } from '@/lib/auditoria';
 import { AsesorSchema } from '@/lib/validations';
 import { nextAsesorCodigo } from '@/lib/consecutivo';
 
@@ -44,13 +45,26 @@ export async function createAsesorAction(
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
     try {
-      await prisma.asesorComercial.create({
+      const creado = await prisma.asesorComercial.create({
         data: {
           codigo: parsed.data.codigo,
           nombre: parsed.data.nombre,
           email: parsed.data.email,
           telefono: parsed.data.telefono,
           sucursalId: parsed.data.sucursalId ?? null,
+        },
+      });
+      await auditarCreate({
+        entidad: 'AsesorComercial',
+        entidadId: creado.id,
+        entidadSucursalId: creado.sucursalId,
+        descripcion: `Asesor creado: ${creado.codigo} · ${creado.nombre}${creado.sucursalId ? '' : ' (global)'}`,
+        despues: {
+          codigo: creado.codigo,
+          nombre: creado.nombre,
+          email: creado.email,
+          telefono: creado.telefono,
+          sucursalId: creado.sucursalId,
         },
       });
       revalidatePath('/admin/catalogos/asesores');
@@ -72,6 +86,21 @@ export async function toggleAsesorAction(id: string) {
   const err = await validarSucursalIdAsignable(a.sucursalId);
   if (err) return;
 
-  await prisma.asesorComercial.update({ where: { id }, data: { active: !a.active } });
+  const nuevoEstado = !a.active;
+  await prisma.asesorComercial.update({ where: { id }, data: { active: nuevoEstado } });
+
+  await auditarEvento({
+    entidad: 'AsesorComercial',
+    entidadId: id,
+    accion: 'TOGGLE',
+    entidadSucursalId: a.sucursalId,
+    descripcion: `Asesor ${a.codigo} ${nuevoEstado ? 'activado' : 'desactivado'}`,
+    cambios: {
+      antes: { active: a.active },
+      despues: { active: nuevoEstado },
+      campos: ['active'],
+    },
+  });
+
   revalidatePath('/admin/catalogos/asesores');
 }
