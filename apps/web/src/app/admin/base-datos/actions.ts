@@ -101,6 +101,7 @@ function parseCotizante(fd: FormData) {
     segundoApellido: titleCase(g('segundoApellido')),
     fechaNacimiento: g('fechaNacimiento'),
     genero: g('genero'),
+    estadoCivil: emptyNull(g('estadoCivil')),
     telefono: g('telefono'),
     celular: g('celular'),
     email: g('email').toLowerCase(),
@@ -133,6 +134,9 @@ function parseAfiliacion(fd: FormData) {
     afpId: g('afpId'),
     arlId: g('arlId'),
     ccfId: g('ccfId'),
+    // Sprint 8: requeridos por bot Colpatria para DEPENDIENTE.
+    cargo: titleCase(g('cargo')),
+    tipoSalario: g('tipoSalario') || 'BASICO',
   };
 }
 

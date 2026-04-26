@@ -2,9 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
+import type { NivelRiesgo } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
 import { encrypt, esDescifrable } from '@/lib/colpatria/crypto';
 import { auditarEvento } from '@/lib/auditoria';
+
+const NIVELES_VALIDOS: NivelRiesgo[] = ['I', 'II', 'III', 'IV', 'V'];
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -138,6 +141,16 @@ export type ColpatriaConfigEstado = {
   passwordOk: boolean;
   /** Última vez que se cambió el password. */
   passwordSetAt: Date | null;
+  // --- Selectores AXA y defaults del form ---
+  aplicacion: string;
+  perfil: string;
+  empresaIdInterno: string | null;
+  afiliacionId: string | null;
+  codigoSucursalDefault: string | null;
+  tipoAfiliacionDefault: string | null;
+  grupoOcupacionDefault: string | null;
+  tipoOcupacionDefault: string | null;
+  modalidadTrabajoDefault: string | null;
 };
 
 /**
@@ -156,6 +169,15 @@ export async function obtenerEstadoColpatria(
       colpatriaUsuario: true,
       colpatriaPasswordEnc: true,
       colpatriaPasswordSetAt: true,
+      colpatriaAplicacion: true,
+      colpatriaPerfil: true,
+      colpatriaEmpresaIdInterno: true,
+      colpatriaAfiliacionId: true,
+      colpatriaCodigoSucursalDefault: true,
+      colpatriaTipoAfiliacionDefault: true,
+      colpatriaGrupoOcupacionDefault: true,
+      colpatriaTipoOcupacionDefault: true,
+      colpatriaModalidadTrabajoDefault: true,
     },
   });
   if (!e) return null;
@@ -164,5 +186,159 @@ export async function obtenerEstadoColpatria(
     usuario: e.colpatriaUsuario,
     passwordOk: esDescifrable(e.colpatriaPasswordEnc),
     passwordSetAt: e.colpatriaPasswordSetAt,
+    aplicacion: e.colpatriaAplicacion ?? 'ARP',
+    perfil: e.colpatriaPerfil ?? 'OFI',
+    empresaIdInterno: e.colpatriaEmpresaIdInterno,
+    afiliacionId: e.colpatriaAfiliacionId,
+    codigoSucursalDefault: e.colpatriaCodigoSucursalDefault,
+    tipoAfiliacionDefault: e.colpatriaTipoAfiliacionDefault,
+    grupoOcupacionDefault: e.colpatriaGrupoOcupacionDefault,
+    tipoOcupacionDefault: e.colpatriaTipoOcupacionDefault,
+    modalidadTrabajoDefault: e.colpatriaModalidadTrabajoDefault,
   };
+}
+
+/**
+ * Actualiza los selectores AXA (Aplicación/Perfil/EmpresaId/Afiliacion)
+ * y los defaults del form de Ingreso Individual. Separado de las
+ * credenciales para que cada cosa se pueda cambiar sin tocar la otra
+ * (ej. rotar password sin rellenar todos los selectores).
+ */
+export async function actualizarConfigColpatriaAction(
+  empresaId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } });
+  if (!empresa) return { error: 'Empresa no encontrada' };
+
+  const get = (k: string) => {
+    const v = String(formData.get(k) ?? '').trim();
+    return v === '' ? null : v;
+  };
+
+  const aplicacion = get('aplicacion') ?? 'ARP';
+  const perfil = get('perfil') ?? 'OFI';
+  const empresaIdInterno = get('empresaIdInterno');
+  const afiliacionId = get('afiliacionId');
+  const codigoSucursal = get('codigoSucursalDefault');
+  const tipoAfiliacion = get('tipoAfiliacionDefault');
+  const grupoOcupacion = get('grupoOcupacionDefault');
+  const tipoOcupacion = get('tipoOcupacionDefault');
+  const modalidadTrabajo = get('modalidadTrabajoDefault');
+
+  // Validaciones livianas
+  if (perfil !== 'OFI' && perfil !== 'OPE') {
+    return { error: 'Perfil debe ser OFI u OPE' };
+  }
+
+  await prisma.empresa.update({
+    where: { id: empresaId },
+    data: {
+      colpatriaAplicacion: aplicacion,
+      colpatriaPerfil: perfil,
+      colpatriaEmpresaIdInterno: empresaIdInterno,
+      colpatriaAfiliacionId: afiliacionId,
+      colpatriaCodigoSucursalDefault: codigoSucursal,
+      colpatriaTipoAfiliacionDefault: tipoAfiliacion,
+      colpatriaGrupoOcupacionDefault: grupoOcupacion,
+      colpatriaTipoOcupacionDefault: tipoOcupacion,
+      colpatriaModalidadTrabajoDefault: modalidadTrabajo,
+    },
+  });
+
+  // Cambiar la config invalida la sesión cacheada (los selectores del
+  // /Bienvenida cambiaron y la cookie ya no aplica al perfil correcto).
+  await prisma.colpatriaSesion.deleteMany({ where: { empresaId } });
+
+  void auditarEvento({
+    entidad: 'Empresa',
+    entidadId: empresaId,
+    accion: 'COLPATRIA_CONFIG',
+    descripcion: `Config del bot Colpatria actualizada para ${empresa.nombre}`,
+  });
+
+  revalidatePath(`/admin/empresas/${empresaId}/colpatria`);
+  return { ok: true };
+}
+
+/**
+ * Actualiza el mapeo nivel de riesgo → código de centro de trabajo
+ * Colpatria. Solo aplica para los niveles que la empresa ya tiene
+ * marcados como permitidos en `EmpresaNivelRiesgo`.
+ *
+ * Cada par (empresaId, nivel) se updatea en su fila existente. Si
+ * el form trae código vacío, se setea a null (= usar default sucursal).
+ */
+export async function actualizarCentrosTrabajoAction(
+  empresaId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const empresa = await prisma.empresa.findUnique({
+    where: { id: empresaId },
+    select: { id: true, nombre: true },
+  });
+  if (!empresa) return { error: 'Empresa no encontrada' };
+
+  // Levantamos los niveles ya permitidos.
+  const niveles = await prisma.empresaNivelRiesgo.findMany({
+    where: { empresaId },
+    select: { nivel: true },
+  });
+  if (niveles.length === 0) {
+    return {
+      error:
+        'Esta empresa no tiene niveles de riesgo permitidos. Configúralos primero en Configuración PILA.',
+    };
+  }
+
+  // Validar y aplicar cada nivel.
+  const updates = niveles.map((n) => {
+    const raw = String(formData.get(`centro_${n.nivel}`) ?? '').trim();
+    const codigo = raw === '' ? null : raw;
+    return prisma.empresaNivelRiesgo.update({
+      where: { empresaId_nivel: { empresaId, nivel: n.nivel } },
+      data: { colpatriaCentroTrabajo: codigo },
+    });
+  });
+
+  await prisma.$transaction(updates);
+
+  void auditarEvento({
+    entidad: 'Empresa',
+    entidadId: empresaId,
+    accion: 'COLPATRIA_CENTROS',
+    descripcion: `Mapeo nivel→centro Colpatria actualizado para ${empresa.nombre}`,
+  });
+
+  revalidatePath(`/admin/empresas/${empresaId}/colpatria`);
+  return { ok: true };
+}
+
+export type CentroTrabajoMapeo = {
+  nivel: NivelRiesgo;
+  colpatriaCentroTrabajo: string | null;
+};
+
+/**
+ * Lee los niveles permitidos + su mapeo a centro de trabajo Colpatria.
+ * Si la empresa no tiene niveles configurados, devuelve []. La UI lo
+ * usa para informar al ADMIN que primero debe configurar PILA.
+ */
+export async function obtenerCentrosTrabajo(empresaId: string): Promise<CentroTrabajoMapeo[]> {
+  await requireAdmin();
+  const filas = await prisma.empresaNivelRiesgo.findMany({
+    where: { empresaId },
+    select: { nivel: true, colpatriaCentroTrabajo: true },
+  });
+  // Ordenar I, II, III, IV, V
+  const orden: Record<NivelRiesgo, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
+  return filas
+    .filter((f) => NIVELES_VALIDOS.includes(f.nivel))
+    .sort((a, b) => orden[a.nivel] - orden[b.nivel]);
 }

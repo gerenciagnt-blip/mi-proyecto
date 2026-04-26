@@ -105,6 +105,9 @@ export type InitialAfiliacion = {
   arlId: string | null;
   ccfId: string | null;
   serviciosIds: string[];
+  // Sprint 8.0.5 — Bot Colpatria
+  cargo: string | null;
+  tipoSalario: string | null; // BASICO | INTEGRAL
 };
 
 export type AfiliacionFormProps = {
@@ -567,6 +570,18 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   <option value="O">Otro</option>
                 </select>
               </div>
+
+              <div>
+                <Label htmlFor="estadoCivil">Estado civil</Label>
+                <select id="estadoCivil" name="estadoCivil" defaultValue="" className={selectClass}>
+                  <option value="">— No especificado —</option>
+                  <option value="1">Soltero</option>
+                  <option value="2">Casado</option>
+                  <option value="3">Unión Libre</option>
+                  <option value="4">Viudo</option>
+                  <option value="5">Divorciado</option>
+                </select>
+              </div>
             </div>
 
             {/* Banner de resultado BDUA/RUAF */}
@@ -1009,6 +1024,37 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               disabled={readOnly}
               className="mt-1"
             />
+          </div>
+
+          <div>
+            <Label htmlFor="cargo">Cargo</Label>
+            <Input
+              id="cargo"
+              name="cargo"
+              type="text"
+              maxLength={100}
+              defaultValue={initial?.cargo ?? ''}
+              disabled={readOnly}
+              placeholder="ej. Operario"
+              className="mt-1"
+            />
+            <p className="mt-1 text-[10px] text-slate-400">
+              Requerido por bot Colpatria si la empresa lo tiene activo
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="tipoSalario">Tipo de salario</Label>
+            <select
+              id="tipoSalario"
+              name="tipoSalario"
+              defaultValue={initial?.tipoSalario ?? 'BASICO'}
+              disabled={readOnly}
+              className={selectClass}
+            >
+              <option value="BASICO">Básico</option>
+              <option value="INTEGRAL">Integral</option>
+            </select>
           </div>
 
           {/* Asesor comercial (reducido) */}

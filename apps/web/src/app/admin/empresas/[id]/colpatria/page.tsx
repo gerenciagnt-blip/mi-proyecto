@@ -3,8 +3,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { requireAdmin } from '@/lib/auth-helpers';
-import { obtenerEstadoColpatria } from './actions';
+import { obtenerEstadoColpatria, obtenerCentrosTrabajo } from './actions';
 import { ColpatriaForm } from './colpatria-form';
+import { ConfigBotForm } from './config-bot-form';
+import { CentrosTrabajoForm } from './centros-trabajo-form';
 
 export const metadata = { title: 'Colpatria ARL — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -13,12 +15,13 @@ export default async function ColpatriaConfigPage({ params }: { params: Promise<
   await requireAdmin();
   const { id } = await params;
 
-  const [empresa, estado] = await Promise.all([
+  const [empresa, estado, centros] = await Promise.all([
     prisma.empresa.findUnique({
       where: { id },
       select: { id: true, nit: true, nombre: true },
     }),
     obtenerEstadoColpatria(id),
+    obtenerCentrosTrabajo(id),
   ]);
   if (!empresa || !estado) notFound();
 
@@ -38,7 +41,14 @@ export default async function ColpatriaConfigPage({ params }: { params: Promise<
         </p>
       </header>
 
+      {/* 1. Credenciales del portal */}
       <ColpatriaForm empresaId={empresa.id} empresaNombre={empresa.nombre} estadoInicial={estado} />
+
+      {/* 2. Selectores AXA + defaults form */}
+      <ConfigBotForm empresaId={empresa.id} estadoInicial={estado} />
+
+      {/* 3. Mapeo nivel → centro de trabajo */}
+      <CentrosTrabajoForm empresaId={empresa.id} niveles={centros} />
     </div>
   );
 }

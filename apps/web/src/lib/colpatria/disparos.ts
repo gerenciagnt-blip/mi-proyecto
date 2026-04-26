@@ -47,6 +47,9 @@ export type ColpatriaPayload = {
     nivelRiesgo: string;
     salario: string; // Decimal serializado como string
     fechaIngreso: string; // ISO date
+    /** Sprint 8.0.5 — campos extra por bot Colpatria. */
+    cargo: string | null;
+    tipoSalario: string; // BASICO | INTEGRAL
     /** Datos del cotizante */
     cotizante: {
       id: string;
@@ -58,6 +61,8 @@ export type ColpatriaPayload = {
       segundoApellido: string | null;
       fechaNacimiento: string | null; // ISO date
       genero: string | null;
+      /** Sprint 8.0.5 — código AXA 1..5. Null si no se capturó. */
+      estadoCivil: string | null;
       email: string | null;
       celular: string | null;
       direccion: string | null;
@@ -97,6 +102,8 @@ export async function dispararColpatriaSiAplica(
         nivelRiesgo: true,
         salario: true,
         fechaIngreso: true,
+        cargo: true,
+        tipoSalario: true,
         cotizante: {
           select: {
             id: true,
@@ -108,6 +115,7 @@ export async function dispararColpatriaSiAplica(
             segundoApellido: true,
             fechaNacimiento: true,
             genero: true,
+            estadoCivil: true,
             email: true,
             celular: true,
             direccion: true,
@@ -154,6 +162,8 @@ export async function dispararColpatriaSiAplica(
         nivelRiesgo: af.nivelRiesgo,
         salario: af.salario.toString(),
         fechaIngreso: af.fechaIngreso.toISOString().slice(0, 10),
+        cargo: af.cargo,
+        tipoSalario: af.tipoSalario ?? 'BASICO',
         cotizante: {
           id: af.cotizante.id,
           tipoDocumento: af.cotizante.tipoDocumento,
@@ -166,6 +176,7 @@ export async function dispararColpatriaSiAplica(
             ? af.cotizante.fechaNacimiento.toISOString().slice(0, 10)
             : null,
           genero: af.cotizante.genero,
+          estadoCivil: af.cotizante.estadoCivil,
           email: af.cotizante.email,
           celular: af.cotizante.celular,
           direccion: af.cotizante.direccion,

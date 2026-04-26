@@ -241,6 +241,10 @@ export const CuentaCobroSchema = z.object({
 export const GeneroEnum = z.enum(['M', 'F', 'O']);
 export const EstadoAfiliacionEnum = z.enum(['ACTIVA', 'INACTIVA']);
 
+/** Estado civil — códigos AXA Colpatria: 1=Soltero, 2=Casado, 3=Unión
+ *  Libre, 4=Viudo, 5=Divorciado. Optional para no romper datos viejos. */
+export const EstadoCivilEnum = z.enum(['1', '2', '3', '4', '5']);
+
 export const CotizanteSchema = z.object({
   tipoDocumento: TipoDocumentoEnum,
   numeroDocumento: z
@@ -256,6 +260,10 @@ export const CotizanteSchema = z.object({
   segundoApellido: optional,
   fechaNacimiento: z.coerce.date({ message: 'Fecha inválida' }),
   genero: GeneroEnum,
+  estadoCivil: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    EstadoCivilEnum.nullable().optional(),
+  ),
   telefono: optional,
   celular: optional,
   email: optional.pipe(z.string().email('Correo no válido').optional()),
@@ -356,6 +364,17 @@ export const AfiliacionSchema = z
     afpId: idOrNull,
     arlId: idOrNull,
     ccfId: idOrNull,
+    /** Cargo del cotizante en la empresa. Requerido por bot Colpatria
+     *  (DEPENDIENTE) — para INDEPENDIENTE puede quedar null. */
+    cargo: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.string().trim().max(100, 'Máximo 100 caracteres').nullable().optional(),
+    ),
+    /** Tipo de salario AXA: BASICO o INTEGRAL. Default BASICO. */
+    tipoSalario: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? 'BASICO' : v),
+      z.enum(['BASICO', 'INTEGRAL']).default('BASICO'),
+    ),
   })
   .refine((v) => v.modalidad !== 'DEPENDIENTE' || !!v.empresaId, {
     message: 'Empresa planilla requerida para dependientes',

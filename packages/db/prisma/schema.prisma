@@ -109,6 +109,7 @@ model AuditLog {
   /**
    * /**
    * /**
+   * /**
    * /** Snapshot del rol del usuario al momento del evento.
    */
   userRole          Role?
@@ -225,6 +226,7 @@ model Sucursal {
    * /**
    * /**
    * /**
+   * /**
    * Tarifa cobrada al aliado por cada afiliación/mensualidad de régimen
    * ORDINARIO procesada en el período contable. Null = sin configurar (no
    * se puede generar cobro hasta que staff la defina).
@@ -336,6 +338,7 @@ model Empresa {
   /**
    * /**
    * /**
+   * /**
    * /** ID del aportante creado en PagoSimple bajo el usuario master.
    */
   pagosimpleContributorId String?
@@ -350,6 +353,7 @@ model Empresa {
   // afiliaciones automáticamente. Se llenan desde
   // /admin/empresas/[id]/colpatria por ADMIN únicamente.
   /**
+   * /**
    * /** Si true, las afiliaciones nuevas/reactivadas de esta empresa
    * disparan automáticamente el bot. Si false, el bot ignora la empresa
    * (útil para empresas que aún no tienen credenciales o para pausar).
@@ -370,6 +374,54 @@ model Empresa {
    * fallan tras una rotación de password.
    */
   colpatriaPasswordSetAt DateTime?
+
+  // --- Selectores del paso /Bienvenida (post-login) ---
+  // El portal AXA pide elegir Aplicación/Perfil/Empresa/Afiliación. Estos
+  // valores son específicos por empresa y se capturan una vez al
+  // configurar el bot (visibles solo para ADMIN).
+  /**
+   * /** Código de Aplicación. En la práctica siempre "ARP" (Portal ARL).
+   */
+  colpatriaAplicacion       String? @default("ARP")
+  /**
+   * Código de Perfil: "OFI" (Oficial) u "OPE" (Operador).
+   */
+  colpatriaPerfil           String? @default("OFI")
+  /**
+   * ID interno de la empresa en AXA (option value de #ddlEmpresas).
+   * No coincide con el NIT — son ~6 dígitos asignados por AXA.
+   */
+  colpatriaEmpresaIdInterno String?
+  /**
+   * Número de afiliación de la empresa con AXA (option value de
+   * #ddlAfiliaciones). El bot usa esta que el ADMIN elige.
+   */
+  colpatriaAfiliacionId     String?
+
+  // --- Defaults del form de Ingreso Individual ---
+  // El form AXA pide ~10 campos que PILA no captura. Estos defaults los
+  // usa el bot para todos los cotizantes de la empresa, así no saturamos
+  // el form de afiliación con datos repetitivos.
+  /**
+   * /** Código de Sucursal default en Colpatria.
+   */
+  colpatriaCodigoSucursalDefault   String?
+  /**
+   * Tipo de afiliación default (código AXA del select TipoAfiliacion).
+   */
+  colpatriaTipoAfiliacionDefault   String?
+  /**
+   * Grupo de ocupación default (código AXA).
+   */
+  colpatriaGrupoOcupacionDefault   String?
+  /**
+   * Tipo de ocupación default (depende de GrupoOcupacion).
+   */
+  colpatriaTipoOcupacionDefault    String?
+  /**
+   * Modalidad de trabajo default.
+   */
+  colpatriaModalidadTrabajoDefault String?
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos     EmpresaNivelRiesgo[]
@@ -397,11 +449,22 @@ model Empresa {
   @@map("empresas")
 }
 
-// Empresa ↔ niveles de riesgo ARL permitidos (I, II, III, IV, V)
+// Empresa ↔ niveles de riesgo ARL permitidos (I, II, III, IV, V).
+// Para empresas con bot Colpatria activo, cada nivel puede mapearse a
+// un código de "Centro de Trabajo" del portal AXA (Sprint 8). Ej:
+// nivel I → centro 03, nivel II → centro 01. Si null, el bot usa el
+// `colpatriaCodigoSucursalDefault` de la empresa.
 model EmpresaNivelRiesgo {
-  empresaId String
-  nivel     NivelRiesgo
-  empresa   Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId              String
+  nivel                  NivelRiesgo
+  /**
+   * Código de Centro de Trabajo en Colpatria (Sprint 8). Null si la
+   * empresa no usa bot Colpatria o si todos los niveles van al
+   * default de la empresa.
+   */
+  colpatriaCentroTrabajo String?
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
 
   @@id([empresaId, nivel])
   @@map("empresa_nivel_riesgo")
@@ -716,6 +779,12 @@ model Cotizante {
   segundoApellido         String?
   fechaNacimiento         DateTime
   genero                  Genero
+  /**
+   * Estado civil. Sprint 8 (Bot Colpatria). Códigos AXA:
+   * 1=Soltero, 2=Casado, 3=Unión Libre, 4=Viudo, 5=Divorciado.
+   * Nullable para no romper datos existentes.
+   */
+  estadoCivil             String?
   telefono                String?
   celular                 String?
   email                   String?
@@ -773,6 +842,21 @@ model Afiliacion {
   fechaRetiro          DateTime?
   estado               EstadoAfiliacion @default(ACTIVA)
   comentarios          String?
+
+  // --- Datos requeridos por bot Colpatria ARL (Sprint 8) ---
+  // Aplican principalmente a DEPENDIENTE. Nullable para no romper
+  // afiliaciones existentes. El bot exige `cargo` y `tipoSalario` —
+  // si vienen vacíos cuando se procesa, el job falla con FAILED.
+  /**
+   * /** Cargo del cotizante en la empresa. Ej: "Operario", "Asesor".
+   */
+  cargo       String?
+  /**
+   * Tipo de salario para AXA: "BASICO" o "INTEGRAL". Default BASICO
+   * (caso típico). Si el contrato es salario integral, el aliado lo
+   * cambia al crear la afiliación.
+   */
+  tipoSalario String? @default("BASICO")
 
   // Entidades SGSS asignadas (EntidadSgss filtrada por tipo)
   epsId String?
@@ -1230,6 +1314,7 @@ model Planilla {
 
   // PagoSimple — integración con operador PILA
   /**
+   * /**
    * /**
    * /**
    * /** payroll_number devuelto por POST /payroll/validate.
