@@ -1,0 +1,75 @@
+name: Uploads cleanup (weekly)
+
+# Domingo 6 AM UTC (≈ 1 AM Colombia). Después del job diario de retention,
+# así que el directorio ya tiene los marcadores actualizados.
+on:
+  schedule:
+    - cron: '0 6 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry run (lista huérfanos sin borrar)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  cleanup:
+    name: Borrar archivos huérfanos
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UPLOADS_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql:// (longitud=${#DATABASE_URL_RAW})."
+            exit 1
+          fi
+          echo "✓ DATABASE_URL tiene forma válida"
+
+      - name: Run uploads cleanup
+        working-directory: apps/cli
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          if [ "${{ inputs.dry }}" = "true" ]; then
+            pnpm exec tsx src/index.ts uploads:cleanup --dry
+          else
+            pnpm exec tsx src/index.ts uploads:cleanup
+          fi

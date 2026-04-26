@@ -6,6 +6,7 @@ import { resetPasswordCommand } from './commands/reset-password.js';
 import { retentionRunCommand } from './commands/retention-run.js';
 import { auditoriaPurgeCommand } from './commands/auditoria-purge.js';
 import { analyzeDbCommand } from './commands/analyze-db.js';
+import { uploadsCleanupCommand } from './commands/uploads-cleanup.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
@@ -87,6 +88,19 @@ program
       await analyzeDbCommand(options);
     },
   );
+
+program
+  .command('uploads:cleanup')
+  .description('Borra archivos huérfanos en UPLOADS_DIR (sin registro en BD)')
+  .option('--dry', 'Lista candidatos sin borrar')
+  .option(
+    '--min-edad-h <horas>',
+    'Edad mínima del archivo para considerarlo huérfano (default 24h)',
+    (v) => (v ? parseInt(v, 10) : undefined),
+  )
+  .action(async (options: { dry?: boolean; minEdadHoras?: number }) => {
+    await uploadsCleanupCommand(options);
+  });
 
 program
   .command('seed:test-data')
