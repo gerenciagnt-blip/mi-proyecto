@@ -1,11 +1,5 @@
 import Link from 'next/link';
-import {
-  HeartPulse,
-  FileText,
-  Plus,
-  Paperclip,
-  AlertCircle,
-} from 'lucide-react';
+import { HeartPulse, FileText, Plus, Paperclip, AlertCircle } from 'lucide-react';
 import type { IncapacidadEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
@@ -14,6 +8,7 @@ import { getUserScope } from '@/lib/sucursal-scope';
 import { TIPO_LABEL } from '@/lib/incapacidades/validations';
 import { RadicarIncapacidadForm } from './radicar-form';
 import { VerGestionesIncapButton } from './ver-gestiones-button';
+import { DiasIncapacidadChip } from '@/components/admin/dias-incapacidad-chip';
 
 export const metadata = { title: 'Incapacidades · Administrativo — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -41,8 +36,7 @@ export default async function IncapacidadesAdministrativoPage({
   searchParams: Promise<SP>;
 }) {
   const sp = await searchParams;
-  const tab: 'radicar' | 'historico' =
-    sp.tab === 'historico' ? 'historico' : 'radicar';
+  const tab: 'radicar' | 'historico' = sp.tab === 'historico' ? 'historico' : 'radicar';
 
   const estadoFilter: IncapacidadEstado | undefined =
     sp.estado === 'RADICADA' ||
@@ -93,6 +87,14 @@ export default async function IncapacidadesAdministrativoPage({
               },
             },
             _count: { select: { documentos: true, gestiones: true } },
+            // Última gestión que llevó al estado terminal — se usa como
+            // fecha de cierre para el chip "Tiempo".
+            gestiones: {
+              where: { nuevoEstado: { in: ['PAGADA', 'RECHAZADA'] } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { createdAt: true },
+            },
           },
         })
       : Promise.resolve([]),
@@ -114,8 +116,8 @@ export default async function IncapacidadesAdministrativoPage({
           Incapacidades
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Radica una incapacidad y consulta el estado. Soporte verá tu
-          radicación y actualizará el proceso.
+          Radica una incapacidad y consulta el estado. Soporte verá tu radicación y actualizará el
+          proceso.
         </p>
       </header>
 
@@ -193,13 +195,11 @@ export default async function IncapacidadesAdministrativoPage({
                   className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
                 >
                   <option value="">Todos los estados</option>
-                  {(Object.keys(ESTADO_LABEL) as IncapacidadEstado[]).map(
-                    (e) => (
-                      <option key={e} value={e}>
-                        {ESTADO_LABEL[e]}
-                      </option>
-                    ),
-                  )}
+                  {(Object.keys(ESTADO_LABEL) as IncapacidadEstado[]).map((e) => (
+                    <option key={e} value={e}>
+                      {ESTADO_LABEL[e]}
+                    </option>
+                  ))}
                 </select>
                 <input
                   type="search"
@@ -223,8 +223,7 @@ export default async function IncapacidadesAdministrativoPage({
                   </Link>
                 )}
                 <span className="ml-auto text-xs text-slate-500">
-                  {historico.length}{' '}
-                  {historico.length === 1 ? 'radicación' : 'radicaciones'}
+                  {historico.length} {historico.length === 1 ? 'radicación' : 'radicaciones'}
                 </span>
               </form>
             </div>
@@ -233,8 +232,8 @@ export default async function IncapacidadesAdministrativoPage({
               <Alert variant="info" className="m-5">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>
-                  Aún no hay radicaciones. Usa la pestaña{' '}
-                  <strong>Radicar</strong> para crear la primera.
+                  Aún no hay radicaciones. Usa la pestaña <strong>Radicar</strong> para crear la
+                  primera.
                 </span>
               </Alert>
             ) : (
@@ -250,6 +249,12 @@ export default async function IncapacidadesAdministrativoPage({
                       <th className="px-4 py-2 text-right">Días</th>
                       <th className="px-4 py-2">Docs</th>
                       <th className="px-4 py-2">Estado</th>
+                      <th
+                        className="px-4 py-2 text-center"
+                        title="Días corridos desde la radicación. El contador se detiene al pasar a PAGADA o RECHAZADA."
+                      >
+                        Tiempo
+                      </th>
                       <th className="px-4 py-2 text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -273,13 +278,10 @@ export default async function IncapacidadesAdministrativoPage({
                           <td className="px-4 py-2 text-xs">
                             <p className="font-medium">{nombre}</p>
                             <p className="font-mono text-[10px] text-slate-500">
-                              {i.cotizante.tipoDocumento}{' '}
-                              {i.cotizante.numeroDocumento}
+                              {i.cotizante.tipoDocumento} {i.cotizante.numeroDocumento}
                             </p>
                           </td>
-                          <td className="px-4 py-2 text-[11px]">
-                            {TIPO_LABEL[i.tipo]}
-                          </td>
+                          <td className="px-4 py-2 text-[11px]">{TIPO_LABEL[i.tipo]}</td>
                           <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
                             {i.fechaInicio.toISOString().slice(0, 10)} →{' '}
                             {i.fechaFin.toISOString().slice(0, 10)}
@@ -300,6 +302,13 @@ export default async function IncapacidadesAdministrativoPage({
                             >
                               {ESTADO_LABEL[i.estado]}
                             </span>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <DiasIncapacidadChip
+                              fechaRadicacion={i.fechaRadicacion}
+                              estado={i.estado}
+                              fechaCierre={i.gestiones[0]?.createdAt ?? null}
+                            />
                           </td>
                           <td className="px-4 py-2 text-right">
                             <VerGestionesIncapButton

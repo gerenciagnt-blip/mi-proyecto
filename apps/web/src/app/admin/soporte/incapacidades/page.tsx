@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { TIPO_LABEL } from '@/lib/incapacidades/validations';
+import { DiasIncapacidadChip } from '@/components/admin/dias-incapacidad-chip';
 
 export const metadata = { title: 'Incapacidades · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,14 @@ export default async function SoporteIncapacidadesPage({
         },
         sucursal: { select: { codigo: true, nombre: true } },
         _count: { select: { documentos: true, gestiones: true } },
+        // Última gestión que llevó a un estado terminal (PAGADA/RECHAZADA).
+        // Sirve para calcular la fecha de cierre del caso.
+        gestiones: {
+          where: { nuevoEstado: { in: ['PAGADA', 'RECHAZADA'] } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
       },
     }),
     prisma.incapacidad.groupBy({
@@ -112,8 +121,8 @@ export default async function SoporteIncapacidadesPage({
           Incapacidades · Soporte
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Radicaciones enviadas por los aliados. Revisa documentos, actualiza
-          el estado y registra el pago cuando la entidad responde.
+          Radicaciones enviadas por los aliados. Revisa documentos, actualiza el estado y registra
+          el pago cuando la entidad responde.
         </p>
       </header>
 
@@ -167,13 +176,11 @@ export default async function SoporteIncapacidadesPage({
               className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm"
             >
               <option value="">Todos los tipos</option>
-              {(Object.keys(TIPO_LABEL) as Array<keyof typeof TIPO_LABEL>).map(
-                (k) => (
-                  <option key={k} value={k}>
-                    {TIPO_LABEL[k]}
-                  </option>
-                ),
-              )}
+              {(Object.keys(TIPO_LABEL) as Array<keyof typeof TIPO_LABEL>).map((k) => (
+                <option key={k} value={k}>
+                  {TIPO_LABEL[k]}
+                </option>
+              ))}
             </select>
             <select
               name="sucursalId"
@@ -208,9 +215,7 @@ export default async function SoporteIncapacidadesPage({
                 Limpiar
               </Link>
             )}
-            <span className="ml-auto text-xs text-slate-500">
-              {incapacidades.length}
-            </span>
+            <span className="ml-auto text-xs text-slate-500">{incapacidades.length}</span>
           </form>
         </div>
 
@@ -218,8 +223,8 @@ export default async function SoporteIncapacidadesPage({
           <Alert variant="info" className="m-5">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>
-              Sin incapacidades con los filtros actuales. Cuando los aliados
-              radiquen aparecerán aquí.
+              Sin incapacidades con los filtros actuales. Cuando los aliados radiquen aparecerán
+              aquí.
             </span>
           </Alert>
         ) : (
@@ -236,6 +241,12 @@ export default async function SoporteIncapacidadesPage({
                   <th className="px-4 py-2 text-right">Días</th>
                   <th className="px-4 py-2">Docs</th>
                   <th className="px-4 py-2">Estado</th>
+                  <th
+                    className="px-4 py-2 text-center"
+                    title="Días corridos desde la radicación. El contador se detiene al pasar a PAGADA o RECHAZADA."
+                  >
+                    Tiempo
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -261,20 +272,15 @@ export default async function SoporteIncapacidadesPage({
                         {i.fechaRadicacion.toLocaleDateString('es-CO')}
                       </td>
                       <td className="px-4 py-2 text-xs">
-                        <p className="font-mono text-[10px] font-semibold">
-                          {i.sucursal.codigo}
-                        </p>
+                        <p className="font-mono text-[10px] font-semibold">{i.sucursal.codigo}</p>
                       </td>
                       <td className="px-4 py-2 text-xs">
                         <p className="font-medium">{nombre}</p>
                         <p className="font-mono text-[10px] text-slate-500">
-                          {i.cotizante.tipoDocumento}{' '}
-                          {i.cotizante.numeroDocumento}
+                          {i.cotizante.tipoDocumento} {i.cotizante.numeroDocumento}
                         </p>
                       </td>
-                      <td className="px-4 py-2 text-[11px]">
-                        {TIPO_LABEL[i.tipo]}
-                      </td>
+                      <td className="px-4 py-2 text-[11px]">{TIPO_LABEL[i.tipo]}</td>
                       <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
                         {i.fechaInicio.toISOString().slice(0, 10)} →{' '}
                         {i.fechaFin.toISOString().slice(0, 10)}
@@ -295,6 +301,13 @@ export default async function SoporteIncapacidadesPage({
                         >
                           {ESTADO_LABEL[i.estado]}
                         </span>
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <DiasIncapacidadChip
+                          fechaRadicacion={i.fechaRadicacion}
+                          estado={i.estado}
+                          fechaCierre={i.gestiones[0]?.createdAt ?? null}
+                        />
                       </td>
                     </tr>
                   );

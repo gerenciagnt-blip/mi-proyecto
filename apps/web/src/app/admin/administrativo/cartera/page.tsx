@@ -9,6 +9,7 @@ import { getUserScope } from '@/lib/sucursal-scope';
 import { ESTADO_LINEA_LABEL, ESTADO_TONE, ESTADOS_VISIBLE_ALIADO } from '@/lib/cartera/labels';
 import { GestionarAliadoButton } from './gestion-dialog';
 import { VerGestionesButton } from '../../soporte/cartera/ver-gestiones-dialog';
+import { DiasSinGestionChip } from '@/components/admin/dias-sin-gestion-chip';
 
 export const metadata = { title: 'Cartera · Administrativo — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -67,6 +68,12 @@ export default async function AdministrativoCarteraPage({
           },
         },
         _count: { select: { gestiones: true } },
+        // Última gestión para el chip "Días sin gestión".
+        gestiones: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        },
       },
     }),
     prisma.carteraDetallado.aggregate({
@@ -201,6 +208,12 @@ export default async function AdministrativoCarteraPage({
                   <th className="px-4 py-2">Período</th>
                   <th className="px-4 py-2 text-right">Valor</th>
                   <th className="px-4 py-2">Estado</th>
+                  <th
+                    className="px-4 py-2 text-center"
+                    title="Días desde la última gestión sobre la línea"
+                  >
+                    Días s/g
+                  </th>
                   <th className="px-4 py-2 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -235,6 +248,12 @@ export default async function AdministrativoCarteraPage({
                       >
                         {ESTADO_LINEA_LABEL[l.estado]}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <DiasSinGestionChip
+                        ultimaGestion={l.gestiones[0]?.createdAt ?? null}
+                        fechaCreacion={l.createdAt}
+                      />
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">

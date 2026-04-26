@@ -7,6 +7,7 @@ import type { Role } from '@pila/db';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { AdminNav } from '@/components/admin/admin-nav';
 import { NotificacionesBell } from '@/components/admin/notificaciones-bell';
+import { GlobalSearch } from '@/components/admin/global-search';
 import { Avatar } from '@/components/ui/avatar';
 import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
@@ -88,6 +89,7 @@ export function AdminShell({
           </div>
 
           <div className="flex items-center gap-2">
+            <GlobalSearch />
             <NotificacionesBell />
             <Link
               href="/admin/perfil"

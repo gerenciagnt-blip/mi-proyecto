@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Search, Upload } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
@@ -374,6 +374,14 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/base-datos/importar"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            title="Importar varios cotizantes desde CSV/Excel"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Importar masivo
+          </Link>
           <NuevaAfiliacionButton modalidad="DEPENDIENTE" {...catalogos} />
           <NuevaAfiliacionButton modalidad="INDEPENDIENTE" variant="secondary" {...catalogos} />
         </div>

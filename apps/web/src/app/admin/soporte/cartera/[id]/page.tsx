@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, FileText, Download, UserCircle2 } from 'lucide-react';
+import { ArrowLeft, FileText, Download, UserCircle2, FileSpreadsheet } from 'lucide-react';
 import type { CarteraEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { formatCOP } from '@/lib/format';
@@ -9,6 +9,7 @@ import { ESTADO_LINEA_LABEL, ESTADO_CONSOLIDADO_LABEL, ESTADO_TONE } from '@/lib
 import { GestionarLineaButton } from '../gestion-dialog';
 import { AnularConsolidadoButton } from '../anular-button';
 import { VerGestionesButton } from '../ver-gestiones-dialog';
+import { DiasSinGestionChip } from '@/components/admin/dias-sin-gestion-chip';
 
 export const metadata = { title: 'Detalle consolidado · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,13 @@ export default async function ConsolidadoDetallePage({
         sucursalAsignada: { select: { id: true, codigo: true, nombre: true } },
         cotizante: { select: { id: true } },
         _count: { select: { gestiones: true } },
+        // Última gestión para calcular "días sin movimiento". Si no hay
+        // ninguna, fallback al createdAt de la propia línea.
+        gestiones: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        },
       },
     }),
     prisma.sucursal.findMany({
@@ -115,6 +123,14 @@ export default async function ConsolidadoDetallePage({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href={`/api/cartera/${consolidado.id}/export.xlsx`}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              title="Descargar Excel con cabecera y detalle (para enviar a la entidad o trabajar offline)"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Excel
+            </a>
             {consolidado.archivoOrigenPath && (
               <a
                 href={`/api/cartera/${consolidado.id}/pdf`}
@@ -295,13 +311,19 @@ export default async function ConsolidadoDetallePage({
                 <th className="px-4 py-2 text-right">Valor</th>
                 <th className="px-4 py-2">Sucursal</th>
                 <th className="px-4 py-2">Estado</th>
+                <th
+                  className="px-4 py-2 text-center"
+                  title="Días desde la última gestión sobre la línea"
+                >
+                  Días s/g
+                </th>
                 <th className="px-4 py-2 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {detalladoFiltrado.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-400">
                     {hayFiltros
                       ? 'Sin resultados con los filtros actuales.'
                       : 'No hay líneas en este consolidado.'}
@@ -346,6 +368,12 @@ export default async function ConsolidadoDetallePage({
                       >
                         {ESTADO_LINEA_LABEL[d.estado]}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <DiasSinGestionChip
+                        ultimaGestion={d.gestiones[0]?.createdAt ?? null}
+                        fechaCreacion={d.createdAt}
+                      />
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">
