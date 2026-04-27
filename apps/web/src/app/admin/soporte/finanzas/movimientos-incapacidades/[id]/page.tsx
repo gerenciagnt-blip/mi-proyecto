@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Landmark, Calendar, Building2, Plus, CheckCircle2 } from 'lucide-react';
-import type { MovimientoDetalleEstado, MovimientoFormaPago, MovimientoIncEstado } from '@pila/db';
+import type {
+  MedioPagoFisico,
+  MovimientoDetalleEstado,
+  MovimientoFormaPago,
+  MovimientoIncEstado,
+} from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
@@ -12,20 +17,29 @@ import { ConciliarButton } from './conciliar-button';
 export const metadata = { title: 'Detalle movimiento — Finanzas' };
 export const dynamic = 'force-dynamic';
 
+// Sprint Soporte reorg — formaPago quedó como legacy (los registros viejos
+// la siguen mostrando). Para los nuevos detalles preferimos `medioPago`
+// (efectivo/transferencia). Mostramos lo que tenga el detalle.
 const FORMA_PAGO_LABEL: Record<MovimientoFormaPago, string> = {
   PAGO_COTIZANTE: 'Pago cotizante',
   PAGO_ALIADO: 'Pago aliado',
   CRUCE_COBRO_ALIADO: 'Cruce cobro aliado',
 };
+const MEDIO_PAGO_LABEL: Record<MedioPagoFisico, string> = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+};
 const DET_ESTADO_LABEL: Record<MovimientoDetalleEstado, string> = {
   PENDIENTE: 'Pendiente',
   EN_PROCESO: 'En proceso',
   PAGADA: 'Pagada',
+  DEVUELTA: 'Devuelta',
 };
 const DET_ESTADO_TONE: Record<MovimientoDetalleEstado, string> = {
   PENDIENTE: 'bg-amber-50 text-amber-700 ring-amber-200',
   EN_PROCESO: 'bg-sky-50 text-sky-700 ring-sky-200',
   PAGADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  DEVUELTA: 'bg-red-50 text-red-700 ring-red-200',
 };
 const MOV_ESTADO_TONE: Record<MovimientoIncEstado, string> = {
   PENDIENTE: 'bg-amber-50 text-amber-700 ring-amber-200',
@@ -187,7 +201,13 @@ export default async function MovimientoDetailPage({
                         <td className="px-4 py-2 text-[11px] text-slate-600">
                           {d.sucursal?.codigo ?? '—'}
                         </td>
-                        <td className="px-4 py-2 text-[11px]">{FORMA_PAGO_LABEL[d.formaPago]}</td>
+                        <td className="px-4 py-2 text-[11px]">
+                          {d.medioPago
+                            ? MEDIO_PAGO_LABEL[d.medioPago]
+                            : d.formaPago
+                              ? FORMA_PAGO_LABEL[d.formaPago]
+                              : '—'}
+                        </td>
                         <td className="px-4 py-2 font-mono text-[10px] text-slate-500">
                           {d.fechaInicioInc && d.fechaFinInc ? (
                             <>

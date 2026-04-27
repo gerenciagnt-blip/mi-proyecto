@@ -2083,7 +2083,12 @@ model MovimientoIncapacidad {
 // --- Detalle de Movimientos -----------------------------------------------
 
 /**
- * Forma en que se liquida el pago de la incapacidad.
+ * Forma en que se liquida el pago de la incapacidad — campo legacy
+ * (Sprint Soporte reorg deprecó este enum a favor de `MedioPagoFisico`).
+ *
+ * Lo mantenemos por compat con datos históricos. La UI nueva usa
+ * `medioPago` (efectivo/transferencia) como reemplazo. A futuro se
+ * puede dropear cuando se migren los datos viejos.
  */
 enum MovimientoFormaPago {
   PAGO_COTIZANTE // se transfiere al cotizante directamente
@@ -2092,12 +2097,30 @@ enum MovimientoFormaPago {
 }
 
 /**
+ * Sprint Soporte reorg — Medio físico del pago. Reemplaza
+ * `MovimientoFormaPago` (que era "destinatario") por algo más útil
+ * para la operación contable.
+ *
+ * - EFECTIVO: el cotizante recibió el pago en caja / billete físico.
+ * - TRANSFERENCIA: pago vía transferencia bancaria — requiere el
+ *   `numeroTransaccion` para conciliar con el extracto.
+ */
+enum MedioPagoFisico {
+  EFECTIVO
+  TRANSFERENCIA
+}
+
+/**
  * Estado del detalle (registro individual dentro del movimiento).
+ *
+ * Sprint Soporte reorg — agregamos `DEVUELTA` para registrar pagos
+ * que el banco rechazó / devolvió (cuenta cerrada, datos errados).
  */
 enum MovimientoDetalleEstado {
   PENDIENTE
   EN_PROCESO
   PAGADA
+  DEVUELTA
 }
 
 /**
@@ -2133,10 +2156,30 @@ model MovimientoIncDetalle {
   retencionImpuesto Decimal @db.Decimal(12, 2) // 3.5% del subtotal
   totalPagar        Decimal @db.Decimal(12, 2) // subtotal - 4x1000 - impuesto
 
-  // Pago
-  formaPago          MovimientoFormaPago
-  estado             MovimientoDetalleEstado @default(PENDIENTE)
-  fechaPago          DateTime?
+  // Pago — campo legacy. Era required, ahora opcional. Sprint Soporte
+  // reorg: la nueva UX usa `medioPago` (efectivo/transferencia) en su
+  // lugar; este campo queda para los registros viejos.
+  formaPago MovimientoFormaPago?
+
+  /**
+   * Sprint Soporte reorg — medio físico del pago al cotizante.
+   * Si `TRANSFERENCIA`, `numeroTransaccion` es obligatorio (validación
+   * en server action). Si `EFECTIVO`, opcional.
+   *
+   * Nota: el enum se llama `MedioPagoFisico` (no `MedioPago`) porque
+   * ya existe un modelo `MedioPago` que es un catálogo distinto
+   * (medios de pago de la sucursal).
+   */
+  medioPago MedioPagoFisico?
+
+  /**
+   * Sprint Soporte reorg — referencia bancaria del pago. Obligatorio
+   * cuando `medioPago=TRANSFERENCIA`, opcional para EFECTIVO.
+   */
+  numeroTransaccion String?
+
+  estado    MovimientoDetalleEstado @default(PENDIENTE)
+  fechaPago DateTime?
   /**
    * Empresa planilla usada como "pagada mediante".
    */
