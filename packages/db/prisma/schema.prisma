@@ -913,6 +913,15 @@ model Afiliacion {
   soportes             SoporteAfiliacion[]
   colpatriaJobs        ColpatriaAfiliacionJob[]
 
+  /**
+   * Sprint Soporte reorg fase 2 — un cotizante puede tener máximo dos
+   * afiliaciones: una `DEPENDIENTE` y una `INDEPENDIENTE`. Si se inactiva
+   * y luego vuelve a entrar, se REACTIVA el registro existente; no se
+   * crea uno nuevo. Esto evita que el historial quede inflado con
+   * duplicados y hace fácil saber cuál es la afiliación vigente del
+   * cotizante.
+   */
+  @@unique([cotizanteId, modalidad])
   @@index([cotizanteId])
   @@index([empresaId])
   @@index([estado])

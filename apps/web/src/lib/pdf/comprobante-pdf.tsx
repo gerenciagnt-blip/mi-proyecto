@@ -73,11 +73,18 @@ const colors = {
 };
 
 const styles = StyleSheet.create({
-  // 5.5" x 8.5" = 396 x 612 puntos. Márgenes 18pt para aprovechar el espacio.
+  // Sprint Soporte reorg fase 2 — Formato media carta (5.5" x 8.5" =
+  // 396 x 612 pt). Márgenes uniformes de 20pt en los 4 lados, según
+  // especificación de impresión.
+  //
+  // Nota: 20pt da ~7mm de respiro en cada borde — suficiente para
+  // impresoras estándar sin recortes. El footer paginado (página X de Y)
+  // se renderiza con `position: absolute, bottom: 8` quedando sobre el
+  // margen, así que no necesitamos paddingBottom extra.
   page: {
-    paddingTop: 18,
-    paddingBottom: 32,
-    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
     fontFamily: 'Helvetica',
     fontSize: 7,
     color: colors.text,

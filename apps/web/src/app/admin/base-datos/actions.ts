@@ -470,8 +470,15 @@ export async function createAfiliacionAction(
 
   const serviciosIds = formData.getAll('servicioId').map(String).filter(Boolean);
 
+  // Sprint Soporte reorg fase 2 — un cotizante puede tener máximo dos
+  // afiliaciones (una DEPENDIENTE y una INDEPENDIENTE). Si vuelve a
+  // entrar después de inactivarse, se REACTIVA el registro existente
+  // sobre-escribiendo los datos del form actual (incluyendo `estado` y
+  // `fechaIngreso` nuevos). Nunca creamos un duplicado.
+  let reactivado = false;
+  let afiliacionId: string;
   try {
-    const afiliacionId = await prisma.$transaction(async (tx) => {
+    afiliacionId = await prisma.$transaction(async (tx) => {
       // Buscar cotizante existente en la misma sucursal (la unique ahora es
       // compuesta [sucursalId, tipoDocumento, numeroDocumento]). Si existe,
       // actualizar datos demográficos; si no, crear uno nuevo amarrado a
@@ -493,34 +500,63 @@ export async function createAfiliacionAction(
             data: { ...cotParsed.data, sucursalId: sucursalIdCotizante },
           });
 
-      const af = await tx.afiliacion.create({
-        data: {
-          cotizanteId: cotizante.id,
-          modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
-          empresaId: normalized.empresaId,
-          cuentaCobroId: afParsed.data.cuentaCobroId,
-          asesorComercialId: afParsed.data.asesorComercialId,
-          planSgssId: normalized.planSgssId,
-          actividadEconomicaId: normalized.actividadEconomicaId,
-          tipoCotizanteId: normalized.tipoCotizanteId,
-          subtipoId: normalized.subtipoId,
-          nivelRiesgo: normalized.nivelRiesgo as 'I' | 'II' | 'III' | 'IV' | 'V',
-          regimen: (normalized.regimen as 'ORDINARIO' | 'RESOLUCION' | null) ?? null,
-          formaPago: afParsed.data.formaPago,
-          estado: afParsed.data.estado,
-          salario: normalized.salario,
-          valorAdministracion: afParsed.data.valorAdministracion,
-          fechaIngreso: afParsed.data.fechaIngreso,
-          comentarios: afParsed.data.comentarios,
-          epsId: normalized.epsId,
-          afpId: normalized.afpId,
-          arlId: normalized.arlId,
-          ccfId: normalized.ccfId,
-          cargo: normalized.cargo ?? null,
+      // ¿Ya tiene afiliación de esta modalidad? Si sí → reactivar; si no → crear.
+      const afiliacionExistente = await tx.afiliacion.findUnique({
+        where: {
+          cotizanteId_modalidad: {
+            cotizanteId: cotizante.id,
+            modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
+          },
         },
+        select: { id: true },
       });
 
+      const dataAfiliacion = {
+        cotizanteId: cotizante.id,
+        modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
+        empresaId: normalized.empresaId,
+        cuentaCobroId: afParsed.data.cuentaCobroId,
+        asesorComercialId: afParsed.data.asesorComercialId,
+        planSgssId: normalized.planSgssId,
+        actividadEconomicaId: normalized.actividadEconomicaId,
+        tipoCotizanteId: normalized.tipoCotizanteId,
+        subtipoId: normalized.subtipoId,
+        nivelRiesgo: normalized.nivelRiesgo as 'I' | 'II' | 'III' | 'IV' | 'V',
+        regimen: (normalized.regimen as 'ORDINARIO' | 'RESOLUCION' | null) ?? null,
+        formaPago: afParsed.data.formaPago,
+        estado: afParsed.data.estado,
+        salario: normalized.salario,
+        valorAdministracion: afParsed.data.valorAdministracion,
+        fechaIngreso: afParsed.data.fechaIngreso,
+        comentarios: afParsed.data.comentarios,
+        epsId: normalized.epsId,
+        afpId: normalized.afpId,
+        arlId: normalized.arlId,
+        ccfId: normalized.ccfId,
+        cargo: normalized.cargo ?? null,
+      };
+
+      let af;
+      if (afiliacionExistente) {
+        // Reactivación: limpiamos fechaRetiro y aplicamos todos los datos
+        // del form (sobre-escribe el plan/empresa/etc del registro previo).
+        reactivado = true;
+        af = await tx.afiliacion.update({
+          where: { id: afiliacionExistente.id },
+          data: { ...dataAfiliacion, fechaRetiro: null },
+        });
+      } else {
+        af = await tx.afiliacion.create({ data: dataAfiliacion });
+      }
+
       if (serviciosIds.length > 0) {
+        // Si reactivamos, primero limpiamos los servicios anteriores para
+        // que el set quede igual al del form actual.
+        if (reactivado) {
+          await tx.afiliacionServicio.deleteMany({
+            where: { afiliacionId: af.id },
+          });
+        }
         await tx.afiliacionServicio.createMany({
           data: serviciosIds.map((sId) => ({ afiliacionId: af.id, servicioAdicionalId: sId })),
           skipDuplicates: true,
@@ -532,8 +568,10 @@ export async function createAfiliacionAction(
     await logAudit({
       entidad: 'Afiliacion',
       entidadId: afiliacionId,
-      accion: 'CREAR',
-      descripcion: `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
+      accion: reactivado ? 'REACTIVAR' : 'CREAR',
+      descripcion: reactivado
+        ? `Afiliación ${normalized.modalidad.toLowerCase()} reactivada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`
+        : `Afiliación creada para ${cotParsed.data.primerNombre} ${cotParsed.data.primerApellido}`,
       cambios: { despues: normalized },
       entidadSucursalId: sucursalIdCotizante,
     });
