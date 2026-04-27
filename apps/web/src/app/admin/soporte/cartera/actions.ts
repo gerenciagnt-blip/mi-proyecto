@@ -187,6 +187,26 @@ export async function gestionarLineaAction(
     cambios.sucursalAsignadaId = params.sucursalAsignadaId;
   }
 
+  // Sprint Soporte reorg fase 2 — validación: si la línea entra (o se
+  // mantiene) en un estado visible al aliado pero queda sin sucursal
+  // asignada, queda huérfana (visible solo a staff). Exigimos sucursal.
+  // Estados visibles al aliado: MORA_REAL, CARTERA_REAL, PAGADA_CARTERA_REAL.
+  const estadoFinal = cambios.estado ?? linea.estado;
+  const sucursalFinal =
+    cambios.sucursalAsignadaId !== undefined
+      ? cambios.sucursalAsignadaId
+      : linea.sucursalAsignadaId;
+  const esEstadoVisibleAliado =
+    estadoFinal === 'MORA_REAL' ||
+    estadoFinal === 'CARTERA_REAL' ||
+    estadoFinal === 'PAGADA_CARTERA_REAL';
+  if (esEstadoVisibleAliado && !sucursalFinal) {
+    return {
+      error:
+        'Para marcar la línea como Mora real / Cartera real / Pagada debes asignarle una sucursal aliada — sin eso queda huérfana.',
+    };
+  }
+
   await prisma.$transaction(async (tx) => {
     if (Object.keys(cambios).length > 0) {
       await tx.carteraDetallado.update({
@@ -399,4 +419,108 @@ export async function anularConsolidadoAction(consolidadoId: string): Promise<Ac
   revalidatePath('/admin/soporte/cartera');
   revalidatePath('/admin/administrativo/cartera');
   return { ok: true, mensaje: `${existe.consecutivo} anulado` };
+}
+
+// ============ Transición del CONSOLIDADO ============
+
+/**
+ * Sprint Soporte reorg fase 2 — Transiciona el estado de un
+ * `CarteraConsolidado` siguiendo el flujo definido por el negocio:
+ *
+ *   EN_CONCILIACION → ENVIADA → CONCILIADA
+ *
+ * Este flujo es del CONSOLIDADO (lote PDF entero), distinto del flujo
+ * de cada línea individual (`CarteraDetallado`) que vive en
+ * `gestionarLineaAction`.
+ *
+ * Reglas:
+ * - Solo permitimos las dos transiciones válidas hacia adelante.
+ * - Cada transición requiere descripción no vacía (auditoría).
+ * - Registramos una `CarteraGestion` global del lote: como el modelo
+ *   exige `detalladoId`, usamos la primera línea del consolidado para
+ *   anclar la entrada (heurística pragmática hasta que el modelo soporte
+ *   gestiones de "consolidado puro").
+ * - Notifica vía `auditarEvento` con entidadSucursalId=null (afecta a
+ *   todos los aliados con líneas en este lote).
+ */
+export async function transicionarConsolidadoAction(
+  consolidadoId: string,
+  target: 'ENVIADA' | 'CONCILIADA',
+  descripcion: string,
+): Promise<ActionState> {
+  const session = await requireStaff();
+  const userId = session.user.id;
+  const userName = session.user.name;
+
+  const desc = descripcion.trim();
+  if (!desc) return { error: 'La descripción es obligatoria' };
+
+  const consolidado = await prisma.carteraConsolidado.findUnique({
+    where: { id: consolidadoId },
+    select: {
+      id: true,
+      consecutivo: true,
+      estado: true,
+      entidadNombre: true,
+      detallado: { select: { id: true }, take: 1 },
+    },
+  });
+  if (!consolidado) return { error: 'Consolidado no encontrado' };
+
+  // Validar transición permitida.
+  const transicionValida =
+    (target === 'ENVIADA' && consolidado.estado === 'EN_CONCILIACION') ||
+    (target === 'CONCILIADA' && consolidado.estado === 'ENVIADA');
+  if (!transicionValida) {
+    return {
+      error: `No se puede pasar de ${consolidado.estado} a ${target}. Flujo válido: EN_CONCILIACION → ENVIADA → CONCILIADA.`,
+    };
+  }
+
+  // Para anclar la entrada de bitácora necesitamos un detalladoId. Si
+  // el consolidado no tiene líneas (caso degenerado), no podemos
+  // registrar gestión — pero igualmente actualizamos el estado.
+  const detalladoAncla = consolidado.detallado[0];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.carteraConsolidado.update({
+      where: { id: consolidadoId },
+      data: { estado: target },
+    });
+    if (detalladoAncla) {
+      await tx.carteraGestion.create({
+        data: {
+          detalladoId: detalladoAncla.id,
+          accionadaPor: 'SOPORTE',
+          nuevoEstado: target,
+          descripcion: `[Consolidado ${consolidado.consecutivo}] ${desc}`,
+          userId,
+          userName,
+        },
+      });
+    }
+  });
+
+  await auditarEvento({
+    entidad: 'CarteraConsolidado',
+    entidadId: consolidadoId,
+    accion: target === 'ENVIADA' ? 'CONSOLIDADO_ENVIADO' : 'CONSOLIDADO_CONCILIADO',
+    entidadSucursalId: null,
+    descripcion: `Consolidado ${consolidado.consecutivo} (${consolidado.entidadNombre}): ${consolidado.estado} → ${target}. ${desc.slice(0, 100)}`,
+    cambios: {
+      antes: { estado: consolidado.estado },
+      despues: { estado: target },
+      campos: ['estado'],
+    },
+  });
+
+  revalidatePath('/admin/soporte/cartera');
+  revalidatePath(`/admin/soporte/cartera/${consolidadoId}`);
+  return {
+    ok: true,
+    mensaje:
+      target === 'ENVIADA'
+        ? 'Consolidado marcado como Enviada'
+        : 'Consolidado marcado como Conciliada',
+  };
 }

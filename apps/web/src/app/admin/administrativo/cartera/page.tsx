@@ -1,5 +1,13 @@
 import Link from 'next/link';
-import { Wallet, Clock3, CheckCircle2, AlertCircle, UserCircle2 } from 'lucide-react';
+import {
+  Wallet,
+  Clock3,
+  CheckCircle2,
+  AlertCircle,
+  UserCircle2,
+  FileDown,
+  Info,
+} from 'lucide-react';
 import type { Prisma, CarteraEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
@@ -65,6 +73,9 @@ export default async function AdministrativoCarteraPage({
             empresaNit: true,
             empresaRazonSocial: true,
             fechaRegistro: true,
+            // Sprint Soporte reorg fase 2 — para mostrar el botón PDF
+            // si el consolidado tiene archivo origen guardado.
+            archivoOrigenPath: true,
           },
         },
         _count: { select: { gestiones: true } },
@@ -206,6 +217,19 @@ export default async function AdministrativoCarteraPage({
                   <th className="px-4 py-2">Documento</th>
                   <th className="px-4 py-2">Nombre</th>
                   <th className="px-4 py-2">Período</th>
+                  {/* Sprint Soporte reorg fase 2 — IBC + Novedad expuestos */}
+                  <th
+                    className="px-4 py-2 text-right"
+                    title="Ingreso Base de Cotización reportado por la entidad"
+                  >
+                    IBC
+                  </th>
+                  <th
+                    className="px-4 py-2 text-center"
+                    title="Código de novedad reportado por la entidad (IGE, NVL, etc.)"
+                  >
+                    Nov.
+                  </th>
                   <th className="px-4 py-2 text-right">Valor</th>
                   <th className="px-4 py-2">Estado</th>
                   <th
@@ -236,8 +260,33 @@ export default async function AdministrativoCarteraPage({
                     <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
                       {l.periodoCobro}
                     </td>
+                    {/* IBC */}
+                    <td className="px-4 py-2 text-right font-mono text-[11px] text-slate-600">
+                      {l.ibc != null ? formatCOP(Number(l.ibc)) : '—'}
+                    </td>
+                    {/* Novedad — chip pequeño solo si hay valor */}
+                    <td className="px-4 py-2 text-center">
+                      {l.novedad ? (
+                        <span
+                          className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+                          title={`Novedad reportada: ${l.novedad}`}
+                        >
+                          {l.novedad}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-brand-blue-dark">
                       {formatCOP(Number(l.valorCobro))}
+                      {l.observaciones && (
+                        <span
+                          className="ml-1 inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-200"
+                          title={l.observaciones}
+                        >
+                          <Info className="h-2.5 w-2.5" />
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <span
@@ -257,6 +306,19 @@ export default async function AdministrativoCarteraPage({
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Sprint Soporte reorg fase 2 — Aliado puede descargar
+                           el PDF original del estado de cuenta de la entidad. */}
+                        {l.consolidado.archivoOrigenPath && (
+                          <a
+                            href={`/api/cartera/${l.consolidado.id}/pdf`}
+                            target="_blank"
+                            rel="noopener"
+                            title="Descargar PDF original del estado de cuenta de la entidad"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-brand-blue"
+                          >
+                            <FileDown className="h-3.5 w-3.5" />
+                          </a>
+                        )}
                         {l.cotizanteId && (
                           <Link
                             href={`/admin/base-datos?q=${encodeURIComponent(l.numeroDocumento)}`}

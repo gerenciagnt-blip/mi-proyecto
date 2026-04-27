@@ -2,21 +2,27 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { NextResponse } from 'next/server';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requireAuth } from '@/lib/auth-helpers';
+import { getUserScope } from '@/lib/sucursal-scope';
 import { uploadsRoot } from '@/lib/cartera/storage';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/cartera/[id]/pdf — descarga el PDF original guardado al
- * importar el consolidado. Sólo staff (ADMIN/SOPORTE) puede descargar —
- * el aliado no necesita el PDF (ve el detallado parseado).
+ * importar el consolidado.
+ *
+ * Sprint Soporte reorg fase 2 — antes era staff-only; ahora también el
+ * aliado puede descargarlo si tiene **al menos una línea** del
+ * consolidado asignada a su sucursal (scope SUCURSAL). El staff
+ * (ADMIN/SOPORTE) siempre puede.
  */
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  await requireStaff();
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  await requireAuth();
+  const scope = await getUserScope();
+  if (!scope) {
+    return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
+  }
   const { id } = await params;
 
   const cons = await prisma.carteraConsolidado.findUnique({
@@ -28,10 +34,19 @@ export async function GET(
     },
   });
   if (!cons || !cons.archivoOrigenPath) {
-    return NextResponse.json(
-      { error: 'PDF no disponible para este consolidado' },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: 'PDF no disponible para este consolidado' }, { status: 404 });
+  }
+
+  // Scope: si es SUCURSAL, validar que tenga al menos una línea del
+  // consolidado asignada a su sucursal. Si no, 403.
+  if (scope.tipo === 'SUCURSAL') {
+    const tieneLinea = await prisma.carteraDetallado.findFirst({
+      where: { consolidadoId: id, sucursalAsignadaId: scope.sucursalId },
+      select: { id: true },
+    });
+    if (!tieneLinea) {
+      return NextResponse.json({ error: 'Sin permiso sobre este consolidado' }, { status: 403 });
+    }
   }
 
   // Resolución segura: impide path traversal al rechazar ".." y verificar

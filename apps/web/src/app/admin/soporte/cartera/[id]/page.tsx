@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, FileText, Download, UserCircle2, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, FileText, Download, UserCircle2, FileSpreadsheet, Info } from 'lucide-react';
 import type { CarteraEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { formatCOP } from '@/lib/format';
@@ -9,6 +9,7 @@ import { ESTADO_LINEA_LABEL, ESTADO_CONSOLIDADO_LABEL, ESTADO_TONE } from '@/lib
 import { GestionarLineaButton } from '../gestion-dialog';
 import { AnularConsolidadoButton } from '../anular-button';
 import { VerGestionesButton } from '../ver-gestiones-dialog';
+import { TransicionConsolidadoButtons } from '../transicion-consolidado';
 import { DiasSinGestionChip } from '@/components/admin/dias-sin-gestion-chip';
 
 export const metadata = { title: 'Detalle consolidado · Soporte — Sistema PILA' };
@@ -123,6 +124,12 @@ export default async function ConsolidadoDetallePage({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Sprint Soporte reorg fase 2 — Transición del consolidado
+                (Enviada → Conciliada). Solo aparece cuando aplica. */}
+            <TransicionConsolidadoButtons
+              consolidadoId={consolidado.id}
+              estadoActual={consolidado.estado}
+            />
             <a
               href={`/api/cartera/${consolidado.id}/export.xlsx`}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
@@ -308,6 +315,19 @@ export default async function ConsolidadoDetallePage({
                 <th className="px-4 py-2">Documento</th>
                 <th className="px-4 py-2">Nombre</th>
                 <th className="px-4 py-2">Período</th>
+                {/* Sprint Soporte reorg fase 2 — IBC + Novedad expuestos */}
+                <th
+                  className="px-4 py-2 text-right"
+                  title="Ingreso Base de Cotización reportado por la entidad"
+                >
+                  IBC
+                </th>
+                <th
+                  className="px-4 py-2 text-center"
+                  title="Código de novedad reportado por la entidad (IGE, NVL, etc.)"
+                >
+                  Nov.
+                </th>
                 <th className="px-4 py-2 text-right">Valor</th>
                 <th className="px-4 py-2">Sucursal</th>
                 <th className="px-4 py-2">Estado</th>
@@ -323,7 +343,7 @@ export default async function ConsolidadoDetallePage({
             <tbody className="divide-y divide-slate-100">
               {detalladoFiltrado.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-400">
+                  <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-400">
                     {hayFiltros
                       ? 'Sin resultados con los filtros actuales.'
                       : 'No hay líneas en este consolidado.'}
@@ -344,8 +364,33 @@ export default async function ConsolidadoDetallePage({
                     <td className="px-4 py-2 font-mono text-[11px] text-slate-500">
                       {d.periodoCobro}
                     </td>
+                    {/* IBC */}
+                    <td className="px-4 py-2 text-right font-mono text-[11px] text-slate-600">
+                      {d.ibc != null ? formatCOP(Number(d.ibc)) : '—'}
+                    </td>
+                    {/* Novedad */}
+                    <td className="px-4 py-2 text-center">
+                      {d.novedad ? (
+                        <span
+                          className="inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+                          title={`Novedad: ${d.novedad}`}
+                        >
+                          {d.novedad}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right font-mono text-xs font-semibold">
                       {formatCOP(Number(d.valorCobro))}
+                      {d.observaciones && (
+                        <span
+                          className="ml-1 inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-200"
+                          title={d.observaciones}
+                        >
+                          <Info className="h-2.5 w-2.5" />
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-xs">
                       {d.sucursalAsignada ? (
