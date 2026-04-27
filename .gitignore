@@ -40,4 +40,5 @@ packages/db/prisma/*.db-journal
 
 # Bot Colpatria — artifacts locales (screenshots de debug)
 apps/bot-colpatria/test-login.png
+apps/bot-colpatria/test-ingreso.png
 apps/bot-colpatria/screenshots/

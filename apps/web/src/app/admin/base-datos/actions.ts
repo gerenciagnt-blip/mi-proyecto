@@ -135,7 +135,9 @@ function parseAfiliacion(fd: FormData) {
     arlId: g('arlId'),
     ccfId: g('ccfId'),
     // Sprint 8: requerido por bot Colpatria para DEPENDIENTE.
-    cargo: titleCase(g('cargo')),
+    // Normalizamos a null si vino vacío o solo whitespace, así Prisma
+    // guarda NULL y el bot detecta cleanly que falta.
+    cargo: titleCase(g('cargo')) || null,
   };
 }
 
@@ -155,6 +157,10 @@ type AfiliacionPayload = {
   arlId: string | null;
   ccfId: string | null;
   salario: number;
+  /** Sprint 8 — requerido por bot Colpatria para DEPENDIENTE.
+   *  El zod schema lo marca optional para no romper afiliaciones viejas
+   *  sin cargo, así que aceptamos undefined además de null. */
+  cargo?: string | null;
 };
 
 type PlanConFlags = {
@@ -168,8 +174,10 @@ type PlanConFlags = {
 };
 
 /**
- * Prepara el payload: carga el plan SGSS (si hay) y LIMPIA los IDs de
- * entidades que no aplican a ese plan.
+ * Prepara el payload: carga el plan SGSS (si hay), LIMPIA los IDs de
+ * entidades que no aplican a ese plan, y HEREDA `arlId` de la empresa
+ * planilla cuando es DEPENDIENTE (el form de afiliación no muestra el
+ * select de ARL para dependientes — la ARL es la de la empresa).
  *
  * Ejemplo: plan sin AFP + usuario mandó `afpId = "abc"` → lo forzamos a
  * null antes de guardar. Esto evita datos colgados en BD cuando el form
@@ -201,6 +209,26 @@ async function prepararPayload(
     if (!plan.incluyeArl) normalized.arlId = null;
     if (!plan.incluyeCcf) normalized.ccfId = null;
   }
+
+  // Herencia ARL para DEPENDIENTE: el form no muestra el select porque
+  // la regla del negocio es que la ARL es la de la empresa planilla.
+  // Solo aplica cuando el plan permite ARL (o no hay plan = todas las
+  // entidades aplican). Si la empresa no tiene ARL configurada, lo
+  // dejamos null y `validateAfiliacion` decidirá si es bloqueante.
+  if (
+    normalized.modalidad === 'DEPENDIENTE' &&
+    normalized.empresaId &&
+    (!plan || plan.incluyeArl)
+  ) {
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: normalized.empresaId },
+      select: { arlId: true },
+    });
+    if (empresa?.arlId) {
+      normalized.arlId = empresa.arlId;
+    }
+  }
+
   return { normalized, plan };
 }
 
@@ -488,6 +516,7 @@ export async function createAfiliacionAction(
           afpId: normalized.afpId,
           arlId: normalized.arlId,
           ccfId: normalized.ccfId,
+          cargo: normalized.cargo ?? null,
         },
       });
 
@@ -654,6 +683,7 @@ export async function updateAfiliacionAction(
           afpId: normalized.afpId,
           arlId: normalized.arlId,
           ccfId: normalized.ccfId,
+          cargo: normalized.cargo ?? null,
         },
       });
 

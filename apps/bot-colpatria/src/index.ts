@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { APP_NAME, APP_VERSION } from '@pila/core';
 import { testLoginCommand } from './commands/test-login.js';
+import { testIngresoCommand } from './commands/test-ingreso.js';
 import { procesarCommand } from './commands/procesar.js';
 
 const program = new Command();
@@ -31,6 +32,48 @@ program
     const code = await testLoginCommand(options);
     process.exit(code);
   });
+
+/**
+ * Prueba el flujo completo de Ingreso Individual contra el portal real
+ * para UN job o UNA afiliación. NO modifica el job en BD — es debug
+ * end-to-end.
+ *
+ * Uso (job real):
+ *   pnpm bot-colpatria test-ingreso --empresa-id <id> --job-id <jobId>
+ *
+ * Uso (afiliación sintética, antes de que se dispare el job):
+ *   pnpm bot-colpatria test-ingreso --empresa-id <id> --afiliacion-id <afId> \
+ *       --eps-codigo-axa 1 --afp-codigo-axa 2
+ */
+program
+  .command('test-ingreso')
+  .description('Prueba el llenado del form Ingreso Individual end-to-end')
+  .requiredOption('--empresa-id <id>', 'ID de la empresa en BD')
+  .option('--job-id <id>', 'ID del job ColpatriaAfiliacionJob (preferido)')
+  .option('--afiliacion-id <id>', 'UUID de la afiliación (construye payload on-the-fly)')
+  .option(
+    '--documento <numDoc>',
+    'Número de documento del cotizante — busca afiliación ACTIVA en la empresa',
+  )
+  .option('--eps-codigo-axa <code>', 'Código AXA de la EPS (provisional, hasta extender payload)')
+  .option('--afp-codigo-axa <code>', 'Código AXA de la AFP (provisional, hasta extender payload)')
+  .option('--screenshot <path>', 'Guarda screenshot del estado final', './test-ingreso.png')
+  .option('--keep-open', 'Mantiene el browser abierto al terminar')
+  .action(
+    async (options: {
+      empresaId: string;
+      jobId?: string;
+      afiliacionId?: string;
+      documento?: string;
+      epsCodigoAxa?: string;
+      afpCodigoAxa?: string;
+      screenshot?: string;
+      keepOpen?: boolean;
+    }) => {
+      const code = await testIngresoCommand(options);
+      process.exit(code);
+    },
+  );
 
 /**
  * Procesa N jobs PENDING. En Sprint 8.3 solo hace el login y deja el

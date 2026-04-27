@@ -7,7 +7,8 @@
     "start": "dotenv -e ../../.env -- tsx src/index.ts",
     "test-login": "dotenv -e ../../.env -- tsx src/index.ts test-login",
     "procesar": "dotenv -e ../../.env -- tsx src/index.ts procesar",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@pila/core": "workspace:*",
@@ -21,6 +22,7 @@
     "@types/node": "^22.10.2",
     "dotenv-cli": "^8.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5"
   }
 }

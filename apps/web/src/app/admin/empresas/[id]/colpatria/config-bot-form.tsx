@@ -147,8 +147,8 @@ export function ConfigBotForm({
           </div>
         </div>
         <p className="mt-3 rounded-md bg-slate-100 px-2 py-1.5 text-[10px] text-slate-600">
-          <strong>Quemados en el bot:</strong> TipoSalario="1" (Básico), ModalidadTrabajo="01"
-          (Presencial), TareaAltoRiesgo="0000001" (No aplica).
+          <strong>Quemados en el bot:</strong> TipoSalario={'"1"'} (Básico), ModalidadTrabajo=
+          {'"01"'} (Presencial), TareaAltoRiesgo={'"0000001"'} (No aplica).
         </p>
       </fieldset>
 
