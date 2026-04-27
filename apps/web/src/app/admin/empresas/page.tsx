@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
-import { CreateEmpresaDialog } from './create-dialog';
+import { EmpresaTabsDialog, type CatalogosModal } from './empresa-tabs-dialog';
 import { toggleEmpresaAction } from './actions';
 
 export const metadata = { title: 'Empresas planilla — Sistema PILA' };
@@ -20,11 +20,7 @@ function buildHref(patch: Partial<SP>, current: SP) {
   return `/admin/empresas${s ? '?' + s : ''}`;
 }
 
-export default async function EmpresasPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function EmpresasPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
   const estadoFilter = sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
@@ -39,32 +35,47 @@ export default async function EmpresasPage({
     ];
   }
 
-  const [empresas, activasCount, inactivasCount, arls, departamentos] = await Promise.all([
-    prisma.empresa.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: { select: { accesos: true } },
-        arl: { select: { codigo: true } },
-      },
-    }),
-    prisma.empresa.count({ where: { active: true } }),
-    prisma.empresa.count({ where: { active: false } }),
-    prisma.entidadSgss.findMany({
-      where: { tipo: 'ARL', active: true },
-      orderBy: { codigo: 'asc' },
-      select: { id: true, codigo: true, nombre: true },
-    }),
-    prisma.departamento.findMany({
-      orderBy: { nombre: 'asc' },
-      include: {
-        municipios: {
-          orderBy: { nombre: 'asc' },
-          select: { id: true, nombre: true },
+  const [empresas, activasCount, inactivasCount, arls, departamentos, actividades, tipos] =
+    await Promise.all([
+      prisma.empresa.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: { select: { accesos: true } },
+          arl: { select: { codigo: true } },
         },
-      },
-    }),
-  ]);
+      }),
+      prisma.empresa.count({ where: { active: true } }),
+      prisma.empresa.count({ where: { active: false } }),
+      prisma.entidadSgss.findMany({
+        where: { tipo: 'ARL', active: true },
+        orderBy: { codigo: 'asc' },
+        select: { id: true, codigo: true, nombre: true },
+      }),
+      prisma.departamento.findMany({
+        orderBy: { nombre: 'asc' },
+        include: {
+          municipios: {
+            orderBy: { nombre: 'asc' },
+            select: { id: true, nombre: true },
+          },
+        },
+      }),
+      // Catálogos extra para Tab 2 (Configuración PILA) del modal
+      prisma.actividadEconomica.findMany({
+        orderBy: { codigoCiiu: 'asc' },
+        select: { id: true, codigoCiiu: true, descripcion: true },
+      }),
+      prisma.tipoCotizante.findMany({
+        orderBy: { codigo: 'asc' },
+        include: {
+          subtipos: {
+            orderBy: { codigo: 'asc' },
+            select: { id: true, codigo: true, nombre: true },
+          },
+        },
+      }),
+    ]);
 
   const departamentosOpts = departamentos.map((d) => ({
     id: d.id,
@@ -72,9 +83,28 @@ export default async function EmpresasPage({
     municipios: d.municipios,
   }));
 
+  const catalogos: CatalogosModal = {
+    arls,
+    departamentos: departamentosOpts,
+    niveles: ['I', 'II', 'III', 'IV', 'V'],
+    actividades,
+    tipos: tipos.map((t) => ({
+      id: t.id,
+      codigo: t.codigo,
+      nombre: t.nombre,
+      modalidad: t.modalidad,
+      subtipos: t.subtipos,
+    })),
+  };
+
   const total = activasCount + inactivasCount;
   const tabs = [
-    { label: 'Todas', count: total, href: buildHref({ estado: undefined }, sp), active: !estadoFilter },
+    {
+      label: 'Todas',
+      count: total,
+      href: buildHref({ estado: undefined }, sp),
+      active: !estadoFilter,
+    },
     {
       label: 'Activas',
       count: activasCount,
@@ -100,7 +130,7 @@ export default async function EmpresasPage({
             Empresas clientes donde se liquida el PILA de los cotizantes dependientes.
           </p>
         </div>
-        <CreateEmpresaDialog arls={arls} departamentos={departamentosOpts} />
+        <EmpresaTabsDialog catalogos={catalogos} trigger="create" />
       </header>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -118,8 +148,7 @@ export default async function EmpresasPage({
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
                   )}
                 >
-                  {t.label}{' '}
-                  <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+                  {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
                 </Link>
               ))}
             </div>
@@ -205,12 +234,7 @@ export default async function EmpresasPage({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex justify-end gap-3">
-                    <Link
-                      href={`/admin/empresas/${e.id}`}
-                      className="text-xs font-medium text-brand-blue hover:text-brand-blue-dark"
-                    >
-                      Editar
-                    </Link>
+                    <EmpresaTabsDialog catalogos={catalogos} trigger="edit" empresaIdEdit={e.id} />
                     <form action={toggleEmpresaAction.bind(null, e.id)}>
                       <button
                         type="submit"

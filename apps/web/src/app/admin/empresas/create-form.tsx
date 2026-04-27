@@ -15,7 +15,9 @@ export function CreateEmpresaForm({
 }: {
   arls: Arl[];
   departamentos: DeptoOpt[];
-  onSuccess?: () => void;
+  /** Se invoca tras crear OK. El `id` permite al caller transicionar
+   *  a un modal de edición sin recargar la página (Sprint reorg). */
+  onSuccess?: (id?: string) => void;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createEmpresaAction, {});
   const ref = useRef<HTMLFormElement>(null);
@@ -23,9 +25,9 @@ export function CreateEmpresaForm({
   useEffect(() => {
     if (state.ok) {
       ref.current?.reset();
-      onSuccess?.();
+      onSuccess?.(state.id);
     }
-  }, [state.ok, onSuccess]);
+  }, [state.ok, state.id, onSuccess]);
 
   return (
     <form ref={ref} action={action} className="space-y-4">

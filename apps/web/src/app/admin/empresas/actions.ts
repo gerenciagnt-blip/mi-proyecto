@@ -8,7 +8,14 @@ import { auditarCreate, auditarUpdate, auditarEvento } from '@/lib/auditoria';
 import { EmpresaCreateSchema, EmpresaUpdateSchema } from '@/lib/validations';
 import { titleCase } from '@/lib/text';
 
-export type ActionState = { error?: string; ok?: boolean };
+export type ActionState = {
+  error?: string;
+  ok?: boolean;
+  /** Sprint reorg — `id` de la empresa recién creada, para que el
+   *  modal con tabs pueda transicionar de Tab 1 (CREATE) a las tabs
+   *  de PILA y Colpatria sin redirigir el browser. */
+  id?: string;
+};
 
 function parseForm(formData: FormData) {
   const get = (k: string) => {
@@ -71,7 +78,7 @@ export async function createEmpresaAction(
   });
 
   revalidatePath('/admin/empresas');
-  return { ok: true };
+  return { ok: true, id: creada.id };
 }
 
 export async function updateEmpresaAction(
@@ -137,6 +144,72 @@ export async function updateEmpresaAction(
 
   revalidatePath('/admin/empresas');
   redirect('/admin/empresas');
+}
+
+/**
+ * Sprint reorg — Modal con tabs.
+ *
+ * Devuelve un snapshot completo de una empresa: datos básicos +
+ * configuración PILA (niveles, actividades, tipos cotizante,
+ * subtipos) + estado Colpatria (credenciales, selectores, mapeo
+ * por nivel).
+ *
+ * Calculamos también las flags de completitud `basicos`, `pila`,
+ * `colpatria` para pintar los indicadores ✓ / ⚠ en cada tab.
+ *
+ * Solo STAFF — el modal solo se abre desde la lista de empresas
+ * que ya está restringida.
+ */
+export async function obtenerEstadoEmpresa(id: string) {
+  await requireStaff();
+
+  const empresa = await prisma.empresa.findUnique({
+    where: { id },
+    include: {
+      arl: { select: { id: true, codigo: true, nombre: true } },
+      nivelesPermitidos: {
+        select: {
+          nivel: true,
+          colpatriaCentroTrabajo: true,
+          colpatriaGrupoOcupacion: true,
+          colpatriaTipoOcupacion: true,
+        },
+      },
+      actividadesPermitidas: { select: { actividadEconomicaId: true } },
+      tiposPermitidos: { select: { tipoCotizanteId: true } },
+      subtiposPermitidos: { select: { subtipoId: true } },
+    },
+  });
+  if (!empresa) return null;
+
+  // Completitud — interpretación pragmática:
+  //   - basicos: nit, nombre, ARL configurada → suficiente para crear PILA
+  //   - pila: tiene al menos 1 nivel + 1 tipo cotizante permitido
+  //   - colpatria: tiene credenciales (usuario + password) Y todos los
+  //     defaults principales (sucursal, tipoAfiliacion, grupo, tipo
+  //     ocupación). Si `colpatriaActivo=false`, igual evaluamos "ok"
+  //     porque la empresa puede no requerir el bot.
+  const basicosOk = Boolean(empresa.nit && empresa.nombre && empresa.arlId);
+  const pilaOk = empresa.nivelesPermitidos.length > 0 && empresa.tiposPermitidos.length > 0;
+  const colpatriaOk = empresa.colpatriaActivo
+    ? Boolean(
+        empresa.colpatriaUsuario &&
+        empresa.colpatriaPasswordEnc &&
+        empresa.colpatriaCodigoSucursalDefault &&
+        empresa.colpatriaTipoAfiliacionDefault &&
+        empresa.colpatriaGrupoOcupacionDefault &&
+        empresa.colpatriaTipoOcupacionDefault,
+      )
+    : true; // si bot inactivo, la tab no es bloqueante
+
+  return {
+    empresa,
+    completitud: {
+      basicos: basicosOk,
+      pila: pilaOk,
+      colpatria: colpatriaOk,
+    },
+  };
 }
 
 export async function toggleEmpresaAction(id: string) {

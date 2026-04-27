@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { updateEmpresaConfigAction, type ActionState } from './actions';
 import type { NivelRiesgo } from '@pila/db';
 
@@ -23,6 +23,7 @@ export function ConfigForm({
   selectedActividades,
   selectedTipos,
   selectedSubtipos,
+  onSuccess,
 }: {
   empresaId: string;
   actividades: Actividad[];
@@ -31,12 +32,19 @@ export function ConfigForm({
   selectedActividades: string[];
   selectedTipos: string[];
   selectedSubtipos: string[];
+  /** Sprint reorg — modal con tabs invoca esto tras submit OK para
+   *  refrescar el snapshot de completitud. */
+  onSuccess?: () => void;
 }) {
   const bound = updateEmpresaConfigAction.bind(null, empresaId);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
 
   const [tiposSel, setTiposSel] = useState(new Set(selectedTipos));
   const [actFilter, setActFilter] = useState('');
+
+  useEffect(() => {
+    if (state.ok) onSuccess?.();
+  }, [state.ok, onSuccess]);
 
   const toggleTipo = (id: string, checked: boolean) => {
     setTiposSel((prev) => {
@@ -129,8 +137,7 @@ export function ConfigForm({
         </h3>
         {tipos.length === 0 && (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            No hay tipos de cotizante en el catálogo — agrégalos en{' '}
-            /admin/catalogos/tipos-cotizante
+            No hay tipos de cotizante en el catálogo — agrégalos en /admin/catalogos/tipos-cotizante
           </p>
         )}
         <div className="space-y-3">
