@@ -10,9 +10,15 @@ import {
   Wrench,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
+import type { Prisma } from '@pila/db';
 import { requireRole } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { buildAuditoriaWhere } from '@/lib/auditoria/scope';
+import {
+  resolverEntidadesEnLote,
+  etiquetaEntidad,
+  serializarResolver,
+} from '@/lib/auditoria/resolver';
 import { BitacoraFiltros } from './filtros';
 import { DetalleEventoTrigger } from './detalle-modal';
 
@@ -45,6 +51,7 @@ type SP = {
   entidad?: string;
   accion?: string;
   userId?: string;
+  documento?: string;
   desde?: string;
   hasta?: string;
   page?: string;
@@ -76,7 +83,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
     }
   }
 
-  const where = buildAuditoriaWhere(scope, {
+  let where = buildAuditoriaWhere(scope, {
     q: sp.q,
     entidad: sp.entidad,
     accion: sp.accion,
@@ -84,6 +91,42 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
     desde,
     hasta,
   });
+
+  // Filtro extra por número de documento del cotizante.
+  // Hacemos pre-query: buscar IDs de Cotizante y Afiliacion cuyo
+  // cotizante tenga ese documento, y restringir el AuditLog a esos
+  // entidadIds con entidad ∈ {Cotizante, Afiliacion}.
+  const documentoFiltro = sp.documento?.trim();
+  if (documentoFiltro) {
+    const [cotizantes, afiliaciones] = await Promise.all([
+      prisma.cotizante.findMany({
+        where: { numeroDocumento: documentoFiltro },
+        select: { id: true },
+      }),
+      prisma.afiliacion.findMany({
+        where: { cotizante: { numeroDocumento: documentoFiltro } },
+        select: { id: true },
+      }),
+    ]);
+    const cotizanteIds = cotizantes.map((c) => c.id);
+    const afiliacionIds = afiliaciones.map((a) => a.id);
+
+    // Si no hay nada, forzamos resultado vacío
+    const restriccion: Prisma.AuditLogWhereInput =
+      cotizanteIds.length === 0 && afiliacionIds.length === 0
+        ? { id: '__no_match_documento__' }
+        : {
+            OR: [
+              ...(cotizanteIds.length > 0
+                ? [{ entidad: 'Cotizante', entidadId: { in: cotizanteIds } }]
+                : []),
+              ...(afiliacionIds.length > 0
+                ? [{ entidad: 'Afiliacion', entidadId: { in: afiliacionIds } }]
+                : []),
+            ],
+          };
+    where = { AND: [where, restriccion] };
+  }
 
   // Cargas en paralelo: la página + el total + las opciones de filtros
   // (entidades, acciones, usuarios distintos en el ámbito visible). Las
@@ -141,6 +184,12 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
     .filter((u): u is { userId: string; userName: string } => !!u.userId && !!u.userName)
     .map((u) => ({ id: u.userId, name: u.userName }));
 
+  // Resolver IDs → nombres legibles (Sprint reorg). Hace queries en
+  // lote para todos los entidadIds + IDs en cambios.antes/despues de
+  // los eventos visibles en esta página.
+  const resolverMap = await resolverEntidadesEnLote(eventos);
+  const resolverDict = serializarResolver(resolverMap);
+
   // Helpers para construir URLs de paginación preservando filtros.
   function urlPagina(p: number): string {
     const qs = new URLSearchParams();
@@ -148,6 +197,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
     if (sp.entidad) qs.set('entidad', sp.entidad);
     if (sp.accion) qs.set('accion', sp.accion);
     if (sp.userId) qs.set('userId', sp.userId);
+    if (sp.documento) qs.set('documento', sp.documento);
     if (sp.desde) qs.set('desde', sp.desde);
     if (sp.hasta) qs.set('hasta', sp.hasta);
     if (p > 1) qs.set('page', String(p));
@@ -190,6 +240,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                 <th className="px-3 py-2 text-left font-medium">Usuario</th>
                 <th className="px-3 py-2 text-left font-medium">Acción</th>
                 <th className="px-3 py-2 text-left font-medium">Entidad</th>
+                <th className="px-3 py-2 text-left font-medium">Documento</th>
                 <th className="px-3 py-2 text-left font-medium">Detalle</th>
                 {scope.tipo === 'STAFF' && (
                   <th className="px-3 py-2 text-left font-medium">Sucursal</th>
@@ -202,6 +253,8 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                 const tone = ACCION_TONE[ev.accion] ?? ACCION_DEFAULT;
                 const Icon = tone.icon;
                 const sucursalLabel = ev.userSucursal?.codigo ?? ev.entidadSucursal?.codigo ?? '—';
+                const etiqueta = etiquetaEntidad(ev.entidadId, resolverMap);
+                const docCotizante = resolverMap.get(ev.entidadId)?.documento ?? null;
                 return (
                   <tr key={ev.id} className="text-slate-700 hover:bg-slate-50/60">
                     <td className="whitespace-nowrap px-3 py-2 font-mono text-[10px] text-slate-500">
@@ -236,10 +289,28 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                       </span>
                     </td>
                     <td className="px-3 py-2">
-                      <span className="font-medium text-slate-900">{ev.entidad}</span>
-                      <span className="ml-1 font-mono text-[10px] text-slate-400">
-                        #{ev.entidadId.slice(-6)}
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        {ev.entidad}
                       </span>
+                      <div className="mt-0.5">
+                        <span
+                          className={
+                            etiqueta.resuelto
+                              ? 'text-[11px] font-medium text-slate-900'
+                              : 'font-mono text-[10px] text-slate-400'
+                          }
+                        >
+                          {etiqueta.label}
+                        </span>
+                        {etiqueta.sublabel && (
+                          <span className="ml-1 text-[10px] text-slate-500">
+                            · {etiqueta.sublabel}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-700">
+                      {docCotizante ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-2 text-slate-600">
                       {ev.descripcion ?? <span className="text-slate-400">—</span>}
@@ -266,6 +337,7 @@ export default async function BitacoraPage({ searchParams }: { searchParams: Pro
                           cambios: ev.cambios,
                           createdAt: ev.createdAt.toISOString(),
                         }}
+                        resolverDict={resolverDict}
                       />
                     </td>
                   </tr>

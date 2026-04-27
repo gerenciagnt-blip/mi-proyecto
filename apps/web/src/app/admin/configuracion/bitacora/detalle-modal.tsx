@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Eye, Network, FileSearch } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
+import type { EntidadResuelta } from '@/lib/auditoria/resolver';
 
 /**
  * Modal de detalle de un evento de bitácora. Muestra:
@@ -50,9 +51,7 @@ const ROLE_LABELS: Record<string, string> = {
  * `{ antes, despues, campos }` que produce `auditarUpdate/Create/Delete`?
  * Si sí, lo renderizamos como diff bonito; si no, mostramos JSON crudo.
  */
-function esDiffEstandar(
-  cambios: unknown,
-): cambios is {
+function esDiffEstandar(cambios: unknown): cambios is {
   antes: Record<string, unknown>;
   despues: Record<string, unknown>;
   campos: string[];
@@ -70,21 +69,45 @@ function esDiffEstandar(
 }
 
 /**
- * Formatea un valor para mostrar en la tabla de diff. Strings van como
- * tales, null/undefined como "—", booleanos como sí/no, objetos como
- * JSON inline. Mantiene la salida compacta — los objetos largos se
- * truncan visualmente con CSS, no aquí.
+ * Heurística: ¿este string parece un cuid? Los cuids generados por
+ * Prisma `@default(cuid())` empiezan con `c` y tienen 24+ chars de
+ * alfanuméricos. Lo usamos para decidir si intentar resolverlo a
+ * través del `resolverDict`.
  */
-function formatearValor(v: unknown): string {
+function pareceCuid(v: unknown): v is string {
+  return typeof v === 'string' && v.length >= 20 && /^c[a-z0-9]+$/i.test(v);
+}
+
+/**
+ * Formatea un valor para mostrar en la tabla de diff. Si el valor es
+ * un cuid Y existe en el dict de resolver, lo reemplaza por la
+ * etiqueta legible (nombre + sublabel). Si no, formato genérico.
+ */
+function formatearValor(v: unknown, resolverDict?: Record<string, EntidadResuelta>): string {
   if (v === null || v === undefined) return '—';
-  if (typeof v === 'string') return v;
+  if (typeof v === 'string') {
+    if (resolverDict && pareceCuid(v) && resolverDict[v]) {
+      const r = resolverDict[v];
+      return r.sublabel ? `${r.label} (${r.sublabel})` : r.label;
+    }
+    return v;
+  }
   if (typeof v === 'number') return String(v);
   if (typeof v === 'boolean') return v ? 'Sí' : 'No';
   if (v instanceof Date) return v.toISOString();
   return JSON.stringify(v);
 }
 
-export function DetalleEventoTrigger({ evento }: { evento: EventoBitacora }) {
+export function DetalleEventoTrigger({
+  evento,
+  resolverDict,
+}: {
+  evento: EventoBitacora;
+  /** Mapa de id → datos legibles (Sprint reorg). Calculado server-side
+   *  en page.tsx y pasado como prop estática. Si no se provee, los
+   *  cuids quedan sin resolver (fallback). */
+  resolverDict?: Record<string, EntidadResuelta>;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -110,13 +133,19 @@ export function DetalleEventoTrigger({ evento }: { evento: EventoBitacora }) {
         }
         description={evento.descripcion ?? undefined}
       >
-        <ContenidoDetalle evento={evento} />
+        <ContenidoDetalle evento={evento} resolverDict={resolverDict} />
       </Dialog>
     </>
   );
 }
 
-function ContenidoDetalle({ evento }: { evento: EventoBitacora }) {
+function ContenidoDetalle({
+  evento,
+  resolverDict,
+}: {
+  evento: EventoBitacora;
+  resolverDict?: Record<string, EntidadResuelta>;
+}) {
   const fechaFmt = new Date(evento.createdAt).toLocaleString('es-CO', {
     dateStyle: 'long',
     timeStyle: 'medium',
@@ -165,7 +194,18 @@ function ContenidoDetalle({ evento }: { evento: EventoBitacora }) {
           <span className="rounded-md bg-brand-blue/10 px-2 py-0.5 text-[11px] font-semibold text-brand-blue-dark">
             {evento.entidad}
           </span>
-          <span className="font-mono text-[10px] text-slate-500">{evento.entidadId}</span>
+          {(() => {
+            const r = resolverDict?.[evento.entidadId];
+            if (r) {
+              return (
+                <>
+                  <span className="text-[11px] font-medium text-slate-900">{r.label}</span>
+                  {r.sublabel && <span className="text-[10px] text-slate-500">· {r.sublabel}</span>}
+                </>
+              );
+            }
+            return <span className="font-mono text-[10px] text-slate-500">{evento.entidadId}</span>;
+          })()}
           <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
             {evento.accion}
           </span>
@@ -183,7 +223,7 @@ function ContenidoDetalle({ evento }: { evento: EventoBitacora }) {
           Este evento no tiene detalle de cambios.
         </section>
       ) : esDiffEstandar(evento.cambios) ? (
-        <DiffEstandar cambios={evento.cambios} accion={evento.accion} />
+        <DiffEstandar cambios={evento.cambios} accion={evento.accion} resolverDict={resolverDict} />
       ) : (
         <section className="rounded-lg border border-slate-200 p-3">
           <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">Datos extra</p>
@@ -196,12 +236,38 @@ function ContenidoDetalle({ evento }: { evento: EventoBitacora }) {
   );
 }
 
+/**
+ * Convierte el nombre del campo a algo más amigable cuando aplique.
+ * Ejemplos:
+ *   - cotizanteId → Cotizante
+ *   - arlId → ARL
+ *   - epsId → EPS
+ *   - sucursalId → Sucursal
+ * Si no hay match, devuelve el campo tal cual (mantiene compat).
+ */
+function nombreCampoAmigable(campo: string): string {
+  const map: Record<string, string> = {
+    cotizanteId: 'Cotizante',
+    afiliacionId: 'Afiliación',
+    empresaId: 'Empresa',
+    sucursalId: 'Sucursal',
+    userId: 'Usuario',
+    arlId: 'ARL',
+    epsId: 'EPS',
+    afpId: 'AFP',
+    ccfId: 'CCF',
+  };
+  return map[campo] ?? campo;
+}
+
 function DiffEstandar({
   cambios,
   accion,
+  resolverDict,
 }: {
   cambios: { antes: Record<string, unknown>; despues: Record<string, unknown>; campos: string[] };
   accion: string;
+  resolverDict?: Record<string, EntidadResuelta>;
 }) {
   const isCreate = accion === 'CREAR';
   const isDelete = accion === 'ELIMINAR';
@@ -229,14 +295,19 @@ function DiffEstandar({
         <tbody className="divide-y divide-slate-100">
           {cambios.campos.map((campo) => (
             <tr key={campo} className="align-top">
-              <td className="px-3 py-2 font-mono text-[10px] text-slate-700">{campo}</td>
+              <td className="px-3 py-2 text-[11px] text-slate-700">
+                <span className="font-medium">{nombreCampoAmigable(campo)}</span>
+                {nombreCampoAmigable(campo) !== campo && (
+                  <span className="ml-1 font-mono text-[9px] text-slate-400">{campo}</span>
+                )}
+              </td>
               {mostrarAntes && (
                 <td className="max-w-[280px] break-words px-3 py-2 text-slate-500">
                   {isCreate ? (
                     <span className="text-slate-300">—</span>
                   ) : (
                     <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-700 ring-1 ring-inset ring-rose-100">
-                      {formatearValor(cambios.antes[campo])}
+                      {formatearValor(cambios.antes[campo], resolverDict)}
                     </span>
                   )}
                 </td>
@@ -247,7 +318,7 @@ function DiffEstandar({
                     <span className="text-slate-300">—</span>
                   ) : (
                     <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700 ring-1 ring-inset ring-emerald-100">
-                      {formatearValor(cambios.despues[campo])}
+                      {formatearValor(cambios.despues[campo], resolverDict)}
                     </span>
                   )}
                 </td>

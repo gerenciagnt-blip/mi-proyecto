@@ -55,10 +55,11 @@ export function BitacoraFiltros({
   const entidad = sp.get('entidad') ?? '';
   const accion = sp.get('accion') ?? '';
   const userId = sp.get('userId') ?? '';
+  const documento = sp.get('documento') ?? '';
   const desde = sp.get('desde') ?? '';
   const hasta = sp.get('hasta') ?? '';
 
-  const hayFiltros = Boolean(q || entidad || accion || userId || desde || hasta);
+  const hayFiltros = Boolean(q || entidad || accion || userId || documento || desde || hasta);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 text-xs">
@@ -133,6 +134,29 @@ export function BitacoraFiltros({
               </option>
             ))}
           </select>
+        </label>
+
+        {/* Documento del cotizante — filtra eventos sobre Cotizante o
+             Afiliacion cuyo cotizante tiene ese número de documento. */}
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Documento</span>
+          <input
+            type="text"
+            placeholder="Ej. 1088016550"
+            defaultValue={documento}
+            maxLength={20}
+            onBlur={(e) => {
+              const v = e.currentTarget.value.trim();
+              if (v !== documento) aplicar({ documento: v });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+            className="h-9 w-36 rounded-lg border border-slate-300 bg-white px-2 text-xs"
+          />
         </label>
 
         {/* Rango de fechas */}
