@@ -145,16 +145,11 @@ export function ConfigBotForm({
             />
             <p className="text-[10px] text-slate-500">Depende de grupo de ocupación</p>
           </div>
-          <div className="space-y-1 sm:col-span-2">
-            <Label htmlFor="colp-mod">Modalidad de trabajo</Label>
-            <Input
-              id="colp-mod"
-              name="modalidadTrabajoDefault"
-              defaultValue={estadoInicial.modalidadTrabajoDefault ?? ''}
-              placeholder="MOD1"
-            />
-          </div>
         </div>
+        <p className="mt-3 rounded-md bg-slate-100 px-2 py-1.5 text-[10px] text-slate-600">
+          <strong>Quemados en el bot:</strong> TipoSalario="1" (Básico), ModalidadTrabajo="01"
+          (Presencial), TareaAltoRiesgo="0000001" (No aplica).
+        </p>
       </fieldset>
 
       {state.error && (

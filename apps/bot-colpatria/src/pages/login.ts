@@ -53,14 +53,52 @@ export async function loginCompleto(
   await page.goto(URL_LOGIN, { waitUntil: 'networkidle' });
 
   // --- Paso 1: usuario + password ---
-  // Los selectores `input[name='Usuario']` y `input[name='Password']`
-  // vienen del informe técnico. Si el portal cambia el `name`, hay que
-  // revisar acá.
-  await page.fill("input[name='Usuario']", cred.usuario);
-  await page.fill("input[name='Password']", cred.password);
+  // El portal AXA renderea labels visibles "Usuario"/"Contraseña" y
+  // placeholders en mayúsculas "USUARIO"/"PASSWORD". Usamos selectores
+  // resilientes (placeholder + type) en vez de name=, porque los `name`
+  // del HTML cambian entre versiones del portal y/o están ofuscados.
+  // Si AXA cambia los placeholders, ajustar acá.
+  const inputUsuario = page
+    .locator(
+      "input[placeholder='USUARIO'], input[placeholder='Usuario'], input[name='Usuario'], input[name='username']",
+    )
+    .first();
+  const inputPassword = page.locator("input[type='password']").first();
+  await inputUsuario.fill(cred.usuario);
+  await inputPassword.fill(cred.password);
 
   log.info('paso 2: enviando credenciales');
-  await page.click("button[type='submit']");
+  // Estrategia de submit en cascada — del más resiliente al más específico:
+  //   1. Press Enter en el campo password (siempre funciona si el form
+  //      tiene <button type="submit"> o handler estándar)
+  //   2. Si después de 3s la URL no cambió, intentamos clicks por texto
+  //      visible (puede ser <a>, <button> o <input>)
+  //
+  // El Enter es más confiable porque no depende del tag (button/a/div)
+  // ni del texto del CTA. AXA lo respeta.
+  await inputPassword.press('Enter');
+
+  // Pequeña espera para ver si Enter disparó la navegación
+  let intentoFallback = false;
+  try {
+    await page.waitForURL((url) => !url.toString().includes('/Autenticacion/Autenticacion'), {
+      timeout: 5000,
+    });
+  } catch {
+    intentoFallback = true;
+  }
+
+  if (intentoFallback) {
+    log.info('Enter no disparó submit — intentando click en CTA visible');
+    const btnLogin = page
+      .locator(
+        // Sin filtro de tag: cualquier elemento con texto "INICIAR SESIÓN"
+        // o variantes (case-insensitive substring por defecto).
+        'text=/iniciar.{0,3}sesi[óo]n/i',
+      )
+      .first();
+    await btnLogin.click({ timeout: 10000 });
+  }
 
   // Esperamos redirect a /Bienvenida. Si hay error de credenciales, el
   // portal vuelve a mostrar /Autenticacion con un mensaje — detectamos
@@ -74,49 +112,65 @@ export async function loginCompleto(
     }
     throw new Error(`Tras submit, URL inesperada: ${url}`);
   }
-  log.info('paso 3: en /Bienvenida — seleccionando perfil');
+  log.info({ url: page.url() }, 'paso 3: en /Bienvenida — esperando AJAX inicial');
 
   // --- Paso 2: selectores de aplicación/perfil/empresa/afiliación ---
-  // El orden importa: cada cambio dispara AJAX que repuebla el siguiente.
-  // Esperamos overlay tras cada selección.
-  await page.selectOption('#ddlAplicaciones', cfg.aplicacion);
+  // El portal carga las opciones de los selects vía un AJAX llamado
+  // `GetDatosUsuario` justo después de que /Bienvenida renderea.
+  // Si llegamos demasiado rápido, los selects están vacíos y
+  // `selectOption` se queda esperando 30s sin nada que poder elegir.
+  // Esperamos a que la red se calme antes de empezar.
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+    /* networkidle puede no dispararse si AXA mantiene un keep-alive
+       abierto — no es crítico, seguimos y dejamos que los waitForFunction
+       específicos de cada select hagan su trabajo. */
+  });
+
+  // Esperamos que cada select tenga al menos 1 opción real antes de
+  // intentar `selectOption`. AXA usa Bootstrap-select, que oculta el
+  // `<select>` nativo con CSS — usamos `force: true` en `selectOption`
+  // para no chocar con el chequeo de visibilidad de Playwright.
+  const esperarOpciones = (id: string, min = 1) =>
+    page.waitForFunction(
+      ({ id, min }) => {
+        const el = document.getElementById(id) as HTMLSelectElement | null;
+        return el !== null && el.options.length >= min;
+      },
+      { id, min },
+      { timeout: 15000 },
+    );
+
+  await esperarOpciones('ddlAplicaciones', 1);
+  await page.selectOption('#ddlAplicaciones', cfg.aplicacion, { force: true });
   await esperarSinOverlay(page);
 
-  await page.selectOption('#ddlPerfiles', cfg.perfil);
+  await esperarOpciones('ddlPerfiles', 1);
+  await page.selectOption('#ddlPerfiles', cfg.perfil, { force: true });
   await esperarSinOverlay(page);
 
   // Tras seleccionar el perfil, AXA recarga #ddlEmpresas vía AJAX.
-  // Esperamos a que tenga al menos 2 opciones (la default + al menos
-  // una empresa real).
-  await page.waitForFunction(
-    () => {
-      const el = document.getElementById('ddlEmpresas') as HTMLSelectElement | null;
-      return el !== null && el.options.length >= 2;
-    },
-    { timeout: 15000 },
-  );
-  await page.selectOption('#ddlEmpresas', cfg.empresaIdInterno);
+  await esperarOpciones('ddlEmpresas', 1);
+  await page.selectOption('#ddlEmpresas', cfg.empresaIdInterno, { force: true });
   await esperarSinOverlay(page);
 
   // Misma cascada: empresa → afiliaciones.
-  await page.waitForFunction(
-    () => {
-      const el = document.getElementById('ddlAfiliaciones') as HTMLSelectElement | null;
-      return el !== null && el.options.length >= 1;
-    },
-    { timeout: 15000 },
-  );
-  await page.selectOption('#ddlAfiliaciones', cfg.afiliacionId);
+  await esperarOpciones('ddlAfiliaciones', 1);
+  await page.selectOption('#ddlAfiliaciones', cfg.afiliacionId, { force: true });
   await esperarSinOverlay(page);
 
-  log.info('paso 4: enviando SegundoPaso');
+  log.info('paso 4: click en INGRESAR');
 
-  // El submit hace POST /SegundoPaso y redirige al portal interno.
-  // No siempre va a la home del portal — depende del perfil. Lo
-  // importante: ya no estamos en `/Bienvenida`.
+  // El botón "Ingresar" es un <input type='submit'>, no <button>.
+  // Selector tolerante: por value, por id si lo tuviera, o por type
+  // dentro del form principal.
+  const btnIngresar = page
+    .locator(
+      "input[type='submit'][value='Ingresar'], input[value='Ingresar'], input[type='submit']",
+    )
+    .first();
   await Promise.all([
     page.waitForLoadState('networkidle', { timeout: 30000 }),
-    page.click("form button[type='submit']"),
+    btnIngresar.click({ force: true }),
   ]);
 
   // Verificamos que llegamos al portal interno o a alguna ruta dentro de

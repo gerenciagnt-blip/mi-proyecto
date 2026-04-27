@@ -328,7 +328,6 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
       ccfId: a.ccfId,
       serviciosIds: a.serviciosAdicionales.map((s) => s.servicioAdicionalId),
       cargo: a.cargo,
-      tipoSalario: a.tipoSalario,
     },
   }));
 

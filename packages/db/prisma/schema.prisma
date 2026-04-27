@@ -418,10 +418,10 @@ model Empresa {
    * Tipo de ocupación default (depende de GrupoOcupacion).
    */
   colpatriaTipoOcupacionDefault    String?
-  /**
-   * Modalidad de trabajo default.
-   */
+  /// @deprecated El bot quema ModalidadTrabajo="01" (Presencial). Campo
+  /// retenido en BD para no perder datos viejos. UI lo ignora.
   colpatriaModalidadTrabajoDefault String?
+  // TareaAltoRiesgo: hardcoded "0000001"=No aplica en el bot.
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos     EmpresaNivelRiesgo[]
@@ -463,6 +463,18 @@ model EmpresaNivelRiesgo {
    * default de la empresa.
    */
   colpatriaCentroTrabajo String?
+  /**
+   * Grupo Ocupacional AXA (código 1-3 dígitos) específico para este
+   * nivel de riesgo. Null = usar default de empresa
+   * (`colpatriaGrupoOcupacionDefault`). Sprint 8 / Opción B.
+   */
+  colpatriaGrupoOcupacion String?
+  /**
+   * Tipo de Ocupación AXA específico para este nivel. Depende del
+   * grupo seleccionado (cascada AJAX en el portal). Null = usar
+   * default empresa.
+   */
+  colpatriaTipoOcupacion  String?
 
   empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
 
@@ -845,17 +857,16 @@ model Afiliacion {
 
   // --- Datos requeridos por bot Colpatria ARL (Sprint 8) ---
   // Aplican principalmente a DEPENDIENTE. Nullable para no romper
-  // afiliaciones existentes. El bot exige `cargo` y `tipoSalario` —
-  // si vienen vacíos cuando se procesa, el job falla con FAILED.
-  /**
-   * /** Cargo del cotizante en la empresa. Ej: "Operario", "Asesor".
-   */
+  // afiliaciones existentes. El bot exige `cargo` — si viene vacío
+  // cuando se procesa, el job falla con FAILED.
+  // TipoSalario, ModalidadTrabajo y TareaAltoRiesgo son hardcoded en el
+  // bot ("1"=Básico, "01"=Presencial, "0000001"=No aplica) — no se
+  // configuran ni en empresa ni en afiliación.
+  /// Cargo del cotizante en la empresa. Ej: "Operario", "Asesor".
   cargo       String?
-  /**
-   * Tipo de salario para AXA: "BASICO" o "INTEGRAL". Default BASICO
-   * (caso típico). Si el contrato es salario integral, el aliado lo
-   * cambia al crear la afiliación.
-   */
+  /// @deprecated El bot quema TipoSalario="1" (Básico). Campo retenido
+  /// en BD para no perder datos viejos. UI lo ignora. Se removerá en
+  /// una migración futura cuando esté limpio.
   tipoSalario String? @default("BASICO")
 
   // Entidades SGSS asignadas (EntidadSgss filtrada por tipo)

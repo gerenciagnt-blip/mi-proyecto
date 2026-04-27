@@ -47,9 +47,9 @@ export type ColpatriaPayload = {
     nivelRiesgo: string;
     salario: string; // Decimal serializado como string
     fechaIngreso: string; // ISO date
-    /** Sprint 8.0.5 — campos extra por bot Colpatria. */
+    /** Sprint 8.0.5 — cargo del cotizante (otros valores como
+     *  TipoSalario/ModalidadTrabajo/TareaAltoRiesgo van quemados en el bot). */
     cargo: string | null;
-    tipoSalario: string; // BASICO | INTEGRAL
     /** Datos del cotizante */
     cotizante: {
       id: string;
@@ -103,7 +103,6 @@ export async function dispararColpatriaSiAplica(
         salario: true,
         fechaIngreso: true,
         cargo: true,
-        tipoSalario: true,
         cotizante: {
           select: {
             id: true,
@@ -163,7 +162,6 @@ export async function dispararColpatriaSiAplica(
         salario: af.salario.toString(),
         fechaIngreso: af.fechaIngreso.toISOString().slice(0, 10),
         cargo: af.cargo,
-        tipoSalario: af.tipoSalario ?? 'BASICO',
         cotizante: {
           id: af.cotizante.id,
           tipoDocumento: af.cotizante.tipoDocumento,

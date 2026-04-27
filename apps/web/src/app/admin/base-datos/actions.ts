@@ -134,9 +134,8 @@ function parseAfiliacion(fd: FormData) {
     afpId: g('afpId'),
     arlId: g('arlId'),
     ccfId: g('ccfId'),
-    // Sprint 8: requeridos por bot Colpatria para DEPENDIENTE.
+    // Sprint 8: requerido por bot Colpatria para DEPENDIENTE.
     cargo: titleCase(g('cargo')),
-    tipoSalario: g('tipoSalario') || 'BASICO',
   };
 }
 

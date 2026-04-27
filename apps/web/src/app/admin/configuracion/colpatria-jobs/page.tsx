@@ -15,6 +15,7 @@ import { prisma } from '@pila/db';
 import type { ColpatriaJobStatus } from '@pila/db';
 import { requireRole } from '@/lib/auth-helpers';
 import { ReintentarButton } from './reintentar-button';
+import { EmpresaFilter } from './empresa-filter';
 
 export const metadata = { title: 'Jobs Colpatria — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -188,22 +189,11 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
 
         <label className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-slate-500">Empresa</span>
-          <form method="GET" action="/admin/configuracion/colpatria-jobs">
-            <input type="hidden" name="status" value={sp.status ?? ''} />
-            <select
-              name="empresaId"
-              defaultValue={empresaFiltro ?? ''}
-              onChange={(e) => e.currentTarget.form?.submit()}
-              className="h-8 min-w-[260px] rounded-md border border-slate-300 bg-white px-2 text-xs"
-            >
-              <option value="">Todas las empresas</option>
-              {empresas.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nit} — {e.nombre}
-                </option>
-              ))}
-            </select>
-          </form>
+          <EmpresaFilter
+            empresas={empresas}
+            defaultEmpresaId={empresaFiltro ?? ''}
+            statusActual={sp.status ?? ''}
+          />
         </label>
 
         <span className="ml-auto text-[10px] text-slate-400">

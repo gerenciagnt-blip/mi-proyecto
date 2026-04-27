@@ -55,37 +55,61 @@ export function CentrosTrabajoForm({
       <header>
         <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
           <MapPin className="h-4 w-4 text-brand-blue" />
-          Centro de trabajo por nivel de riesgo
+          Mapeo por nivel de riesgo
         </h2>
         <p className="mt-1 text-xs text-slate-600">
-          El bot decide a qué Centro de Trabajo en Colpatria asignar cada cotizante según su nivel
-          de riesgo. Si dejas un nivel vacío, el bot usa la sucursal default.
+          Por cada nivel de riesgo permitido, define el Centro de Trabajo, Grupo Ocupacional y Tipo
+          de Ocupación que el bot va a usar en Colpatria. Si dejas un campo vacío, el bot cae al
+          default de la empresa configurado en la sección de arriba.
         </p>
       </header>
 
-      <div className="overflow-hidden rounded-md border border-slate-200">
+      <div className="overflow-x-auto rounded-md border border-slate-200">
         <table className="w-full text-xs">
           <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="w-24 px-3 py-2 text-left font-medium">Nivel</th>
-              <th className="px-3 py-2 text-left font-medium">Código de Centro de Trabajo</th>
+              <th className="w-16 px-3 py-2 text-left font-medium">Nivel</th>
+              <th className="px-3 py-2 text-left font-medium">Centro de Trabajo</th>
+              <th className="px-3 py-2 text-left font-medium">Grupo Ocupacional</th>
+              <th className="px-3 py-2 text-left font-medium">Tipo Ocupación</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {niveles.map((n) => (
               <tr key={n.nivel}>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <span className="rounded bg-brand-blue/10 px-2 py-0.5 font-mono font-semibold text-brand-blue-dark">
                     {n.nivel}
                   </span>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <input
                     type="text"
                     name={`centro_${n.nivel}`}
                     defaultValue={n.colpatriaCentroTrabajo ?? ''}
                     placeholder="ej. 03"
-                    className="h-8 w-32 rounded-md border border-slate-300 bg-white px-2 font-mono text-xs focus:border-brand-blue focus:outline-none"
+                    maxLength={10}
+                    className="h-8 w-24 rounded-md border border-slate-300 bg-white px-2 font-mono text-xs focus:border-brand-blue focus:outline-none"
+                  />
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <input
+                    type="text"
+                    name={`grupo_${n.nivel}`}
+                    defaultValue={n.colpatriaGrupoOcupacion ?? ''}
+                    placeholder="ej. 86"
+                    maxLength={5}
+                    className="h-8 w-24 rounded-md border border-slate-300 bg-white px-2 font-mono text-xs focus:border-brand-blue focus:outline-none"
+                  />
+                </td>
+                <td className="px-3 py-2 align-top">
+                  <input
+                    type="text"
+                    name={`tipo_${n.nivel}`}
+                    defaultValue={n.colpatriaTipoOcupacion ?? ''}
+                    placeholder="ej. 7631"
+                    maxLength={10}
+                    className="h-8 w-28 rounded-md border border-slate-300 bg-white px-2 font-mono text-xs focus:border-brand-blue focus:outline-none"
                   />
                 </td>
               </tr>
@@ -93,6 +117,12 @@ export function CentrosTrabajoForm({
           </tbody>
         </table>
       </div>
+
+      <p className="rounded-md bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
+        <strong>Códigos AXA:</strong> Centro y Grupo son numéricos cortos (1-3 dígitos). Tipo
+        Ocupación tiene 4-5 dígitos y depende del Grupo. Si no estás seguro, déjalo vacío y el bot
+        usará el default de empresa.
+      </p>
 
       {state.error && (
         <Alert variant="danger">

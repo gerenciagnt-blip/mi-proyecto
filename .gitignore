@@ -37,3 +37,7 @@ packages/db/prisma/*.db-journal
 .DS_Store
 .idea/
 .vscode/
+
+# Bot Colpatria — artifacts locales (screenshots de debug)
+apps/bot-colpatria/test-login.png
+apps/bot-colpatria/screenshots/

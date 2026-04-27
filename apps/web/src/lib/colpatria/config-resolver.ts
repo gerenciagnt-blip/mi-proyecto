@@ -5,25 +5,36 @@ import type { NivelRiesgo } from '@pila/db';
  *
  * Reglas de mapeo:
  *
- *   1. Centro de Trabajo: si la empresa configuró un mapeo nivel→centro
- *      (`EmpresaNivelRiesgo.colpatriaCentroTrabajo`) para el nivel del
- *      cotizante, ese gana. Si no, se usa
- *      `Empresa.colpatriaCodigoSucursalDefault` como fallback.
+ *   1. Por-nivel: Centro de Trabajo, Grupo y Tipo de Ocupación se
+ *      resuelven primero contra el mapeo nivel→valor en
+ *      `EmpresaNivelRiesgo`. Si la fila del nivel tiene el campo en null,
+ *      cae al default de empresa (`colpatria*Default`).
  *
  *   2. Nit Empresa Misión = NIT de la propia empresa (caso típico no
  *      outsourcing — confirmado por el operador).
  *
- *   3. Tarea Alto Riesgo: derivado del nivel:
- *        - Nivel V → "S"
- *        - Nivel I, II, III, IV → "N"
- *      Esta regla está en la normativa colombiana (Decreto 2090/2003).
- *
- *   4. Aplicación / Perfil → defaults de la empresa (ARP / OFI si
+ *   3. Aplicación / Perfil → defaults de la empresa (ARP / OFI si
  *      están null).
+ *
+ *   4. **Valores quemados** (decididos con el operador, no se
+ *      configuran por empresa ni por afiliación):
+ *        - TipoSalario       = "1"        (Básico)
+ *        - ModalidadTrabajo  = "01"       (Presencial)
+ *        - TareaAltoRiesgo   = "0000001"  (No aplica)
  *
  * El objetivo es centralizar la conversión "afiliación PILA → campos
  * AXA" en una sola función pura, fácil de testear sin BD.
  */
+
+/** Valores hardcoded — no salen de empresa ni afiliación. */
+export const COLPATRIA_HARDCODED = {
+  /** Tipo de salario AXA: "1"=Básico, "2"=Integral. */
+  tipoSalario: '1',
+  /** Modalidad de trabajo: "01"=Presencial, "02"=Teletrabajo, etc. */
+  modalidadTrabajo: '01',
+  /** Tarea de alto riesgo: "0000001"=No aplica, "0000002"=Alturas, etc. */
+  tareaAltoRiesgo: '0000001',
+} as const;
 
 export type EmpresaConfigSnapshot = {
   nit: string;
@@ -35,10 +46,16 @@ export type EmpresaConfigSnapshot = {
   colpatriaTipoAfiliacionDefault: string | null;
   colpatriaGrupoOcupacionDefault: string | null;
   colpatriaTipoOcupacionDefault: string | null;
-  colpatriaModalidadTrabajoDefault: string | null;
-  /** Mapeo nivel → centro. La función pura recibe la lista; quien la
-   *  llama hace el query a EmpresaNivelRiesgo. */
-  nivelesCentros: Array<{ nivel: NivelRiesgo; codigoCentroTrabajo: string | null }>;
+  /** Mapeo por nivel: centro de trabajo + grupo/tipo de ocupación.
+   *  La función pura recibe la lista; quien la llama hace el query a
+   *  EmpresaNivelRiesgo. Cada campo es null si no se configuró
+   *  override por nivel — el resolver cae al default de empresa. */
+  nivelesCentros: Array<{
+    nivel: NivelRiesgo;
+    codigoCentroTrabajo: string | null;
+    grupoOcupacion: string | null;
+    tipoOcupacion: string | null;
+  }>;
 };
 
 export type ConfigResuelta = {
@@ -54,8 +71,10 @@ export type ConfigResuelta = {
   tipoAfiliacion: string;
   grupoOcupacion: string;
   tipoOcupacion: string;
+  // Quemados
+  tipoSalario: string;
   modalidadTrabajo: string;
-  tareaAltoRiesgo: 'S' | 'N';
+  tareaAltoRiesgo: string;
 };
 
 export type ErroresConfig = string[];
@@ -83,7 +102,6 @@ export function validarConfigCompleta(snap: EmpresaConfigSnapshot): ErroresConfi
   if (!snap.colpatriaTipoAfiliacionDefault) errores.push('Falta Tipo de Afiliación default');
   if (!snap.colpatriaGrupoOcupacionDefault) errores.push('Falta Grupo de Ocupación default');
   if (!snap.colpatriaTipoOcupacionDefault) errores.push('Falta Tipo de Ocupación default');
-  if (!snap.colpatriaModalidadTrabajoDefault) errores.push('Falta Modalidad de Trabajo default');
 
   return errores;
 }
@@ -105,12 +123,12 @@ export function resolverConfigParaAfiliacion(
     throw new Error(`Config incompleta: ${errores.join('; ')}`);
   }
 
-  // Centro de trabajo: prioriza el mapeo por nivel; cae al default.
+  // Para cada campo "por nivel": si el mapeo del nivel tiene valor,
+  // gana; si es null, cae al default de empresa.
   const mapeo = snap.nivelesCentros.find((m) => m.nivel === nivelAfiliacion);
   const centro = mapeo?.codigoCentroTrabajo ?? snap.colpatriaCodigoSucursalDefault;
-
-  // Tarea alto riesgo: solo nivel V por normativa.
-  const tareaAltoRiesgo: 'S' | 'N' = nivelAfiliacion === 'V' ? 'S' : 'N';
+  const grupoOcup = mapeo?.grupoOcupacion ?? snap.colpatriaGrupoOcupacionDefault!;
+  const tipoOcup = mapeo?.tipoOcupacion ?? snap.colpatriaTipoOcupacionDefault!;
 
   return {
     aplicacion: snap.colpatriaAplicacion!,
@@ -121,9 +139,11 @@ export function resolverConfigParaAfiliacion(
     codigoSucursal: snap.colpatriaCodigoSucursalDefault!,
     codigoCentroTrabajo: centro ?? null,
     tipoAfiliacion: snap.colpatriaTipoAfiliacionDefault!,
-    grupoOcupacion: snap.colpatriaGrupoOcupacionDefault!,
-    tipoOcupacion: snap.colpatriaTipoOcupacionDefault!,
-    modalidadTrabajo: snap.colpatriaModalidadTrabajoDefault!,
-    tareaAltoRiesgo,
+    grupoOcupacion: grupoOcup,
+    tipoOcupacion: tipoOcup,
+    // Quemados — no dependen de empresa ni afiliación.
+    tipoSalario: COLPATRIA_HARDCODED.tipoSalario,
+    modalidadTrabajo: COLPATRIA_HARDCODED.modalidadTrabajo,
+    tareaAltoRiesgo: COLPATRIA_HARDCODED.tareaAltoRiesgo,
   };
 }

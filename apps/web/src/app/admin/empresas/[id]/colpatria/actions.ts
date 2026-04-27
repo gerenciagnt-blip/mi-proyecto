@@ -150,7 +150,6 @@ export type ColpatriaConfigEstado = {
   tipoAfiliacionDefault: string | null;
   grupoOcupacionDefault: string | null;
   tipoOcupacionDefault: string | null;
-  modalidadTrabajoDefault: string | null;
 };
 
 /**
@@ -177,7 +176,6 @@ export async function obtenerEstadoColpatria(
       colpatriaTipoAfiliacionDefault: true,
       colpatriaGrupoOcupacionDefault: true,
       colpatriaTipoOcupacionDefault: true,
-      colpatriaModalidadTrabajoDefault: true,
     },
   });
   if (!e) return null;
@@ -194,7 +192,6 @@ export async function obtenerEstadoColpatria(
     tipoAfiliacionDefault: e.colpatriaTipoAfiliacionDefault,
     grupoOcupacionDefault: e.colpatriaGrupoOcupacionDefault,
     tipoOcupacionDefault: e.colpatriaTipoOcupacionDefault,
-    modalidadTrabajoDefault: e.colpatriaModalidadTrabajoDefault,
   };
 }
 
@@ -227,7 +224,6 @@ export async function actualizarConfigColpatriaAction(
   const tipoAfiliacion = get('tipoAfiliacionDefault');
   const grupoOcupacion = get('grupoOcupacionDefault');
   const tipoOcupacion = get('tipoOcupacionDefault');
-  const modalidadTrabajo = get('modalidadTrabajoDefault');
 
   // Validaciones livianas
   if (perfil !== 'OFI' && perfil !== 'OPE') {
@@ -245,7 +241,6 @@ export async function actualizarConfigColpatriaAction(
       colpatriaTipoAfiliacionDefault: tipoAfiliacion,
       colpatriaGrupoOcupacionDefault: grupoOcupacion,
       colpatriaTipoOcupacionDefault: tipoOcupacion,
-      colpatriaModalidadTrabajoDefault: modalidadTrabajo,
     },
   });
 
@@ -297,13 +292,21 @@ export async function actualizarCentrosTrabajoAction(
     };
   }
 
-  // Validar y aplicar cada nivel.
+  // Validar y aplicar cada nivel. Cada nivel persiste 3 valores
+  // independientes (centro de trabajo, grupo ocupación, tipo ocupación).
+  // Si todos van vacíos, el bot caerá al default de empresa.
   const updates = niveles.map((n) => {
-    const raw = String(formData.get(`centro_${n.nivel}`) ?? '').trim();
-    const codigo = raw === '' ? null : raw;
+    const norm = (k: string) => {
+      const raw = String(formData.get(`${k}_${n.nivel}`) ?? '').trim();
+      return raw === '' ? null : raw;
+    };
     return prisma.empresaNivelRiesgo.update({
       where: { empresaId_nivel: { empresaId, nivel: n.nivel } },
-      data: { colpatriaCentroTrabajo: codigo },
+      data: {
+        colpatriaCentroTrabajo: norm('centro'),
+        colpatriaGrupoOcupacion: norm('grupo'),
+        colpatriaTipoOcupacion: norm('tipo'),
+      },
     });
   });
 
@@ -313,7 +316,7 @@ export async function actualizarCentrosTrabajoAction(
     entidad: 'Empresa',
     entidadId: empresaId,
     accion: 'COLPATRIA_CENTROS',
-    descripcion: `Mapeo nivel→centro Colpatria actualizado para ${empresa.nombre}`,
+    descripcion: `Mapeo nivel→centro/grupo/tipo Colpatria actualizado para ${empresa.nombre}`,
   });
 
   revalidatePath(`/admin/empresas/${empresaId}/colpatria`);
@@ -323,18 +326,26 @@ export async function actualizarCentrosTrabajoAction(
 export type CentroTrabajoMapeo = {
   nivel: NivelRiesgo;
   colpatriaCentroTrabajo: string | null;
+  colpatriaGrupoOcupacion: string | null;
+  colpatriaTipoOcupacion: string | null;
 };
 
 /**
- * Lee los niveles permitidos + su mapeo a centro de trabajo Colpatria.
- * Si la empresa no tiene niveles configurados, devuelve []. La UI lo
- * usa para informar al ADMIN que primero debe configurar PILA.
+ * Lee los niveles permitidos + su mapeo a centro de trabajo, grupo y
+ * tipo de ocupación Colpatria. Si la empresa no tiene niveles
+ * configurados, devuelve []. La UI lo usa para informar al ADMIN que
+ * primero debe configurar PILA.
  */
 export async function obtenerCentrosTrabajo(empresaId: string): Promise<CentroTrabajoMapeo[]> {
   await requireAdmin();
   const filas = await prisma.empresaNivelRiesgo.findMany({
     where: { empresaId },
-    select: { nivel: true, colpatriaCentroTrabajo: true },
+    select: {
+      nivel: true,
+      colpatriaCentroTrabajo: true,
+      colpatriaGrupoOcupacion: true,
+      colpatriaTipoOcupacion: true,
+    },
   });
   // Ordenar I, II, III, IV, V
   const orden: Record<NivelRiesgo, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
