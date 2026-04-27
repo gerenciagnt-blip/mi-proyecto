@@ -763,6 +763,12 @@ export async function updateAfiliacionAction(
  * afiliación, con sus documentos y gestiones. Usado por la sección
  * "Soporte Afiliaciones" del modal Consultar.
  *
+ * Sprint Soporte reorg — el payload incluye:
+ * - `asignadoA` por solicitud (usuario STAFF asignado).
+ * - `arlBot` a nivel afiliación (estado del último job Colpatria + PDF
+ *   descargable si SUCCESS). `null` cuando el plan no lleva ARL o la
+ *   empresa no tiene el bot activo.
+ *
  * Aplica scope: un aliado SUCURSAL sólo ve si la afiliación pertenece a
  * su sucursal (a través del cotizante); staff ve todo.
  */
@@ -773,46 +779,87 @@ export async function listarSoportesPorAfiliacionAction(afiliacionId: string) {
 
   const af = await prisma.afiliacion.findUnique({
     where: { id: afiliacionId },
-    select: { cotizante: { select: { sucursalId: true } } },
+    select: {
+      cotizante: { select: { sucursalId: true } },
+      planSgss: { select: { incluyeArl: true } },
+      empresa: { select: { colpatriaActivo: true } },
+    },
   });
   if (!af) return { error: 'Afiliación no encontrada' as const };
   if (scope.tipo === 'SUCURSAL' && af.cotizante.sucursalId !== scope.sucursalId) {
     return { error: 'Sin permiso' as const };
   }
 
-  const solicitudes = await prisma.soporteAfiliacion.findMany({
-    where: { afiliacionId },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      createdBy: { select: { name: true } },
-      gestionadoPor: { select: { name: true } },
-      documentos: {
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          archivoNombreOriginal: true,
-          archivoSize: true,
-          accionadaPor: true,
-          eliminado: true,
-          createdAt: true,
+  const planIncluyeArl = af.planSgss?.incluyeArl ?? false;
+  const empresaColpatriaActivo = af.empresa?.colpatriaActivo ?? false;
+
+  const [solicitudes, lastJob] = await Promise.all([
+    prisma.soporteAfiliacion.findMany({
+      where: { afiliacionId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        createdBy: { select: { name: true } },
+        gestionadoPor: { select: { name: true } },
+        asignadoA: { select: { id: true, name: true } },
+        documentos: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            archivoNombreOriginal: true,
+            archivoSize: true,
+            accionadaPor: true,
+            eliminado: true,
+            createdAt: true,
+          },
+        },
+        gestiones: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            accionadaPor: true,
+            descripcion: true,
+            nuevoEstado: true,
+            userName: true,
+            createdAt: true,
+          },
         },
       },
-      gestiones: {
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          accionadaPor: true,
-          descripcion: true,
-          nuevoEstado: true,
-          userName: true,
-          createdAt: true,
-        },
-      },
-    },
-  });
+    }),
+    // Último job Colpatria de esta afiliación, sólo si aplica.
+    planIncluyeArl && empresaColpatriaActivo
+      ? prisma.colpatriaAfiliacionJob.findFirst({
+          where: { afiliacionId },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            intento: true,
+            pdfPath: true,
+            pdfArchivedAt: true,
+            finishedAt: true,
+            error: true,
+          },
+        })
+      : Promise.resolve(null),
+  ]);
 
   return {
     ok: true as const,
+    arlBot: {
+      planIncluyeArl,
+      empresaColpatriaActivo,
+      lastJob: lastJob
+        ? {
+            id: lastJob.id,
+            status: lastJob.status,
+            intento: lastJob.intento,
+            pdfPath: lastJob.pdfPath,
+            pdfArchivedAt: lastJob.pdfArchivedAt?.toISOString() ?? null,
+            finishedAt: lastJob.finishedAt?.toISOString() ?? null,
+            error: lastJob.error,
+          }
+        : null,
+    },
     items: solicitudes.map((s) => ({
       id: s.id,
       consecutivo: s.consecutivo,
@@ -823,6 +870,7 @@ export async function listarSoportesPorAfiliacionAction(afiliacionId: string) {
       creadoPor: s.createdBy?.name ?? null,
       gestionadoPor: s.gestionadoPor?.name ?? null,
       gestionadoEn: s.gestionadoEn?.toISOString() ?? null,
+      asignadoA: s.asignadoA ? { id: s.asignadoA.id, name: s.asignadoA.name } : null,
       documentos: s.documentos.map((d) => ({
         id: d.id,
         nombre: d.archivoNombreOriginal,

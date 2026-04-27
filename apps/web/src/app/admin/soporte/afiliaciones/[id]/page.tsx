@@ -9,6 +9,9 @@ import {
   Download,
   History,
   AlertTriangle,
+  Bot,
+  Shield,
+  UserCheck,
 } from 'lucide-react';
 import type { SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
 import { prisma } from '@pila/db';
@@ -16,7 +19,10 @@ import { cn } from '@/lib/utils';
 import { requireStaff } from '@/lib/auth-helpers';
 import { formatCOP } from '@/lib/format';
 import { resolverCambios } from '@/lib/soporte-af/cambios';
+import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
 import { GestionForm } from './gestion-form';
+import { AsignarPopover } from '../asignar-popover';
+import { listarStaffAsignablesAction } from '../actions';
 
 export const metadata = { title: 'Solicitud Soporte · Afiliaciones' };
 export const dynamic = 'force-dynamic';
@@ -42,13 +48,7 @@ const DISPARO_LABEL: Record<SoporteAfTipoDisparo, string> = {
   CAMBIO_PLAN_SGSS: 'Cambio plan SGSS',
 };
 
-function DataRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="grid grid-cols-3 gap-2 py-1.5 text-xs">
       <dt className="col-span-1 text-slate-500">{label}</dt>
@@ -74,45 +74,78 @@ export default async function SolicitudSoporteAfPage({
   await requireStaff();
   const { id } = await params;
 
-  const sol = await prisma.soporteAfiliacion.findUnique({
-    where: { id },
-    include: {
-      createdBy: { select: { id: true, name: true, email: true } },
-      gestionadoPor: { select: { id: true, name: true } },
-      sucursal: { select: { codigo: true, nombre: true } },
-      periodo: { select: { anio: true, mes: true } },
-      afiliacion: {
-        include: {
-          cotizante: {
-            include: {
-              departamento: { select: { nombre: true } },
-              municipio: { select: { nombre: true } },
+  const [sol, staffAsignables] = await Promise.all([
+    prisma.soporteAfiliacion.findUnique({
+      where: { id },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true } },
+        gestionadoPor: { select: { id: true, name: true } },
+        asignadoA: { select: { id: true, name: true } },
+        sucursal: { select: { codigo: true, nombre: true } },
+        periodo: { select: { anio: true, mes: true } },
+        afiliacion: {
+          include: {
+            cotizante: {
+              include: {
+                departamento: { select: { nombre: true } },
+                municipio: { select: { nombre: true } },
+              },
             },
+            empresa: {
+              select: { nit: true, nombre: true, colpatriaActivo: true },
+            },
+            tipoCotizante: { select: { codigo: true, nombre: true } },
+            subtipo: { select: { codigo: true, nombre: true } },
+            planSgss: { select: { codigo: true, nombre: true, incluyeArl: true } },
+            actividadEconomica: { select: { codigoCiiu: true, descripcion: true } },
+            asesorComercial: { select: { codigo: true, nombre: true } },
+            cuentaCobro: { select: { codigo: true, razonSocial: true } },
+            eps: { select: { codigo: true, nombre: true } },
+            afp: { select: { codigo: true, nombre: true } },
+            arl: { select: { codigo: true, nombre: true } },
+            ccf: { select: { codigo: true, nombre: true } },
           },
-          empresa: { select: { nit: true, nombre: true } },
-          tipoCotizante: { select: { codigo: true, nombre: true } },
-          subtipo: { select: { codigo: true, nombre: true } },
-          planSgss: { select: { codigo: true, nombre: true } },
-          actividadEconomica: { select: { codigoCiiu: true, descripcion: true } },
-          asesorComercial: { select: { codigo: true, nombre: true } },
-          cuentaCobro: { select: { codigo: true, razonSocial: true } },
-          eps: { select: { codigo: true, nombre: true } },
-          afp: { select: { codigo: true, nombre: true } },
-          arl: { select: { codigo: true, nombre: true } },
-          ccf: { select: { codigo: true, nombre: true } },
+        },
+        documentos: {
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { name: true } } },
+        },
+        gestiones: {
+          orderBy: { createdAt: 'desc' },
         },
       },
-      documentos: {
-        orderBy: { createdAt: 'desc' },
-        include: { user: { select: { name: true } } },
-      },
-      gestiones: {
-        orderBy: { createdAt: 'desc' },
-      },
-    },
-  });
+    }),
+    listarStaffAsignablesAction(),
+  ]);
 
   if (!sol) notFound();
+
+  // Sprint Soporte reorg — último job Colpatria si plan ARL + empresa
+  // con bot activo. Se mostrará en la columna derecha junto al form.
+  const planIncluyeArl = sol.afiliacion.planSgss?.incluyeArl ?? false;
+  const empresaColpatriaActivo = sol.afiliacion.empresa?.colpatriaActivo ?? false;
+  const lastJob =
+    planIncluyeArl && empresaColpatriaActivo
+      ? await prisma.colpatriaAfiliacionJob.findFirst({
+          where: { afiliacionId: sol.afiliacion.id },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            intento: true,
+            pdfPath: true,
+            pdfArchivedAt: true,
+            finishedAt: true,
+            error: true,
+          },
+        })
+      : null;
+
+  const arlStatus = arlStatusFromBot({
+    planIncluyeArl,
+    empresaColpatriaActivo,
+    lastJobStatus: lastJob?.status ?? null,
+  });
 
   const cambios = await resolverCambios(
     sol.snapshotAntes as Record<string, unknown> | null,
@@ -149,16 +182,11 @@ export default async function SolicitudSoporteAfPage({
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             Recibido {fmtDateTime(sol.fechaRadicacion)} · Aliado{' '}
-            <span className="font-medium text-slate-700">
-              {sol.createdBy?.name ?? '—'}
-            </span>
+            <span className="font-medium text-slate-700">{sol.createdBy?.name ?? '—'}</span>
             {sol.sucursal?.codigo && (
               <>
                 {' '}
-                ·{' '}
-                <span className="font-mono text-[11px]">
-                  {sol.sucursal.codigo}
-                </span>
+                · <span className="font-mono text-[11px]">{sol.sucursal.codigo}</span>
               </>
             )}
           </p>
@@ -192,9 +220,7 @@ export default async function SolicitudSoporteAfPage({
           <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
               <UserIcon className="h-4 w-4 text-slate-500" />
-              <h2 className="text-sm font-semibold text-slate-700">
-                Cotizante
-              </h2>
+              <h2 className="text-sm font-semibold text-slate-700">Cotizante</h2>
               <Link
                 href={`/admin/base-datos?q=${encodeURIComponent(cot.numeroDocumento)}`}
                 className="ml-auto text-[10px] text-brand-blue hover:underline"
@@ -212,9 +238,8 @@ export default async function SolicitudSoporteAfPage({
               <DataRow
                 label="Ubicación"
                 value={
-                  [cot.municipio?.nombre, cot.departamento?.nombre]
-                    .filter(Boolean)
-                    .join(', ') || '—'
+                  [cot.municipio?.nombre, cot.departamento?.nombre].filter(Boolean).join(', ') ||
+                  '—'
                 }
               />
               <DataRow label="Dirección" value={cot.direccion} />
@@ -225,9 +250,7 @@ export default async function SolicitudSoporteAfPage({
           <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
               <Building2 className="h-4 w-4 text-slate-500" />
-              <h2 className="text-sm font-semibold text-slate-700">
-                Afiliación
-              </h2>
+              <h2 className="text-sm font-semibold text-slate-700">Afiliación</h2>
               <span
                 className={cn(
                   'ml-auto inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
@@ -246,11 +269,7 @@ export default async function SolicitudSoporteAfPage({
               />
               <DataRow
                 label="Empresa planilla"
-                value={
-                  af.empresa
-                    ? `${af.empresa.nombre} (NIT ${af.empresa.nit})`
-                    : '—'
-                }
+                value={af.empresa ? `${af.empresa.nombre} (NIT ${af.empresa.nit})` : '—'}
               />
               <DataRow
                 label="Tipo / Subtipo"
@@ -259,9 +278,7 @@ export default async function SolicitudSoporteAfPage({
                     af.tipoCotizante
                       ? `${af.tipoCotizante.codigo} · ${af.tipoCotizante.nombre}`
                       : null,
-                    af.subtipo
-                      ? `${af.subtipo.codigo} · ${af.subtipo.nombre}`
-                      : null,
+                    af.subtipo ? `${af.subtipo.codigo} · ${af.subtipo.nombre}` : null,
                   ]
                     .filter(Boolean)
                     .join(' / ') || '—'
@@ -269,11 +286,7 @@ export default async function SolicitudSoporteAfPage({
               />
               <DataRow
                 label="Plan SGSS"
-                value={
-                  af.planSgss
-                    ? `${af.planSgss.codigo} · ${af.planSgss.nombre}`
-                    : '—'
-                }
+                value={af.planSgss ? `${af.planSgss.codigo} · ${af.planSgss.nombre}` : '—'}
               />
               <DataRow label="Régimen" value={af.regimen} />
               <DataRow label="Nivel ARL" value={af.nivelRiesgo} />
@@ -286,16 +299,9 @@ export default async function SolicitudSoporteAfPage({
               <DataRow label="Forma de pago" value={af.formaPago} />
               <DataRow
                 label="EPS / AFP / ARL / CCF"
-                value={
-                  [
-                    af.eps?.nombre,
-                    af.afp?.nombre,
-                    af.arl?.nombre,
-                    af.ccf?.nombre,
-                  ]
-                    .map((x) => x ?? '—')
-                    .join(' · ')
-                }
+                value={[af.eps?.nombre, af.afp?.nombre, af.arl?.nombre, af.ccf?.nombre]
+                  .map((x) => x ?? '—')
+                  .join(' · ')}
               />
               <DataRow
                 label="Actividad económica"
@@ -308,9 +314,7 @@ export default async function SolicitudSoporteAfPage({
               <DataRow
                 label="Cuenta de cobro"
                 value={
-                  af.cuentaCobro
-                    ? `${af.cuentaCobro.codigo} · ${af.cuentaCobro.razonSocial}`
-                    : '—'
+                  af.cuentaCobro ? `${af.cuentaCobro.codigo} · ${af.cuentaCobro.razonSocial}` : '—'
                 }
               />
               <DataRow
@@ -330,9 +334,7 @@ export default async function SolicitudSoporteAfPage({
             <section className="rounded-xl border border-amber-200 bg-amber-50/40 shadow-sm">
               <header className="flex items-center gap-2 border-b border-amber-200/70 px-5 py-3">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
-                <h2 className="text-sm font-semibold text-amber-800">
-                  Cambios detectados
-                </h2>
+                <h2 className="text-sm font-semibold text-amber-800">Cambios detectados</h2>
               </header>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -346,15 +348,9 @@ export default async function SolicitudSoporteAfPage({
                   <tbody className="divide-y divide-amber-100">
                     {cambios.map((c) => (
                       <tr key={c.campo}>
-                        <td className="px-5 py-2 font-medium text-amber-900">
-                          {c.label}
-                        </td>
-                        <td className="px-5 py-2 text-slate-600 line-through">
-                          {c.antes}
-                        </td>
-                        <td className="px-5 py-2 font-semibold text-slate-900">
-                          {c.despues}
-                        </td>
+                        <td className="px-5 py-2 font-medium text-amber-900">{c.label}</td>
+                        <td className="px-5 py-2 text-slate-600 line-through">{c.antes}</td>
+                        <td className="px-5 py-2 font-semibold text-slate-900">{c.despues}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -372,21 +368,20 @@ export default async function SolicitudSoporteAfPage({
               </h2>
             </header>
             {sol.documentos.length === 0 ? (
-              <p className="px-5 py-4 text-xs text-slate-500">
-                Sin documentos adjuntos.
-              </p>
+              <p className="px-5 py-4 text-xs text-slate-500">Sin documentos adjuntos.</p>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {sol.documentos.map((d) => (
-                  <li
-                    key={d.id}
-                    className="flex items-center gap-3 px-5 py-2.5 text-xs"
-                  >
+                  <li key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
                     <Paperclip className="h-3 w-3 text-slate-400" />
                     <div className="flex-1 truncate">
                       <p className="font-medium">{d.archivoNombreOriginal}</p>
                       <p className="text-[10px] text-slate-500">
-                        {d.accionadaPor === 'SOPORTE' ? 'Soporte' : 'Aliado'}
+                        {d.accionadaPor === 'SOPORTE'
+                          ? 'Soporte'
+                          : d.accionadaPor === 'BOT'
+                            ? 'Bot'
+                            : 'Aliado'}
                         {' · '}
                         {d.user?.name ?? '—'}
                         {' · '}
@@ -424,74 +419,138 @@ export default async function SolicitudSoporteAfPage({
               </h2>
             </header>
             {sol.gestiones.length === 0 ? (
-              <p className="px-5 py-4 text-xs text-slate-500">
-                Sin gestiones registradas todavía.
-              </p>
+              <p className="px-5 py-4 text-xs text-slate-500">Sin gestiones registradas todavía.</p>
             ) : (
               <ol className="divide-y divide-slate-100">
-                {sol.gestiones.map((g) => (
-                  <li key={g.id} className="px-5 py-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                          g.accionadaPor === 'SOPORTE'
-                            ? 'bg-brand-blue/10 text-brand-blue-dark'
-                            : 'bg-violet-50 text-violet-700',
-                        )}
-                      >
-                        {g.accionadaPor}
-                      </span>
-                      {g.nuevoEstado && (
+                {sol.gestiones.map((g) => {
+                  const tone =
+                    g.accionadaPor === 'BOT'
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
+                      : g.accionadaPor === 'SOPORTE'
+                        ? 'bg-brand-blue/10 text-brand-blue-dark'
+                        : 'bg-violet-50 text-violet-700';
+                  const label = g.accionadaPor === 'BOT' ? 'Bot Colpatria' : g.accionadaPor;
+                  return (
+                    <li key={g.id} className="px-5 py-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span
                           className={cn(
-                            'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset',
-                            ESTADO_TONE[g.nuevoEstado],
+                            'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+                            tone,
                           )}
                         >
-                          → {ESTADO_LABEL[g.nuevoEstado]}
+                          {g.accionadaPor === 'BOT' && <Bot className="h-2.5 w-2.5" />}
+                          {label}
                         </span>
-                      )}
-                      <span className="ml-auto text-[10px] text-slate-500">
-                        {fmtDateTime(g.createdAt)} · {g.userName ?? '—'}
-                      </span>
-                    </div>
-                    <p className="mt-1.5 whitespace-pre-line text-slate-700">
-                      {g.descripcion}
-                    </p>
-                  </li>
-                ))}
+                        {g.nuevoEstado && (
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset',
+                              ESTADO_TONE[g.nuevoEstado],
+                            )}
+                          >
+                            → {ESTADO_LABEL[g.nuevoEstado]}
+                          </span>
+                        )}
+                        <span className="ml-auto text-[10px] text-slate-500">
+                          {fmtDateTime(g.createdAt)} · {g.userName ?? '—'}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 whitespace-pre-line text-slate-700">{g.descripcion}</p>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </section>
         </div>
 
-        {/* Columna derecha — formulario de gestión */}
+        {/* Columna derecha — asignación + bot + formulario de gestión */}
         <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
+          {/* Asignación — Sprint Soporte reorg */}
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+              <UserCheck className="h-4 w-4 text-slate-500" />
+              <h2 className="text-sm font-semibold text-slate-700">Asignación</h2>
+            </header>
+            <div className="px-5 py-3">
+              <AsignarPopover soporteAfId={sol.id} actual={sol.asignadoA} staff={staffAsignables} />
+              <p className="mt-2 text-[10px] text-slate-500">
+                Cualquier ADMIN/SOPORTE puede tomar o reasignar.
+              </p>
+            </div>
+          </section>
+
+          {/* Bot ARL Colpatria — sólo si plan ARL + empresa colpatriaActivo */}
+          {arlStatus && (
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <header className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+                <Shield className="h-4 w-4 text-emerald-600" />
+                <h2 className="text-sm font-semibold text-slate-700">Bot ARL · Colpatria</h2>
+                <span
+                  className={cn(
+                    'ml-auto inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                    arlStatus.tone,
+                  )}
+                >
+                  {arlStatus.label}
+                </span>
+              </header>
+              <div className="space-y-2 px-5 py-3">
+                {!lastJob ? (
+                  <p className="text-[11px] text-slate-500">
+                    Aún no se ha creado un job para esta afiliación.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-[11px] text-slate-600">
+                      Intento <span className="font-mono">{lastJob.intento}</span>
+                      {lastJob.finishedAt && <> · Terminado {fmtDateTime(lastJob.finishedAt)}</>}
+                    </p>
+                    {lastJob.error && (
+                      <p className="rounded bg-red-50 px-2 py-1 text-[10px] text-red-700">
+                        {lastJob.error}
+                      </p>
+                    )}
+                    {lastJob.status === 'SUCCESS' && lastJob.pdfPath && !lastJob.pdfArchivedAt && (
+                      <a
+                        href={`/api/colpatria/jobs/${lastJob.id}/pdf`}
+                        target="_blank"
+                        rel="noopener"
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+                      >
+                        <Download className="h-3 w-3" />
+                        Descargar PDF afiliación
+                      </a>
+                    )}
+                    {lastJob.status === 'SUCCESS' && lastJob.pdfArchivedAt && (
+                      <p className="text-[10px] italic text-slate-400">
+                        PDF archivado por retención — solo metadata disponible.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-100 px-5 py-3">
-              <h2 className="text-sm font-semibold text-slate-700">
-                Gestionar solicitud
-              </h2>
+              <h2 className="text-sm font-semibold text-slate-700">Gestionar solicitud</h2>
               <p className="mt-0.5 text-[11px] text-slate-500">
                 Cambia el estado, registra una observación y adjunta soportes si es necesario.
               </p>
             </header>
             <div className="px-5 py-4">
-              <GestionForm
-                soporteAfId={sol.id}
-                estadoActual={sol.estado}
-              />
+              <GestionForm soporteAfId={sol.id} estadoActual={sol.estado} />
             </div>
           </section>
 
           {sol.gestionadoPor && (
             <p className="text-[11px] text-slate-500">
               Última gestión por{' '}
-              <span className="font-medium text-slate-700">
-                {sol.gestionadoPor.name}
-              </span>{' '}
-              el {sol.gestionadoEn ? fmtDateTime(sol.gestionadoEn) : '—'}
+              <span className="font-medium text-slate-700">{sol.gestionadoPor.name}</span> el{' '}
+              {sol.gestionadoEn ? fmtDateTime(sol.gestionadoEn) : '—'}
             </p>
           )}
         </aside>
