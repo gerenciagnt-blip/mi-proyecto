@@ -234,11 +234,13 @@ const styles = StyleSheet.create({
   },
 
   // ===== Footer =====
+  // Sprint Soporte reorg fase 2 — Antes era `position: absolute, bottom: 12,
+  // fixed` lo cual lo pegaba al fondo de la hoja media carta dejando un
+  // hueco enorme entre el TOTAL y el pie. Ahora va en el flujo natural
+  // del documento: queda inmediatamente debajo del bloque "Total a pagar"
+  // como cierre del comprobante.
   footer: {
-    position: 'absolute',
-    bottom: 12,
-    left: 18,
-    right: 18,
+    marginTop: 12,
     textAlign: 'center',
     fontSize: 5.5,
     color: colors.textMuted,
@@ -490,7 +492,10 @@ export function ComprobantePdf({ data }: { data: ComprobantePdfData }) {
         </View>
 
         {/* ============ Footer ============ */}
-        <View style={styles.footer} fixed>
+        {/* Sprint Soporte reorg fase 2 — sin `fixed`: el pie de página queda
+           justo debajo del bloque de totales como cierre natural del
+           comprobante, no pegado al borde inferior de la hoja. */}
+        <View style={styles.footer}>
           <Text>
             {data.formato?.pieDePagina ??
               'Este comprobante es constancia del pago realizado. Conserve el documento.'}
