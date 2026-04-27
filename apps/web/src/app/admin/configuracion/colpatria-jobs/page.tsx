@@ -12,10 +12,12 @@ import {
   Eye,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
-import type { ColpatriaJobStatus } from '@pila/db';
+import type { ColpatriaJobStatus, Prisma } from '@pila/db';
 import { requireRole } from '@/lib/auth-helpers';
 import { ReintentarButton } from './reintentar-button';
 import { EmpresaFilter } from './empresa-filter';
+import { DocumentoFilter } from './documento-filter';
+import { ProcesarAhoraButton } from './procesar-ahora-button';
 
 export const metadata = { title: 'Jobs Colpatria — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,7 @@ const PAGE_SIZE = 50;
 type SP = {
   status?: string;
   empresaId?: string;
+  documento?: string;
   page?: string;
 };
 
@@ -33,27 +36,27 @@ const STATUS_TONE: Record<
   { label: string; className: string; Icon: typeof CheckCircle2 }
 > = {
   PENDING: {
-    label: 'Pending',
+    label: 'Pendiente',
     className: 'bg-slate-100 text-slate-700 ring-slate-200',
     Icon: Clock,
   },
   RUNNING: {
-    label: 'Running',
+    label: 'En curso',
     className: 'bg-blue-50 text-blue-700 ring-blue-200',
     Icon: Loader2,
   },
   SUCCESS: {
-    label: 'Success',
+    label: 'Exitoso',
     className: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     Icon: CheckCircle2,
   },
   FAILED: {
-    label: 'Failed',
+    label: 'Fallido',
     className: 'bg-rose-50 text-rose-700 ring-rose-200',
     Icon: XCircle,
   },
   RETRYABLE: {
-    label: 'Retry',
+    label: 'Reintento',
     className: 'bg-amber-50 text-amber-800 ring-amber-200',
     Icon: AlertTriangle,
   },
@@ -87,10 +90,21 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
       ? (sp.status as ColpatriaJobStatus)
       : undefined;
   const empresaFiltro = sp.empresaId?.trim() ?? undefined;
+  const documentoFiltro = sp.documento?.trim() ?? undefined;
 
-  const where = {
+  const where: Prisma.ColpatriaAfiliacionJobWhereInput = {
     ...(statusFiltro ? { status: statusFiltro } : {}),
     ...(empresaFiltro ? { empresaId: empresaFiltro } : {}),
+    // Filtro por documento del cotizante (match exacto, sensible
+    // a-z porque los docs colombianos son numéricos y mayúsculas
+    // para PAS).
+    ...(documentoFiltro
+      ? {
+          afiliacion: {
+            cotizante: { numeroDocumento: documentoFiltro },
+          },
+        }
+      : {}),
   };
 
   const [jobs, total, empresas] = await Promise.all([
@@ -118,6 +132,10 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
                 primerNombre: true,
                 primerApellido: true,
                 numeroDocumento: true,
+                // Sucursal del cotizante = aliado dueño del registro
+                sucursal: {
+                  select: { codigo: true, nombre: true },
+                },
               },
             },
           },
@@ -140,25 +158,31 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
     const final = {
       status: sp.status ?? '',
       empresaId: sp.empresaId ?? '',
+      documento: sp.documento ?? '',
       page: '',
       ...patch,
     };
     if (final.status) qs.set('status', final.status);
     if (final.empresaId) qs.set('empresaId', final.empresaId);
+    if (final.documento) qs.set('documento', final.documento);
     if (final.page) qs.set('page', final.page);
     return `?${qs.toString()}`;
   }
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
-          <Bot className="h-6 w-6 text-brand-blue" />
-          Jobs Bot Colpatria ARL
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Histórico de afiliaciones procesadas (o por procesar) en el portal Colpatria. Solo STAFF.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+            <Bot className="h-6 w-6 text-brand-blue" />
+            Jobs Bot Colpatria ARL
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Histórico de afiliaciones procesadas (o por procesar) en el portal Colpatria. Solo
+            STAFF.
+          </p>
+        </div>
+        <ProcesarAhoraButton />
       </header>
 
       {/* Filtros */}
@@ -197,6 +221,11 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
           />
         </label>
 
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Documento</span>
+          <DocumentoFilter defaultValue={documentoFiltro ?? ''} />
+        </label>
+
         <span className="ml-auto text-[10px] text-slate-400">
           {total} job{total !== 1 ? 's' : ''}
         </span>
@@ -215,6 +244,7 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
                 <th className="px-3 py-2 text-left font-medium">Creado</th>
                 <th className="px-3 py-2 text-left font-medium">Estado</th>
                 <th className="px-3 py-2 text-left font-medium">Cotizante</th>
+                <th className="px-3 py-2 text-left font-medium">Aliado</th>
                 <th className="px-3 py-2 text-left font-medium">Empresa</th>
                 <th className="px-3 py-2 text-left font-medium">Duración</th>
                 <th className="px-3 py-2 text-left font-medium">Resultado</th>
@@ -262,6 +292,18 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
                         <p className="font-medium">{nombreCot}</p>
                         <p className="text-[10px] text-slate-500">{cotizante.numeroDocumento}</p>
                       </Link>
+                    </td>
+                    <td className="px-3 py-2 text-[11px]">
+                      {cotizante.sucursal ? (
+                        <>
+                          <p className="font-medium text-slate-900">{cotizante.sucursal.nombre}</p>
+                          <p className="font-mono text-[10px] text-slate-500">
+                            {cotizante.sucursal.codigo}
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-[10px] italic text-slate-400">Sin sucursal</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-[11px]">
                       <p className="font-medium text-slate-900">{j.empresa.nombre}</p>
