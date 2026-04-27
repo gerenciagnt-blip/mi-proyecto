@@ -6,6 +6,7 @@ import { EntidadTabs } from './tabs';
 import { CreateEntidadForm } from './create-form';
 import { toggleEntidadAction, importEntidadesAction } from './actions';
 import { ImportForm } from '../_components/import-form';
+import { EditCodigoAxaRow } from './edit-codigo-axa-row';
 
 export const metadata = { title: 'Entidades SGSS — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -24,14 +25,17 @@ export default async function EntidadesPage({
 }) {
   const sp = await searchParams;
   const parsedTipo = TipoEntidadSgssEnum.safeParse(sp.tipo ?? 'ARL');
-  const tipo: TipoEntidadSgss = parsedTipo.success
-    ? (parsedTipo.data as TipoEntidadSgss)
-    : 'ARL';
+  const tipo: TipoEntidadSgss = parsedTipo.success ? (parsedTipo.data as TipoEntidadSgss) : 'ARL';
 
   const entidades = await prisma.entidadSgss.findMany({
     where: { tipo },
     orderBy: { codigo: 'asc' },
   });
+
+  // Sprint 8.5: el `codigoAxa` solo aplica a EPS y AFP (las únicas
+  // entidades que el bot Colpatria llena en el form de Ingreso
+  // Individual). Para ARL y CCF, ocultamos la columna.
+  const muestraCodigoAxa = tipo === 'EPS' || tipo === 'AFP';
 
   const importAction = importEntidadesAction.bind(null, tipo);
 
@@ -60,8 +64,8 @@ export default async function EntidadesPage({
         <h2 className="mb-3 text-sm font-semibold">Importar desde Excel</h2>
         <ImportForm
           action={importAction}
-          headers={['codigo', 'nombre', 'codigoMinSalud', 'nit']}
-          example="EPS001 | Nueva EPS | EPS037 | 860066942-7"
+          headers={['codigo', 'nombre', 'codigoMinSalud', 'nit', 'codigoAxa']}
+          example="EPS001 | Nueva EPS | EPS037 | 860066942-7 | 1"
         />
       </section>
 
@@ -73,6 +77,14 @@ export default async function EntidadesPage({
               <th className="px-4 py-2">Nombre</th>
               <th className="px-4 py-2">Cód. MinSalud</th>
               <th className="px-4 py-2">NIT</th>
+              {muestraCodigoAxa && (
+                <th
+                  className="px-4 py-2"
+                  title="Código del catálogo AXA Colpatria — usado por el bot RPA"
+                >
+                  Cód. AXA
+                </th>
+              )}
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -80,7 +92,10 @@ export default async function EntidadesPage({
           <tbody className="divide-y divide-slate-100">
             {entidades.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-slate-400">
+                <td
+                  colSpan={muestraCodigoAxa ? 7 : 6}
+                  className="px-4 py-6 text-center text-slate-400"
+                >
                   Aún no hay {TIPO_LABELS[tipo]}
                 </td>
               </tr>
@@ -89,8 +104,21 @@ export default async function EntidadesPage({
               <tr key={e.id}>
                 <td className="px-4 py-3 font-mono text-xs">{e.codigo}</td>
                 <td className="px-4 py-3">{e.nombre}</td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.codigoMinSalud ?? '—'}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  {e.codigoMinSalud ?? '—'}
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-500">{e.nit ?? '—'}</td>
+                {muestraCodigoAxa && (
+                  <td className="px-4 py-3">
+                    <EditCodigoAxaRow
+                      id={e.id}
+                      nombre={e.nombre}
+                      codigoMinSalud={e.codigoMinSalud}
+                      nit={e.nit}
+                      codigoAxaInicial={e.codigoAxa}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${

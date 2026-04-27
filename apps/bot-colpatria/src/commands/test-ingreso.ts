@@ -347,6 +347,8 @@ async function construirPayloadDesdeAfiliacion(afiliacionId: string): Promise<Co
       salario: true,
       fechaIngreso: true,
       cargo: true,
+      eps: { select: { codigoAxa: true } },
+      afp: { select: { codigoAxa: true } },
       cotizante: {
         select: {
           id: true,
@@ -382,6 +384,8 @@ async function construirPayloadDesdeAfiliacion(afiliacionId: string): Promise<Co
       salario: af.salario.toString(),
       fechaIngreso: af.fechaIngreso.toISOString().slice(0, 10),
       cargo: af.cargo,
+      epsCodigoAxa: af.eps?.codigoAxa ?? null,
+      afpCodigoAxa: af.afp?.codigoAxa ?? null,
       cotizante: {
         id: af.cotizante.id,
         tipoDocumento: af.cotizante.tipoDocumento,

@@ -539,6 +539,18 @@ model EntidadSgss {
   nombre         String
   codigoMinSalud String?
   nit            String?
+  /**
+   * Código del catálogo AXA Colpatria (Sprint 8.5). Solo aplica a
+   * EPS y AFP que el bot va a usar al llenar el form de Ingreso
+   * Individual. Null para entidades que no necesitan mapeo (ARL, CCF).
+   *
+   * Ejemplo EPS: "1" = ALIANSALUD, "37" = SANITAS, etc.
+   * Ejemplo AFP: depende del select del portal.
+   *
+   * Se configura desde /admin/catalogos/entidades (form de edición)
+   * y se incluye en el payload del job para el bot.
+   */
+  codigoAxa      String?
   active         Boolean         @default(true)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

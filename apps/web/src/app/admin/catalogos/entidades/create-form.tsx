@@ -11,6 +11,11 @@ export function CreateEntidadForm({ tipo }: { tipo: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createEntidadAction, {});
   const ref = useRef<HTMLFormElement>(null);
 
+  // El campo `codigoAxa` solo tiene sentido para EPS y AFP — son las
+  // entidades que el bot Colpatria llena en su form. Para ARL y CCF
+  // ocultamos el input (queda null en BD).
+  const muestraCodigoAxa = tipo === 'EPS' || tipo === 'AFP';
+
   useEffect(() => {
     if (state.ok) ref.current?.reset();
   }, [state.ok]);
@@ -26,18 +31,28 @@ export function CreateEntidadForm({ tipo }: { tipo: string }) {
 
       <div>
         <Label htmlFor="codigoMinSalud">Cód. MinSalud</Label>
-        <Input
-          id="codigoMinSalud"
-          name="codigoMinSalud"
-          placeholder="opcional"
-          className="mt-1"
-        />
+        <Input id="codigoMinSalud" name="codigoMinSalud" placeholder="opcional" className="mt-1" />
       </div>
 
       <div>
         <Label htmlFor="nit">NIT</Label>
         <Input id="nit" name="nit" placeholder="opcional" className="mt-1" />
       </div>
+
+      {muestraCodigoAxa && (
+        <div className="sm:col-span-2">
+          <Label htmlFor="codigoAxa">
+            Cód. AXA Colpatria{' '}
+            <span className="text-[10px] font-normal text-slate-400">(bot Colpatria)</span>
+          </Label>
+          <Input
+            id="codigoAxa"
+            name="codigoAxa"
+            placeholder='ej. "1" para ALIANSALUD'
+            className="mt-1"
+          />
+        </div>
+      )}
 
       <div className="sm:col-span-4 sm:flex sm:items-end sm:justify-between sm:gap-3">
         <p className="text-[11px] text-slate-500">

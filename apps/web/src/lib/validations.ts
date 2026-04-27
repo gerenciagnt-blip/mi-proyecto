@@ -152,6 +152,16 @@ export const EntidadSgssSchema = z.object({
     .trim()
     .optional()
     .transform((v) => (v === '' ? undefined : v)),
+  /**
+   * Código del catálogo AXA Colpatria (Sprint 8.5). Solo aplica a EPS
+   * y AFP — el ADMIN lo configura para que el bot lo use al llenar el
+   * form de Ingreso Individual. Empty string → null en BD.
+   */
+  codigoAxa: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
 });
 
 export const ActividadSchema = z.object({

@@ -31,6 +31,12 @@ export type ColpatriaPayload = {
     salario: string; // Decimal serializado como string
     fechaIngreso: string; // ISO YYYY-MM-DD
     cargo: string | null;
+    /** Sprint 8.5 — códigos AXA Colpatria de la afiliación. Pueden
+     *  venir null si la EPS/AFP no tiene mapeo configurado en
+     *  /admin/catalogos/entidades. El bot va a fallar el submit si
+     *  alguno es null (AXA marca esos campos como required). */
+    epsCodigoAxa?: string | null;
+    afpCodigoAxa?: string | null;
     cotizante: {
       id: string;
       tipoDocumento: string; // CC | CE | NIT | PAS | TI | RC | NIP
@@ -154,6 +160,11 @@ export type CamposIngreso = {
     tipoOcupacion: string;
     modalidadTrabajo: string; // quemado "01"
     tareaAltoRiesgo: string; // quemado "0000001"
+    /** Sprint 8.5 — código AXA de EPS y AFP. Null si la entidad SGSS
+     *  no tiene `codigoAxa` configurado — caller decide qué hacer
+     *  (típicamente: continuar y dejar que el portal valide). */
+    epsCodigoAxa: string | null;
+    afpCodigoAxa: string | null;
   };
   // formIngreso > jornada
   jornada: {
@@ -175,6 +186,55 @@ function isoADdMmYyyy(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!m) throw new Error(`Fecha ISO inválida: "${iso}"`);
   return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/**
+ * Calcula la fecha de ingreso para el form AXA.
+ *
+ * **Regla del portal Colpatria** (constatada por modal del propio
+ * portal): la fecha de ingreso debe ser entre **mañana** (today + 1)
+ * y máximo 30 días después.
+ *
+ * Lógica derivada de esa regla + intención del operador:
+ *   - Si `fechaPilaIso` NO se proporciona → mañana.
+ *   - Si `fechaPilaIso` ≤ hoy → mañana (la fecha PILA ya pasó o es
+ *     hoy mismo, AXA exige al menos mañana).
+ *   - Si `fechaPilaIso` > hoy → PILA (cae en rango aceptado por AXA;
+ *     respetamos la fecha real del contrato registrada en PILA).
+ *
+ * Si la fecha PILA es muy lejana al futuro (>30 días), AXA igual la
+ * rechazaría — eso queda como un warning visible al operador en lugar
+ * de bloquear acá. La regla "<= 30 días" la valida el portal.
+ *
+ * Acepta `now` opcional para testing determinista.
+ */
+export function calcularFechaIngresoAxa(now: Date = new Date(), fechaPilaIso?: string): string {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0); // normalizar a inicio del día
+
+  const manana = new Date(today);
+  manana.setDate(manana.getDate() + 1);
+
+  const formatear = (d: Date) =>
+    `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+
+  // Sin fecha PILA → default mañana
+  if (!fechaPilaIso) return formatear(manana);
+
+  // Parsear fecha PILA (formato ISO YYYY-MM-DD). Si malformada, fallback.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fechaPilaIso);
+  if (!m) return formatear(manana);
+  // Normalizamos a inicio del día (00:00 hora local) para que la
+  // comparación con `today` sea purely por día calendario, no horas.
+  const fechaPila = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  fechaPila.setHours(0, 0, 0, 0);
+
+  // Si PILA es estrictamente posterior a hoy (≥ mañana) → respetamos PILA.
+  if (fechaPila.getTime() > today.getTime()) {
+    return formatear(fechaPila);
+  }
+  // Caso contrario (hoy o pasado) → mañana.
+  return formatear(manana);
 }
 
 function formatearSalario(decimal: string): string {
@@ -298,8 +358,27 @@ export function prepararCamposIngreso(
   };
 
   // laborales — Cargo maxLength=30, Salario maxLength=11
+  const epsCodigoAxa = af.epsCodigoAxa ?? null;
+  const afpCodigoAxa = af.afpCodigoAxa ?? null;
+  if (!epsCodigoAxa) {
+    warnings.push('EPS sin código AXA configurado — el portal va a rechazar el submit');
+  }
+  if (!afpCodigoAxa) {
+    warnings.push('AFP sin código AXA configurado — el portal va a rechazar el submit');
+  }
+  // Regla AXA: fecha de ingreso debe estar entre mañana y +30 días.
+  //   - Si la fecha PILA es futura (> hoy), la respetamos
+  //   - Si es <= hoy (pasado o presente), AXA no la acepta → usamos mañana
+  // Si hubo ajuste (PILA ≤ hoy), avisamos para que el operador sepa.
+  const fechaAxa = calcularFechaIngresoAxa(undefined, af.fechaIngreso);
+  const fechaPilaDdMmYyyy = isoADdMmYyyy(af.fechaIngreso);
+  if (fechaPilaDdMmYyyy !== fechaAxa) {
+    warnings.push(
+      `Fecha de ingreso PILA es ${fechaPilaDdMmYyyy}, ajustada a ${fechaAxa} por regla AXA (mín. mañana).`,
+    );
+  }
   const laborales = {
-    fechaIngreso: isoADdMmYyyy(af.fechaIngreso),
+    fechaIngreso: fechaAxa,
     tipoSalario: config.tipoSalario,
     valorSalario: formatearSalario(af.salario),
     cargo: truncar(af.cargo ?? '', 30, warnings, 'Cargo'),
@@ -311,6 +390,8 @@ export function prepararCamposIngreso(
     tipoOcupacion: config.tipoOcupacion,
     modalidadTrabajo: config.modalidadTrabajo,
     tareaAltoRiesgo: config.tareaAltoRiesgo,
+    epsCodigoAxa,
+    afpCodigoAxa,
   };
 
   return {

@@ -204,8 +204,43 @@ export async function verificarEmpleado(
       .click({ force: true }),
   ]);
   await esperarSinOverlay(page);
+  // Margen para que modales animados aparezcan (CSS transitions)
+  await page.waitForTimeout(1500);
 
-  // Tras el submit, formIngreso aparece. Leemos ID_OPERACION.
+  // Detección PRIORITARIA: modal/banner con "Ya existe un empleado".
+  // AXA no rellena ID_OPERACION cuando ya existe — bloquea con modal.
+  const mensajeBloqueante = await extraerMensajeError(page);
+  if (mensajeBloqueante && /ya existe/i.test(mensajeBloqueante)) {
+    // Cerrar el modal para dejar el browser limpio
+    await cerrarModalAceptar(page).catch(() => {});
+    return {
+      kind: 'EXISTE',
+      idOperacion: '?', // AXA no expuso el id, pero es seguro que existe
+    };
+  }
+
+  // Si no hay modal de "ya existe", esperamos a que el form renderee.
+  // El input #txtPrimerNombre tiene `class="form-control animated"` —
+  // AXA usa animaciones CSS que pueden tardar después del BUSCAR.
+  // Esperamos a que sea visible antes de continuar.
+  const formListo = await page
+    .locator('#txtPrimerNombre')
+    .first()
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!formListo) {
+    // El form no se renderea — error genérico
+    const errorText = await extraerMensajeError(page);
+    return {
+      kind: 'ERROR',
+      mensaje:
+        errorText ?? 'formIngreso no se hizo visible tras BUSCAR (¿bloqueado por validación?)',
+    };
+  }
+
+  // Form visible — leemos ID_OPERACION para distinguir CREAR vs MODIFICAR
   const idOperacion = await page
     .locator('#ID_OPERACION')
     .first()
@@ -213,11 +248,9 @@ export async function verificarEmpleado(
     .catch(() => null);
 
   if (idOperacion == null) {
-    // Tampoco apareció el form — puede ser un error visible en pantalla.
-    const errorText = await extraerMensajeError(page);
     return {
       kind: 'ERROR',
-      mensaje: errorText ?? 'No se renderea formIngreso tras BUSCAR (¿bloqueado por validación?)',
+      mensaje: 'Form visible pero ID_OPERACION ausente — formato del portal cambió',
     };
   }
 
@@ -237,11 +270,15 @@ export async function verificarEmpleado(
  * Asume que `verificarEmpleado` retornó `NUEVO` y que estamos en la
  * página con `formIngreso` renderizado.
  *
- * **EPS/AFP**: el payload de PILA actualmente NO incluye estos códigos
- * (solo IDs internos). En Sprint 8.4 quedan como TODO — si el caller
- * pasa `epsCodigoAxa` y `afpCodigoAxa`, se usan; si no, se deja el
- * default del select y AXA mostrará error de validación. Sprint 8.5+
- * debe extender el payload del disparo con los códigos AXA.
+ * **EPS/AFP** (Sprint 8.5): se toman de `campos.laborales.epsCodigoAxa`
+ * y `campos.laborales.afpCodigoAxa`, que vienen del payload del job
+ * (resolución de `EntidadSgss.codigoAxa` configurado por el ADMIN en
+ * `/admin/catalogos/entidades`). Si están null, el bot continúa con
+ * el select sin tocar y el portal va a fallar la validación → job
+ * RETRYABLE con mensaje claro.
+ *
+ * El parámetro `opciones` permite override manual (útil para
+ * `test-ingreso --eps-codigo-axa <c>`).
  */
 export async function llenarYCrearEmpleado(
   page: Page,
@@ -308,14 +345,19 @@ export async function llenarYCrearEmpleado(
   await selectByValue(page, '#CentroTrabajoSelect', campos.laborales.codigoCentroTrabajo);
   await esperarSinOverlay(page);
 
-  // EPS / AFP — ver TODO en JSDoc. Si vienen codes, los aplicamos.
-  if (opciones.epsCodigoAxa) {
-    await selectByValue(page, '#EpsAfiliado', opciones.epsCodigoAxa);
+  // EPS / AFP — Sprint 8.5: prioridad `opciones` (override CLI) sobre
+  // `campos.laborales` (payload del job). Si ambos son null/undefined,
+  // dejamos el select sin tocar y el portal va a marcar required.
+  const epsCodigo = opciones.epsCodigoAxa ?? campos.laborales.epsCodigoAxa ?? null;
+  const afpCodigo = opciones.afpCodigoAxa ?? campos.laborales.afpCodigoAxa ?? null;
+
+  if (epsCodigo) {
+    await selectByValue(page, '#EpsAfiliado', epsCodigo);
   } else {
     warnings.push('EPS no configurada — el portal va a fallar la validación');
   }
-  if (opciones.afpCodigoAxa) {
-    await selectByValue(page, '#AfpAfiliado', opciones.afpCodigoAxa);
+  if (afpCodigo) {
+    await selectByValue(page, '#AfpAfiliado', afpCodigo);
   } else {
     warnings.push('AFP no configurada — el portal va a fallar la validación');
   }
@@ -352,8 +394,27 @@ export async function llenarYCrearEmpleado(
       .click({ force: true }),
   ]);
 
+  // Tras el submit, AXA puede:
+  //   a) Redirigir a otra URL (éxito típico)
+  //   b) Mostrar un modal de validación con animación CSS (lento)
+  //   c) Mostrar un overlay "Cargando..." mientras procesa
+  // Esperamos:
+  //   1. Que el overlay "Cargando" desaparezca
+  //   2. Un poco de margen extra para animaciones de modal
+  await esperarSinOverlay(page, 30000).catch(() => {
+    /* si el overlay nunca aparece, OK */
+  });
+  await page.waitForTimeout(1500);
+
+  // Capturar mensaje primero (incluye modales informativos), DESPUÉS
+  // cerrar el modal con ACEPTAR si había uno.
   const urlFinal = page.url();
   const mensaje = await extraerMensajeError(page);
+
+  await cerrarModalAceptar(page).catch(() => {
+    /* no-op si no hay modal */
+  });
+
   // Heurística de éxito:
   //   - Si la URL cambió a algo distinto a IngresoIndividual → probable éxito
   //   - Si quedamos en IngresoIndividual y hay mensaje de error → falló
@@ -369,15 +430,33 @@ export async function llenarYCrearEmpleado(
 // Helper: extraer mensaje de error/éxito visible en pantalla
 // ============================================================================
 
+/**
+ * Lee el texto visible más relevante de la página tras un submit. Cubre:
+ *   - Alertas Bootstrap (.alert-danger / -warning / -success)
+ *   - Validation-summary de ASP.NET MVC
+ *   - Modales informativos del portal AXA (`.modal.show`, `[role=dialog]`)
+ *
+ * Si AXA muestra un modal con texto "La fecha de ingreso debe ser a
+ * partir de…", esto lo captura para que el caller pueda persistirlo
+ * en el job.error con info útil.
+ */
 async function extraerMensajeError(page: Page): Promise<string | null> {
   return await page.evaluate(() => {
     const candidatos = [
+      // Alertas inline (Bootstrap)
       '.alert-danger',
       '.alert-warning',
       '.alert-success',
       '[class*="validation-summary-errors"]',
       '#mensaje',
       '#msj',
+      // Modales AXA (Bootstrap modal abierto)
+      '.modal.show .modal-body',
+      '.modal.in .modal-body',
+      '[role="dialog"][aria-hidden="false"] .modal-body',
+      // Toasts / notifications
+      '.toast-message',
+      '.notification',
     ];
     for (const sel of candidatos) {
       const el = document.querySelector(sel) as HTMLElement | null;
@@ -386,4 +465,19 @@ async function extraerMensajeError(page: Page): Promise<string | null> {
     }
     return null;
   });
+}
+
+/**
+ * Si hay un modal abierto con un botón "ACEPTAR" / "Aceptar", le da
+ * click. No tira si no hay modal — silencioso por diseño.
+ */
+async function cerrarModalAceptar(page: Page): Promise<void> {
+  const btn = page
+    .locator(
+      ".modal.show button:has-text('ACEPTAR'), .modal.show button:has-text('Aceptar'), .modal.in button:has-text('ACEPTAR'), .modal.in button:has-text('Aceptar')",
+    )
+    .first();
+  if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await btn.click({ force: true, timeout: 3000 }).catch(() => {});
+  }
 }

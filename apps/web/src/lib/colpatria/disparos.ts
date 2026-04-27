@@ -50,6 +50,11 @@ export type ColpatriaPayload = {
     /** Sprint 8.0.5 — cargo del cotizante (otros valores como
      *  TipoSalario/ModalidadTrabajo/TareaAltoRiesgo van quemados en el bot). */
     cargo: string | null;
+    /** Sprint 8.5 — códigos AXA Colpatria de EPS y AFP de la afiliación.
+     *  Si la entidad SGSS no tiene `codigoAxa` configurado, queda null
+     *  y el bot fallará la validación del submit (job → RETRYABLE). */
+    epsCodigoAxa: string | null;
+    afpCodigoAxa: string | null;
     /** Datos del cotizante */
     cotizante: {
       id: string;
@@ -103,6 +108,8 @@ export async function dispararColpatriaSiAplica(
         salario: true,
         fechaIngreso: true,
         cargo: true,
+        eps: { select: { codigoAxa: true } },
+        afp: { select: { codigoAxa: true } },
         cotizante: {
           select: {
             id: true,
@@ -162,6 +169,8 @@ export async function dispararColpatriaSiAplica(
         salario: af.salario.toString(),
         fechaIngreso: af.fechaIngreso.toISOString().slice(0, 10),
         cargo: af.cargo,
+        epsCodigoAxa: af.eps?.codigoAxa ?? null,
+        afpCodigoAxa: af.afp?.codigoAxa ?? null,
         cotizante: {
           id: af.cotizante.id,
           tipoDocumento: af.cotizante.tipoDocumento,

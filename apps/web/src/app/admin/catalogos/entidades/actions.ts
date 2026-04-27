@@ -12,7 +12,11 @@ import type { ImportState } from '../_components/import-form';
 export type ActionState = { error?: string; ok?: boolean };
 
 function parseTipo(raw: unknown): TipoEntidadSgss | null {
-  const parsed = TipoEntidadSgssEnum.safeParse(String(raw ?? '').toUpperCase().trim());
+  const parsed = TipoEntidadSgssEnum.safeParse(
+    String(raw ?? '')
+      .toUpperCase()
+      .trim(),
+  );
   return parsed.success ? (parsed.data as TipoEntidadSgss) : null;
 }
 
@@ -30,6 +34,7 @@ export async function createEntidadAction(
     nombre: String(formData.get('nombre') ?? '').trim(),
     codigoMinSalud: String(formData.get('codigoMinSalud') ?? '').trim(),
     nit: String(formData.get('nit') ?? '').trim(),
+    codigoAxa: String(formData.get('codigoAxa') ?? '').trim(),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
 
@@ -45,6 +50,45 @@ export async function createEntidadAction(
           : 'Error al crear',
     };
   }
+
+  revalidatePath('/admin/catalogos/entidades');
+  return { ok: true };
+}
+
+/**
+ * Actualiza una entidad SGSS existente. Solo permite cambiar campos
+ * informativos (nombre, codigoMinSalud, nit, codigoAxa). El `tipo` y
+ * `codigo` interno son inmutables — para cambiarlos hay que crear una
+ * nueva y desactivar la vieja (las afiliaciones referencian por id).
+ */
+export async function updateEntidadAction(
+  id: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireStaff();
+
+  const existing = await prisma.entidadSgss.findUnique({ where: { id } });
+  if (!existing) return { error: 'Entidad no encontrada' };
+
+  const parsed = EntidadSgssSchema.safeParse({
+    tipo: existing.tipo,
+    nombre: String(formData.get('nombre') ?? '').trim(),
+    codigoMinSalud: String(formData.get('codigoMinSalud') ?? '').trim(),
+    nit: String(formData.get('nit') ?? '').trim(),
+    codigoAxa: String(formData.get('codigoAxa') ?? '').trim(),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
+
+  await prisma.entidadSgss.update({
+    where: { id },
+    data: {
+      nombre: parsed.data.nombre,
+      codigoMinSalud: parsed.data.codigoMinSalud ?? null,
+      nit: parsed.data.nit ?? null,
+      codigoAxa: parsed.data.codigoAxa ?? null,
+    },
+  });
 
   revalidatePath('/admin/catalogos/entidades');
   return { ok: true };
@@ -84,13 +128,18 @@ export async function importEntidadesAction(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
-    const rawCodigo = String(row.codigo ?? '').toUpperCase().trim();
+    const rawCodigo = String(row.codigo ?? '')
+      .toUpperCase()
+      .trim();
     const parsed = EntidadSgssSchema.safeParse({
       tipo,
       codigo: rawCodigo,
       nombre: String(row.nombre ?? '').trim(),
       codigoMinSalud: String(row.codigoMinSalud ?? row.minSalud ?? '').trim(),
       nit: String(row.nit ?? '').trim(),
+      // Sprint 8.5: código del catálogo AXA Colpatria (opcional, solo
+      // EPS/AFP). Acepta varias variantes de header en el Excel.
+      codigoAxa: String(row.codigoAxa ?? row.codigo_axa ?? row.axa ?? '').trim(),
     });
     if (!parsed.success) {
       result.errors.push(`Fila ${i + 2}: ${parsed.error.issues[0]?.message ?? 'inválida'}`);

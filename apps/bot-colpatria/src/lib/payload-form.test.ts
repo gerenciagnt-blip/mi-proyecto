@@ -1,12 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import {
   mapearTipoDocumento,
   mapearGenero,
   validarPayloadParaIngreso,
   prepararCamposIngreso,
+  calcularFechaIngresoAxa,
   type ColpatriaPayload,
   type ConfigResuelta,
 } from './payload-form.js';
+
+// Fijar la fecha "hoy" para que `calcularFechaIngresoAxa()` sea
+// determinista en los tests. Hoy = 2026-04-27 → mañana = 2026-04-28.
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 // ============================================================================
 // Fixtures
@@ -21,8 +32,11 @@ const payloadBase: ColpatriaPayload = {
     modalidad: 'DEPENDIENTE',
     nivelRiesgo: 'III',
     salario: '2500000.00',
-    fechaIngreso: '2026-04-15',
+    // Coincide con "mañana" del clock fijado → sin warning de fecha
+    fechaIngreso: '2026-04-28',
     cargo: 'Operario',
+    epsCodigoAxa: '1',
+    afpCodigoAxa: '5',
     cotizante: {
       id: 'cot1',
       tipoDocumento: 'CC',
@@ -218,8 +232,11 @@ describe('prepararCamposIngreso', () => {
       ciudadNombre: 'BOGOTÁ D.C.',
     });
 
+    // fechaIngreso siempre se calcula como mañana (today+1) en el AXA.
+    // El payload base tiene 2026-04-28 que matchea con el clock fijado
+    // → no genera warning. Si la fecha PILA difiriera, vendría warning.
     expect(r.laborales).toEqual({
-      fechaIngreso: '15/04/2026',
+      fechaIngreso: '28/04/2026',
       tipoSalario: '1',
       valorSalario: '2500000',
       cargo: 'Operario',
@@ -231,9 +248,71 @@ describe('prepararCamposIngreso', () => {
       tipoOcupacion: '7631',
       modalidadTrabajo: '01',
       tareaAltoRiesgo: '0000001',
+      epsCodigoAxa: '1',
+      afpCodigoAxa: '5',
     });
 
     expect(r.jornada).toEqual({ completa: true });
+  });
+
+  it('fechaIngreso AXA: si PILA es PASADA → usa mañana + warning', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: { ...payloadBase.afiliacion, fechaIngreso: '2026-01-15' },
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.fechaIngreso).toBe('28/04/2026'); // mañana
+    expect(r.warnings.some((w) => w.includes('ajustada a 28/04/2026'))).toBe(true);
+  });
+
+  it('fechaIngreso AXA: si PILA = HOY → usa mañana + warning', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: { ...payloadBase.afiliacion, fechaIngreso: '2026-04-27' }, // hoy
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.fechaIngreso).toBe('28/04/2026'); // mañana
+    expect(r.warnings.some((w) => w.includes('ajustada'))).toBe(true);
+  });
+
+  it('fechaIngreso AXA: si PILA = MAÑANA → usa PILA, sin warning', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: { ...payloadBase.afiliacion, fechaIngreso: '2026-04-28' }, // mañana
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.fechaIngreso).toBe('28/04/2026');
+    expect(r.warnings.some((w) => w.includes('Fecha de ingreso PILA'))).toBe(false);
+  });
+
+  it('fechaIngreso AXA: si PILA = FUTURO (5 días) → usa PILA, sin warning', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: { ...payloadBase.afiliacion, fechaIngreso: '2026-05-02' }, // +5 días
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.fechaIngreso).toBe('02/05/2026');
+    expect(r.warnings.some((w) => w.includes('Fecha de ingreso PILA'))).toBe(false);
+  });
+
+  it('calcularFechaIngresoAxa: regla today+1 vs PILA', () => {
+    const hoy = new Date('2026-04-27T12:00:00Z');
+    // Sin PILA → siempre mañana
+    expect(calcularFechaIngresoAxa(hoy)).toBe('28/04/2026');
+    // PILA pasado → mañana
+    expect(calcularFechaIngresoAxa(hoy, '2026-01-15')).toBe('28/04/2026');
+    // PILA hoy → mañana
+    expect(calcularFechaIngresoAxa(hoy, '2026-04-27')).toBe('28/04/2026');
+    // PILA mañana → PILA
+    expect(calcularFechaIngresoAxa(hoy, '2026-04-28')).toBe('28/04/2026');
+    // PILA futuro → PILA
+    expect(calcularFechaIngresoAxa(hoy, '2026-05-02')).toBe('02/05/2026');
+    // Cambio de mes
+    expect(calcularFechaIngresoAxa(new Date('2026-04-30T12:00:00Z'))).toBe('01/05/2026');
+    // Cambio de año
+    expect(calcularFechaIngresoAxa(new Date('2025-12-31T12:00:00Z'))).toBe('01/01/2026');
+    // PILA con formato malformado → fallback a mañana
+    expect(calcularFechaIngresoAxa(hoy, 'no-fecha')).toBe('28/04/2026');
   });
 
   it('formatea salario sin decimales (2500000.99 → "2500001" redondeo)', () => {
@@ -324,6 +403,41 @@ describe('prepararCamposIngreso', () => {
     expect(r.laborales.tipoSalario).toBe('1');
     expect(r.laborales.modalidadTrabajo).toBe('01');
     expect(r.laborales.tareaAltoRiesgo).toBe('0000001');
+  });
+
+  it('eps/afp codigos AXA del payload se arrastran a laborales', () => {
+    const r = prepararCamposIngreso(payloadBase, configBase);
+    expect(r.laborales.epsCodigoAxa).toBe('1');
+    expect(r.laborales.afpCodigoAxa).toBe('5');
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('eps/afp codigos AXA null → warning + null en output', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: {
+        ...payloadBase.afiliacion,
+        epsCodigoAxa: null,
+        afpCodigoAxa: null,
+      },
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.epsCodigoAxa).toBeNull();
+    expect(r.laborales.afpCodigoAxa).toBeNull();
+    expect(r.warnings.some((w) => w.includes('EPS sin código AXA'))).toBe(true);
+    expect(r.warnings.some((w) => w.includes('AFP sin código AXA'))).toBe(true);
+  });
+
+  it('eps codigo AXA presente pero afp null → solo warning AFP', () => {
+    const p = {
+      ...payloadBase,
+      afiliacion: { ...payloadBase.afiliacion, epsCodigoAxa: '1', afpCodigoAxa: null },
+    };
+    const r = prepararCamposIngreso(p, configBase);
+    expect(r.laborales.epsCodigoAxa).toBe('1');
+    expect(r.laborales.afpCodigoAxa).toBeNull();
+    expect(r.warnings.length).toBe(1);
+    expect(r.warnings[0]).toContain('AFP');
   });
 
   it('jornada.completa siempre true (default razonable)', () => {
