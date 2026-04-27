@@ -24,7 +24,6 @@ import {
   ChevronRight,
   LogOut,
   DollarSign,
-  BarChart3,
   History,
   Activity,
   Bot,
@@ -56,8 +55,10 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
+  // Inicio incluye el dashboard ejecutivo (sprint reorg 2026-04-27).
+  // La ruta /admin/dashboard-ejecutivo sigue siendo válida pero
+  // redirige a /admin para no romper bookmarks.
   { label: 'Inicio', href: '/admin', icon: LayoutDashboard },
-  { label: 'Dashboard ejecutivo', href: '/admin/dashboard-ejecutivo', icon: BarChart3 },
   {
     label: 'Configuración',
     icon: Settings,
