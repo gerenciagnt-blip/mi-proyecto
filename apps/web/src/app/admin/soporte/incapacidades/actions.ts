@@ -1,11 +1,17 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import type { IncapacidadEstado } from '@pila/db';
+import type { IncapacidadDocumentoTipo, IncapacidadEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { emitirNotificacion } from '@/lib/notificaciones';
 import { auditarEvento } from '@/lib/auditoria';
+import {
+  guardarDocumentoIncapacidad,
+  MIMES_PERMITIDOS,
+  TAMANO_MAX,
+} from '@/lib/incapacidades/storage';
+import { IncapacidadDocumentoTipoEnum } from '@/lib/incapacidades/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -109,6 +115,83 @@ export async function gestionSoporteIncapAction(
   });
 
   revalidatePath('/admin/soporte/incapacidades');
+  revalidatePath('/admin/administrativo/incapacidades');
+  return { ok: true };
+}
+
+/**
+ * Sprint Soporte reorg fase 2 — Soporte sube un documento a una
+ * incapacidad ya radicada.
+ *
+ * Casos típicos: resolución EPS de aprobación/rechazo, comprobante de
+ * pago, autorización del médico tratante. Antes esto solo era posible
+ * desde el módulo de finanzas (movimientos-incapacidades), lo cual era
+ * confuso operativamente.
+ *
+ * El registro queda con `accionadaPor='SOPORTE'` y `userId=actor` para
+ * diferenciarlo de los soportes que subió el aliado al radicar.
+ */
+export async function subirDocumentoSoporteIncapAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireStaff();
+  const userId = session.user.id;
+
+  const incapacidadId = String(formData.get('incapacidadId') ?? '').trim();
+  const tipoRaw = String(formData.get('tipo') ?? '').trim();
+  if (!incapacidadId) return { error: 'Incapacidad no especificada' };
+
+  const tipoParsed = IncapacidadDocumentoTipoEnum.safeParse(tipoRaw);
+  if (!tipoParsed.success) {
+    return { error: 'Tipo de documento inválido' };
+  }
+  const tipo = tipoParsed.data as IncapacidadDocumentoTipo;
+
+  const file = formData.get('archivo');
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: 'Selecciona un archivo' };
+  }
+  if (!(MIMES_PERMITIDOS as readonly string[]).includes(file.type)) {
+    return { error: `Tipo de archivo no permitido: ${file.type}` };
+  }
+  if (file.size > TAMANO_MAX) {
+    return { error: 'Archivo demasiado grande (máx 5 MB)' };
+  }
+
+  const inc = await prisma.incapacidad.findUnique({
+    where: { id: incapacidadId },
+    select: { id: true, sucursalId: true, consecutivo: true },
+  });
+  if (!inc) return { error: 'Incapacidad no encontrada' };
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const saved = await guardarDocumentoIncapacidad(buf, file.name, incapacidadId);
+
+  await prisma.incapacidadDocumento.create({
+    data: {
+      incapacidadId,
+      tipo,
+      archivoPath: saved.path,
+      archivoHash: saved.hash,
+      archivoMime: file.type,
+      archivoSize: saved.size,
+      archivoNombreOriginal: file.name,
+      accionadaPor: 'SOPORTE',
+      userId,
+    },
+  });
+
+  await auditarEvento({
+    entidad: 'Incapacidad',
+    entidadId: incapacidadId,
+    accion: 'DOCUMENTO_SOPORTE',
+    entidadSucursalId: inc.sucursalId,
+    descripcion: `Soporte adjuntó documento (${tipo}) a ${inc.consecutivo}: ${file.name}`,
+    cambios: null,
+  });
+
+  revalidatePath(`/admin/soporte/incapacidades/${incapacidadId}`);
   revalidatePath('/admin/administrativo/incapacidades');
   return { ok: true };
 }

@@ -18,6 +18,9 @@ import {
 import { emitirNotificacion } from '@/lib/notificaciones';
 import { auditarCreate } from '@/lib/auditoria';
 
+// (emitirNotificacion ya importada arriba — se usa también en gestionAliadoIncapAction
+//  para notificar a soporte cuando el aliado anota en la bitácora.)
+
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
 // ============ Buscar cotizante (para arrastrar datos en el formulario) ============
@@ -374,7 +377,14 @@ export async function gestionAliadoIncapAction(
 
   const inc = await prisma.incapacidad.findUnique({
     where: { id: incapacidadId },
-    select: { id: true, sucursalId: true },
+    select: {
+      id: true,
+      sucursalId: true,
+      consecutivo: true,
+      cotizante: {
+        select: { primerNombre: true, primerApellido: true, numeroDocumento: true },
+      },
+    },
   });
   if (!inc) return { error: 'Incapacidad no encontrada' };
   if (scope.tipo === 'SUCURSAL' && inc.sucursalId !== scope.sucursalId) {
@@ -389,6 +399,18 @@ export async function gestionAliadoIncapAction(
       userId,
       userName,
     },
+  });
+
+  // Sprint Soporte reorg fase 2 — notificar a soporte que el aliado anotó.
+  // Antes el equipo de soporte solo se enteraba refrescando manualmente.
+  // Best-effort: si falla la notificación, la nota ya quedó persistida.
+  void emitirNotificacion({
+    tipo: 'SOPORTE_NOTA_INCAPACIDAD',
+    destinoRole: 'SOPORTE',
+    titulo: `Nota del aliado · ${inc.consecutivo}`,
+    mensaje: `${inc.cotizante.primerNombre} ${inc.cotizante.primerApellido} (${inc.cotizante.numeroDocumento}): ${desc.slice(0, 120)}${desc.length > 120 ? '…' : ''}`,
+    href: `/admin/soporte/incapacidades/${inc.id}`,
+    metadatos: { incapacidadId: inc.id, autor: userName },
   });
 
   revalidatePath('/admin/administrativo/incapacidades');

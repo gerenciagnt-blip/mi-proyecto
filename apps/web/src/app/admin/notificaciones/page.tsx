@@ -14,6 +14,7 @@ const TIPO_LABEL: Record<NotificacionTipo, string> = {
   SOPORTE_NUEVA_AFILIACION: 'Nueva afiliación',
   SOPORTE_NUEVA_INCAPACIDAD: 'Nueva incapacidad',
   SOPORTE_RESPUESTA_CARTERA: 'Respuesta cartera',
+  SOPORTE_NOTA_INCAPACIDAD: 'Nota en incapacidad',
   ALIADO_CARTERA_ASIGNADA: 'Cartera asignada',
   ALIADO_GESTION_INCAPACIDAD: 'Gestión incapacidad',
 };
@@ -22,6 +23,7 @@ const TIPO_TONE: Record<NotificacionTipo, string> = {
   SOPORTE_NUEVA_AFILIACION: 'bg-sky-50 text-sky-700 ring-sky-200',
   SOPORTE_NUEVA_INCAPACIDAD: 'bg-violet-50 text-violet-700 ring-violet-200',
   SOPORTE_RESPUESTA_CARTERA: 'bg-amber-50 text-amber-700 ring-amber-200',
+  SOPORTE_NOTA_INCAPACIDAD: 'bg-violet-50 text-violet-700 ring-violet-200',
   ALIADO_CARTERA_ASIGNADA: 'bg-orange-50 text-orange-700 ring-orange-200',
   ALIADO_GESTION_INCAPACIDAD: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
 };
@@ -30,6 +32,7 @@ const TIPOS_ALL: NotificacionTipo[] = [
   'SOPORTE_NUEVA_AFILIACION',
   'SOPORTE_NUEVA_INCAPACIDAD',
   'SOPORTE_RESPUESTA_CARTERA',
+  'SOPORTE_NOTA_INCAPACIDAD',
   'ALIADO_CARTERA_ASIGNADA',
   'ALIADO_GESTION_INCAPACIDAD',
 ];

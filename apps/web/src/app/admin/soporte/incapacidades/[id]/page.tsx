@@ -22,6 +22,7 @@ import {
 } from '@/lib/incapacidades/validations';
 import { GestionSoporteIncapButton } from './gestion-soporte-button';
 import { AnularIncapacidadButton } from './anular-button';
+import { SubirDocumentoSoporteButton } from './subir-documento-button';
 
 export const metadata = { title: 'Incapacidad · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -157,54 +158,84 @@ export default async function IncapacidadDetallePage({
 
       {/* Documentos adjuntos */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header className="border-b border-slate-100 bg-slate-50 px-5 py-3">
+        <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
           <h2 className="flex items-center gap-1 text-sm font-semibold text-slate-700">
             <Paperclip className="h-4 w-4" />
             Documentos adjuntos ({inc.documentos.length})
           </h2>
+          {/* Sprint Soporte reorg fase 2 — soporte adjunta resoluciones EPS,
+             autorizaciones, comprobantes de pago, etc. */}
+          <div className="ml-auto">
+            <SubirDocumentoSoporteButton incapacidadId={inc.id} />
+          </div>
         </header>
         {inc.documentos.length === 0 ? (
           <p className="p-5 text-xs text-slate-400">Esta radicación no tiene documentos.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {inc.documentos.map((d) => (
-              <li key={d.id} className="flex items-center gap-3 px-5 py-3 text-sm">
-                <div
-                  className={cn(
-                    'inline-flex h-9 w-9 items-center justify-center rounded-lg',
-                    d.eliminado ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-700',
-                  )}
-                >
-                  {d.eliminado ? <FileX className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{DOC_TIPO_LABEL[d.tipo]}</p>
-                  <p className="font-mono text-[10px] text-slate-500">
-                    {d.archivoNombreOriginal} · {d.archivoMime} ·{' '}
-                    {(d.archivoSize / 1024).toFixed(0)} KB
-                  </p>
-                  {d.eliminado && (
-                    <p className="mt-0.5 text-[10px] font-medium text-amber-700">
-                      Archivo eliminado por retención ( {d.eliminadoEn?.toLocaleDateString('es-CO')}
-                      ). Queda el registro como evidencia.
-                    </p>
-                  )}
-                </div>
-                <span className="font-mono text-[10px] text-slate-400">
-                  {d.createdAt.toLocaleDateString('es-CO')}
-                </span>
-                {!d.eliminado && (
-                  <a
-                    href={`/api/incapacidades/${inc.id}/documentos/${d.id}`}
-                    className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                    title="Descargar documento"
+            {inc.documentos.map((d) => {
+              const subidoPorSoporte = d.accionadaPor === 'SOPORTE';
+              return (
+                <li key={d.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                  <div
+                    className={cn(
+                      'inline-flex h-9 w-9 items-center justify-center rounded-lg',
+                      d.eliminado
+                        ? 'bg-slate-100 text-slate-400'
+                        : subidoPorSoporte
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-sky-50 text-sky-700',
+                    )}
                   >
-                    <Download className="h-3 w-3" />
-                    Descargar
-                  </a>
-                )}
-              </li>
-            ))}
+                    {d.eliminado ? (
+                      <FileX className="h-4 w-4" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-slate-800">{DOC_TIPO_LABEL[d.tipo]}</p>
+                      {/* Chip diferenciador SOPORTE/ALIADO. */}
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset',
+                          subidoPorSoporte
+                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                            : 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20',
+                        )}
+                      >
+                        {subidoPorSoporte ? 'Soporte' : 'Aliado'}
+                      </span>
+                    </div>
+                    <p className="font-mono text-[10px] text-slate-500">
+                      {d.archivoNombreOriginal} · {d.archivoMime} ·{' '}
+                      {(d.archivoSize / 1024).toFixed(0)} KB
+                    </p>
+                    {d.eliminado && (
+                      <p className="mt-0.5 text-[10px] font-medium text-amber-700">
+                        Archivo eliminado por retención (
+                        {d.eliminadoEn?.toLocaleDateString('es-CO')}). Queda el registro como
+                        evidencia.
+                      </p>
+                    )}
+                  </div>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {d.createdAt.toLocaleDateString('es-CO')}
+                  </span>
+                  {!d.eliminado && (
+                    <a
+                      href={`/api/incapacidades/${inc.id}/documentos/${d.id}`}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                      title="Descargar documento"
+                    >
+                      <Download className="h-3 w-3" />
+                      Descargar
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

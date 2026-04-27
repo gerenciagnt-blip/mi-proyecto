@@ -2278,6 +2278,12 @@ enum NotificacionTipo {
    * Aliado: soporte registró una gestión sobre una incapacidad de la sucursal.
    */
   ALIADO_GESTION_INCAPACIDAD
+  /**
+   * Sprint Soporte reorg fase 2 — Soporte: el aliado agregó una nota a
+   * la bitácora de una incapacidad. Antes solo se enteraban refrescando
+   * la página manualmente.
+   */
+  SOPORTE_NOTA_INCAPACIDAD
 }
 
 model Notificacion {
