@@ -2410,6 +2410,16 @@ model ColpatriaAfiliacionJob {
    */
   pdfPath          String?
   /**
+   * Sprint 8.5.C — política de retención. Cuando el cron de limpieza
+   * borra el archivo del filesystem (default 3 días después de creado),
+   * marca este timestamp y deja `pdfPath` intacto como evidencia
+   * histórica. Lecturas posteriores del PDF retornan 410 Gone.
+   *
+   * Si null + pdfPath presente → archivo aún existe en disco.
+   * Si fechado → archivo ya borrado, solo queda metadata.
+   */
+  pdfArchivedAt    DateTime?
+  /**
    * Array JSON de paths a screenshots por paso.
    */
   screenshotsPaths Json?

@@ -234,6 +234,18 @@ export async function testIngresoCommand(options: {
       if (res.ok) {
         console.log(`✅ Submit OK — URL final: ${res.urlFinal}`);
         if (res.mensaje) console.log(`   mensaje portal: ${res.mensaje}`);
+
+        // Sprint 8.5.B: si el bot capturó un PDF de comprobante, lo
+        // guardamos en disco. En modo test-ingreso no tocamos BD
+        // (no hay job real), solo mostramos el path para verificación.
+        if (res.pdfBuffer) {
+          const { guardarPdfComprobante } = await import('../lib/storage.js');
+          const fakeJobId = `test-${Date.now()}`;
+          const saved = await guardarPdfComprobante(res.pdfBuffer, options.empresaId, fakeJobId);
+          console.log(`📄 PDF guardado: ${saved.path} (${saved.size} bytes)`);
+        } else {
+          console.log('   ⚠ Sin PDF de comprobante (botón Imprimir no apareció)');
+        }
       } else {
         console.error(`❌ Submit falló — URL: ${res.urlFinal}`);
         if (res.mensaje) console.error(`   mensaje portal: ${res.mensaje}`);

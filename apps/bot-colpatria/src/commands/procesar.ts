@@ -10,6 +10,7 @@ import {
   type ColpatriaPayload,
   type ConfigResuelta,
 } from '../lib/payload-form.js';
+import { guardarPdfComprobante } from '../lib/storage.js';
 import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('procesar');
@@ -248,20 +249,45 @@ export async function procesarCommand(options: {
             continue;
           }
 
-          // verif.kind === 'NUEVO' — llenamos el form
-          // EPS/AFP: TODO Sprint 8.5+ — por ahora pasamos sin códigos y
-          // dejamos que el portal valide. El error será visible al submit.
+          // verif.kind === 'NUEVO' — llenamos el form (EPS/AFP vienen
+          // ya en el payload desde Sprint 8.5.A)
           const res = await llenarYCrearEmpleado(page, campos);
 
           if (res.ok) {
             const warnings = res.warnings.length > 0 ? ` · warnings: ${res.warnings.length}` : '';
+
+            // Sprint 8.5.B: guardar el PDF de comprobante si AXA lo
+            // ofreció. No bloqueante — si no hay PDF, marcamos SUCCESS
+            // igual con un warning extra. El operador puede re-imprimir
+            // manualmente desde el portal si necesita el soporte.
+            let pdfPath: string | null = null;
+            if (res.pdfBuffer) {
+              try {
+                const saved = await guardarPdfComprobante(res.pdfBuffer, empresaId, job.id);
+                pdfPath = saved.path;
+                log.info(
+                  { jobId: job.id, pdfPath, size: saved.size },
+                  'PDF de comprobante guardado',
+                );
+              } catch (errStorage) {
+                log.warn(
+                  {
+                    jobId: job.id,
+                    err: errStorage instanceof Error ? errStorage.message : errStorage,
+                  },
+                  'falló guardado de PDF — el job sigue como SUCCESS sin pdfPath',
+                );
+              }
+            }
+
             await marcarOk(
               job.id,
-              `Creado en AXA · URL: ${res.urlFinal}${res.mensaje ? ` · ${res.mensaje}` : ''}${warnings}`,
+              `Creado en AXA · URL: ${res.urlFinal}${res.mensaje ? ` · ${res.mensaje}` : ''}${warnings}${pdfPath ? ' · pdf:✓' : ''}`,
               Date.now() - t0,
+              pdfPath,
             );
             exitOk++;
-            console.log(`   · job ${job.id.slice(-8)}: ✅ creado`);
+            console.log(`   · job ${job.id.slice(-8)}: ✅ creado${pdfPath ? ' (con PDF)' : ''}`);
           } else {
             await marcarFallo(
               job.id,
@@ -315,12 +341,16 @@ export async function procesarCommand(options: {
 // Helpers de marcado de jobs
 // ============================================================================
 
-async function marcarOk(jobId: string, mensajeInfo: string, durationMs: number): Promise<void> {
+async function marcarOk(
+  jobId: string,
+  mensajeInfo: string,
+  durationMs: number,
+  pdfPath: string | null = null,
+): Promise<void> {
   // Logueamos el mensaje a stdout/Pino. El modelo no tiene campo
-  // dedicado para "output" exitoso — solo `error` (para fallos) y
-  // `pdfPath` (Sprint 8.5). El estado SUCCESS + finishedAt + durationMs
-  // basta para dashboards.
-  log.info({ jobId, info: mensajeInfo }, 'job exitoso');
+  // dedicado para "output" exitoso — solo `error` (que dejamos null
+  // para SUCCESS) y `pdfPath` (Sprint 8.5.B).
+  log.info({ jobId, info: mensajeInfo, pdfPath }, 'job exitoso');
   await prisma.colpatriaAfiliacionJob.update({
     where: { id: jobId },
     data: {
@@ -328,6 +358,7 @@ async function marcarOk(jobId: string, mensajeInfo: string, durationMs: number):
       finishedAt: new Date(),
       durationMs,
       error: null,
+      pdfPath,
     },
   });
 }

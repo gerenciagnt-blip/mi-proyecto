@@ -28,6 +28,12 @@ export type ResultadoCreacion = {
   mensaje: string | null;
   /** Warnings acumulados durante el llenado (truncados, fallbacks, etc). */
   warnings: string[];
+  /** Sprint 8.5.B — PDF del comprobante de afiliación si AXA lo
+   *  ofreció tras el submit. Null si no aparece el botón "Imprimir"
+   *  o falla la captura del download. El caller lo persiste con
+   *  `guardarPdfComprobante` (no lo escribe esta función para
+   *  mantener el wrapper sin side effects de filesystem). */
+  pdfBuffer: Buffer | null;
 };
 
 // ============================================================================
@@ -417,13 +423,144 @@ export async function llenarYCrearEmpleado(
 
   // Heurística de éxito:
   //   - Si la URL cambió a algo distinto a IngresoIndividual → probable éxito
-  //   - Si quedamos en IngresoIndividual y hay mensaje de error → falló
+  //   - Si quedamos en IngresoIndividual y hay mensaje de éxito → OK
   //   - Si quedamos en IngresoIndividual y NO hay mensaje → ambiguo,
-  //     marcamos OK pero el caller debería verificar contra BD/portal
+  //     marcamos NO OK por seguridad
+  // El portal AXA usa textos como:
+  //   · "Transaccion Exitosa"
+  //   · "Empleado registrado..." / "Registro exitoso"
+  //   · "Datos guardados"
+  // Cubrimos ambos géneros (exitoso/exitosa) y el verbo conjugado.
   const enIngreso = urlFinal.includes('IngresoIndividual');
-  const ok = !enIngreso || (mensaje !== null && /exitoso|registrad|guardad/i.test(mensaje));
+  const ok =
+    !enIngreso ||
+    (mensaje !== null && /exitos[ao]|registrad|guardad|transacci[oó]n.*exit/i.test(mensaje));
 
-  return { ok, urlFinal, mensaje, warnings };
+  // Si el submit salió OK, intentamos descargar el comprobante PDF.
+  // No bloqueante: si el botón no aparece o el download falla,
+  // dejamos un warning y devolvemos null. El caller decide si marca
+  // el job como SUCCESS sin PDF o RETRYABLE para reintento.
+  let pdfBuffer: Buffer | null = null;
+  if (ok) {
+    try {
+      pdfBuffer = await descargarComprobante(page);
+      if (!pdfBuffer) {
+        warnings.push('Submit OK pero no se encontró botón Imprimir comprobante');
+      }
+    } catch (err) {
+      warnings.push(`Falló descarga del PDF: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return { ok, urlFinal, mensaje, warnings, pdfBuffer };
+}
+
+// ============================================================================
+// Paso 3: Descarga del comprobante PDF (Sprint 8.5.B)
+// ============================================================================
+
+/**
+ * Tras un submit exitoso, AXA muestra un botón para imprimir/descargar
+ * el comprobante de afiliación. El form se llama `formImpresion` y
+ * apunta a `/EmpleadoDependiente/ImprimirCreacionIndividual`.
+ *
+ * Hay 2 patrones que el portal puede usar:
+ *   a) Click en botón → Playwright `download` event → buffer directo
+ *   b) Click → abre PDF en pestaña nueva (popup) → leemos el contenido
+ *
+ * Probamos ambos via `Promise.race`. Si ninguno dispara en 15s,
+ * retornamos null (no es bloqueante).
+ *
+ * Selectores tolerantes — buscamos por texto visible para sobrevivir
+ * cambios de id/class del portal.
+ */
+async function descargarComprobante(page: Page): Promise<Buffer | null> {
+  log.info('buscando botón de comprobante PDF');
+
+  // Intenta encontrar el botón. Lista en orden de probabilidad.
+  const btn = page
+    .locator(
+      [
+        // Por texto típico
+        "button:has-text('Imprimir')",
+        "a:has-text('Imprimir')",
+        "input[value*='Imprimir' i]",
+        "button:has-text('Comprobante')",
+        "a:has-text('Comprobante')",
+        "button:has-text('Descargar')",
+        "a:has-text('Descargar')",
+        // Por form/action
+        "form[action*='ImprimirCreacionIndividual'] button",
+        "form[action*='ImprimirCreacionIndividual'] input[type='submit']",
+        // Fallback IDs comunes
+        '#btnImprimir',
+        '#btnImprimirComprobante',
+      ].join(', '),
+    )
+    .first();
+
+  const visible = await btn.isVisible({ timeout: 5000 }).catch(() => false);
+  if (!visible) {
+    log.warn('No se encontró botón de comprobante visible');
+    return null;
+  }
+
+  log.info('click botón comprobante');
+
+  // Capturar download O popup, lo que llegue primero
+  const downloadPromise = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
+  const popupPromise = page
+    .context()
+    .waitForEvent('page', { timeout: 20000 })
+    .catch(() => null);
+
+  await btn.click({ force: true });
+
+  const [download, popup] = await Promise.all([downloadPromise, popupPromise]);
+
+  // Caso (a): download tradicional
+  if (download) {
+    log.info({ filename: download.suggestedFilename() }, 'download capturado');
+    const tmpPath = await download.path();
+    if (!tmpPath) {
+      log.warn('download.path() retornó null — descarga falló');
+      return null;
+    }
+    const fs = await import('node:fs/promises');
+    const buf = await fs.readFile(tmpPath);
+    return buf.length > 0 ? buf : null;
+  }
+
+  // Caso (b): popup con PDF inline
+  if (popup) {
+    log.info({ url: popup.url() }, 'popup capturado');
+    await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+
+    // Intentar leer el PDF como response del popup. El URL del popup
+    // puede ser el endpoint `/ImprimirCreacionIndividual` directamente.
+    const popupUrl = popup.url();
+    if (popupUrl && (popupUrl.includes('Imprimir') || popupUrl.endsWith('.pdf'))) {
+      // Hacemos un fetch en el contexto del popup para obtener el binario
+      const buf = await popup
+        .evaluate(async (url) => {
+          const res = await fetch(url, { credentials: 'include' });
+          if (!res.ok) return null;
+          const ab = await res.arrayBuffer();
+          return Array.from(new Uint8Array(ab));
+        }, popupUrl)
+        .then((arr) => (arr ? Buffer.from(arr) : null))
+        .catch(() => null);
+
+      await popup.close().catch(() => {});
+      return buf && buf.length > 0 ? buf : null;
+    }
+
+    await popup.close().catch(() => {});
+    return null;
+  }
+
+  log.warn('Ni download ni popup tras click en botón comprobante');
+  return null;
 }
 
 // ============================================================================

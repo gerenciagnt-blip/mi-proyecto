@@ -1,0 +1,82 @@
+name: Bot Colpatria — limpieza diaria de PDFs
+
+# Sprint 8.5.C — Política de retención.
+# Borra del filesystem los PDFs de comprobante con más de 3 días.
+# Conserva la metadata en BD (pdfPath sigue, se marca pdfArchivedAt).
+#
+# Corre 1 vez al día a las 08:00 UTC = 3:00 AM Col (fuera de horario
+# laboral, no compite con el worker de procesar). Configurable vía
+# workflow_dispatch para pruebas manuales.
+
+on:
+  schedule:
+    # 08:00 UTC = 03:00 AM Colombia. Diario, todos los días.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: 'Días de retención (default 3)'
+        required: false
+        default: '3'
+        type: string
+      dryRun:
+        description: 'Solo lista qué borraría, sin tocar nada'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  limpiar:
+    name: Borrar PDFs vencidos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # listar 5000 jobs + unlinks rápidos
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UPLOADS_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL OK"
+
+      - name: Limpiar PDFs vencidos
+        working-directory: apps/bot-colpatria
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          DIAS="${{ inputs.dias || '3' }}"
+          DRY="${{ inputs.dryRun && '--dry-run' || '' }}"
+          pnpm exec tsx src/index.ts limpiar-pdfs --dias "$DIAS" $DRY

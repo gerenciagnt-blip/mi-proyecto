@@ -108,6 +108,7 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
         durationMs: true,
         error: true,
         pdfPath: true,
+        pdfArchivedAt: true,
         createdAt: true,
         afiliacion: {
           select: {
@@ -274,7 +275,7 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
                         <p className="line-clamp-2 text-[10px] text-rose-700" title={j.error}>
                           {j.error}
                         </p>
-                      ) : j.pdfPath ? (
+                      ) : j.pdfPath && !j.pdfArchivedAt ? (
                         <Link
                           href={`/api/colpatria/jobs/${j.id}/pdf`}
                           className="inline-flex items-center gap-1 text-[10px] text-brand-blue hover:underline"
@@ -282,6 +283,14 @@ export default async function ColpatriaJobsPage({ searchParams }: { searchParams
                           <FileText className="h-3 w-3" />
                           Soporte PDF
                         </Link>
+                      ) : j.pdfPath && j.pdfArchivedAt ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] italic text-slate-400"
+                          title={`Archivado el ${j.pdfArchivedAt.toLocaleDateString('es-CO')} por política de retención`}
+                        >
+                          <FileText className="h-3 w-3" />
+                          PDF archivado
+                        </span>
                       ) : (
                         <span className="text-[10px] italic text-slate-400">—</span>
                       )}

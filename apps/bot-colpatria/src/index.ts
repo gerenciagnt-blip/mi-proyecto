@@ -4,6 +4,7 @@ import { APP_NAME, APP_VERSION } from '@pila/core';
 import { testLoginCommand } from './commands/test-login.js';
 import { testIngresoCommand } from './commands/test-ingreso.js';
 import { procesarCommand } from './commands/procesar.js';
+import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
 
 const program = new Command();
 
@@ -88,6 +89,27 @@ program
   .action(async (options: { limite?: string; empresaId?: string }) => {
     const limite = parseInt(options.limite ?? '20', 10) || 20;
     const code = await procesarCommand({ limite, empresaId: options.empresaId });
+    process.exit(code);
+  });
+
+/**
+ * Sprint 8.5.C — limpieza de PDFs viejos (TTL retención).
+ * Borra del filesystem los PDFs de comprobante con más de N días,
+ * conserva el registro en BD marcando `pdfArchivedAt`. Pensado para
+ * correr como cron diario en GH Actions.
+ *
+ * Uso:
+ *   pnpm bot-colpatria limpiar-pdfs --dias 3
+ *   pnpm bot-colpatria limpiar-pdfs --dias 3 --dry-run
+ */
+program
+  .command('limpiar-pdfs')
+  .description('Borra PDFs de comprobante con más de N días (default 3)')
+  .option('--dias <n>', 'Días de retención del PDF en disco', '3')
+  .option('--dry-run', 'Solo lista qué borraría, sin tocar nada')
+  .action(async (options: { dias?: string; dryRun?: boolean }) => {
+    const dias = parseInt(options.dias ?? '3', 10) || 3;
+    const code = await limpiarPdfsCommand({ dias, dryRun: options.dryRun });
     process.exit(code);
   });
 
