@@ -4,15 +4,13 @@ import { revalidatePath } from 'next/cache';
 import {
   Prisma,
   prisma,
+  type ColpatriaJobStatus,
+  type SoporteAfAccionadaPor,
   type SoporteAfEstado,
   type SoporteAfTipoDisparo,
 } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
-import {
-  guardarDocumentoSoporteAf,
-  MIMES_PERMITIDOS,
-  TAMANO_MAX,
-} from '@/lib/soporte-af/storage';
+import { guardarDocumentoSoporteAf, MIMES_PERMITIDOS, TAMANO_MAX } from '@/lib/soporte-af/storage';
 import { resolverCambios, type CambioRow } from '@/lib/soporte-af/cambios';
 
 export type ActionState = { error?: string; ok?: boolean };
@@ -53,12 +51,13 @@ export async function gestionSoporteAfAction(
   });
   if (!sol) return { error: 'Solicitud no encontrada' };
 
-  const cambio =
-    nuevoEstado && nuevoEstado !== sol.estado ? nuevoEstado : undefined;
+  const cambio = nuevoEstado && nuevoEstado !== sol.estado ? nuevoEstado : undefined;
 
   // --- Validar y preparar archivos ANTES de abrir la transacción ---
   // (el writeFile ocurre fuera de tx; si falla, abortamos antes)
-  const files = formData.getAll('documento').filter((f): f is File => f instanceof File && f.size > 0);
+  const files = formData
+    .getAll('documento')
+    .filter((f): f is File => f instanceof File && f.size > 0);
   const preparados: Array<{
     path: string;
     hash: string;
@@ -159,8 +158,29 @@ export type DetalleSoporteAf = {
   creadoPor: { name: string; email: string } | null;
   gestionadoPor: string | null;
   gestionadoEn: string | null;
+  /** Sprint Soporte reorg — usuario actualmente asignado a la solicitud. */
+  asignadoA: { id: string; name: string } | null;
   sucursal: { codigo: string; nombre: string } | null;
   periodoLabel: string | null;
+  /**
+   * Sprint Soporte reorg — Estado de la afiliación ARL en Colpatria.
+   * `null` cuando el plan no incluye ARL o la empresa no tiene bot
+   * activo. Si hay job (al menos uno), `lastJob` trae el más reciente
+   * con su estado, intento y path al PDF si terminó OK.
+   */
+  arlBot: {
+    planIncluyeArl: boolean;
+    empresaColpatriaActivo: boolean;
+    lastJob: {
+      id: string;
+      status: ColpatriaJobStatus;
+      intento: number;
+      pdfPath: string | null;
+      pdfArchivedAt: string | null;
+      finishedAt: string | null;
+      error: string | null;
+    } | null;
+  };
   cotizante: {
     tipoDocumento: string;
     numeroDocumento: string;
@@ -202,14 +222,14 @@ export type DetalleSoporteAf = {
     nombre: string;
     tamano: number;
     mime: string;
-    accionadaPor: 'SOPORTE' | 'ALIADO';
+    accionadaPor: SoporteAfAccionadaPor;
     userName: string | null;
     eliminado: boolean;
     fecha: string;
   }>;
   gestiones: Array<{
     id: string;
-    accionadaPor: 'SOPORTE' | 'ALIADO';
+    accionadaPor: SoporteAfAccionadaPor;
     descripcion: string;
     nuevoEstado: SoporteAfEstado | null;
     userName: string | null;
@@ -245,6 +265,7 @@ export async function getSoporteAfDetailAction(
     include: {
       createdBy: { select: { name: true, email: true } },
       gestionadoPor: { select: { name: true } },
+      asignadoA: { select: { id: true, name: true } },
       sucursal: { select: { codigo: true, nombre: true } },
       periodo: { select: { anio: true, mes: true } },
       afiliacion: {
@@ -255,10 +276,12 @@ export async function getSoporteAfDetailAction(
               municipio: { select: { nombre: true } },
             },
           },
-          empresa: { select: { nit: true, nombre: true } },
+          empresa: {
+            select: { nit: true, nombre: true, colpatriaActivo: true },
+          },
           tipoCotizante: { select: { codigo: true, nombre: true } },
           subtipo: { select: { codigo: true, nombre: true } },
-          planSgss: { select: { codigo: true, nombre: true } },
+          planSgss: { select: { codigo: true, nombre: true, incluyeArl: true } },
           actividadEconomica: { select: { codigoCiiu: true, descripcion: true } },
           asesorComercial: { select: { codigo: true, nombre: true } },
           cuentaCobro: { select: { codigo: true, razonSocial: true } },
@@ -280,6 +303,28 @@ export async function getSoporteAfDetailAction(
 
   const af = sol.afiliacion;
   const cot = af.cotizante;
+
+  // Sprint Soporte reorg — último job del bot Colpatria para esta
+  // afiliación. Solo lo buscamos si plan incluye ARL para ahorrar el
+  // round-trip; si no aplica, devolvemos null en arlBot.lastJob.
+  const planIncluyeArl = af.planSgss?.incluyeArl ?? false;
+  const empresaColpatriaActivo = af.empresa?.colpatriaActivo ?? false;
+  const lastJob =
+    planIncluyeArl && empresaColpatriaActivo
+      ? await prisma.colpatriaAfiliacionJob.findFirst({
+          where: { afiliacionId: af.id },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            intento: true,
+            pdfPath: true,
+            pdfArchivedAt: true,
+            finishedAt: true,
+            error: true,
+          },
+        })
+      : null;
   const nombreCompleto = [
     cot.primerNombre,
     cot.segundoNombre,
@@ -295,10 +340,10 @@ export async function getSoporteAfDetailAction(
   );
 
   const mesNombre = sol.periodo
-    ? new Date(sol.periodo.anio, sol.periodo.mes - 1, 1).toLocaleDateString(
-        'es-CO',
-        { month: 'long', year: 'numeric' },
-      )
+    ? new Date(sol.periodo.anio, sol.periodo.mes - 1, 1).toLocaleDateString('es-CO', {
+        month: 'long',
+        year: 'numeric',
+      })
     : null;
 
   const data: DetalleSoporteAf = {
@@ -308,15 +353,27 @@ export async function getSoporteAfDetailAction(
     estado: sol.estado,
     estadoObservaciones: sol.estadoObservaciones,
     disparos: sol.disparos,
-    creadoPor: sol.createdBy
-      ? { name: sol.createdBy.name, email: sol.createdBy.email }
-      : null,
+    creadoPor: sol.createdBy ? { name: sol.createdBy.name, email: sol.createdBy.email } : null,
     gestionadoPor: sol.gestionadoPor?.name ?? null,
     gestionadoEn: sol.gestionadoEn?.toISOString() ?? null,
-    sucursal: sol.sucursal
-      ? { codigo: sol.sucursal.codigo, nombre: sol.sucursal.nombre }
-      : null,
+    asignadoA: sol.asignadoA ? { id: sol.asignadoA.id, name: sol.asignadoA.name } : null,
+    sucursal: sol.sucursal ? { codigo: sol.sucursal.codigo, nombre: sol.sucursal.nombre } : null,
     periodoLabel: mesNombre,
+    arlBot: {
+      planIncluyeArl,
+      empresaColpatriaActivo,
+      lastJob: lastJob
+        ? {
+            id: lastJob.id,
+            status: lastJob.status,
+            intento: lastJob.intento,
+            pdfPath: lastJob.pdfPath,
+            pdfArchivedAt: lastJob.pdfArchivedAt?.toISOString() ?? null,
+            finishedAt: lastJob.finishedAt?.toISOString() ?? null,
+            error: lastJob.error,
+          }
+        : null,
+    },
     cotizante: {
       tipoDocumento: cot.tipoDocumento,
       numeroDocumento: cot.numeroDocumento,
@@ -328,9 +385,7 @@ export async function getSoporteAfDetailAction(
       email: cot.email,
       direccion: cot.direccion,
       ubicacion:
-        [cot.municipio?.nombre, cot.departamento?.nombre]
-          .filter(Boolean)
-          .join(', ') || null,
+        [cot.municipio?.nombre, cot.departamento?.nombre].filter(Boolean).join(', ') || null,
     },
     afiliacion: {
       id: af.id,
@@ -339,9 +394,7 @@ export async function getSoporteAfDetailAction(
       empresa: af.empresa ? `${af.empresa.nombre} (NIT ${af.empresa.nit})` : null,
       tipoSubtipo:
         [
-          af.tipoCotizante
-            ? `${af.tipoCotizante.codigo} · ${af.tipoCotizante.nombre}`
-            : null,
+          af.tipoCotizante ? `${af.tipoCotizante.codigo} · ${af.tipoCotizante.nombre}` : null,
           af.subtipo ? `${af.subtipo.codigo} · ${af.subtipo.nombre}` : null,
         ]
           .filter(Boolean)
@@ -391,4 +444,110 @@ export async function getSoporteAfDetailAction(
   };
 
   return { ok: true, data };
+}
+
+// ============ Asignación de tarea ============
+
+export type StaffAsignable = {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'SOPORTE';
+};
+
+/**
+ * Sprint Soporte reorg — Lista de usuarios STAFF que pueden tomar
+ * una solicitud. Solo activos. Cualquier ADMIN o SOPORTE puede
+ * asignar/reasignar y también auto-asignarse.
+ */
+export async function listarStaffAsignablesAction(): Promise<StaffAsignable[]> {
+  await requireStaff();
+  const users = await prisma.user.findMany({
+    where: {
+      active: true,
+      role: { in: ['ADMIN', 'SOPORTE'] },
+    },
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, email: true, role: true },
+  });
+  // Cast acotado al tipo del producto (Role tiene ALIADO_OWNER/USER que ya
+  // filtramos arriba — TS no infiere el narrowing del array, así que lo
+  // dejamos explícito).
+  return users as StaffAsignable[];
+}
+
+/**
+ * Sprint Soporte reorg — Asignar (o reasignar / desasignar) una
+ * solicitud a un usuario STAFF. Pasar `asignadoAUserId=null` desasigna.
+ *
+ * Registra una entrada en la bitácora con `accionadaPor='SOPORTE'`
+ * (es una acción humana, no del bot) describiendo el cambio. El campo
+ * `gestionadoPorId` NO se toca — la asignación es ortogonal al
+ * gestionar (cambiar estado).
+ */
+export async function asignarSoporteAfAction(
+  soporteAfId: string,
+  asignadoAUserId: string | null,
+): Promise<ActionState> {
+  const session = await requireStaff();
+  const userId = session.user.id;
+  const userName = session.user.name;
+
+  const sol = await prisma.soporteAfiliacion.findUnique({
+    where: { id: soporteAfId },
+    select: { id: true, asignadoAUserId: true },
+  });
+  if (!sol) return { error: 'Solicitud no encontrada' };
+
+  // Validar que el target exista y sea STAFF (defensa en profundidad —
+  // el frontend ya filtra, pero protegemos contra IDs forjados).
+  let targetName: string | null = null;
+  if (asignadoAUserId) {
+    const target = await prisma.user.findUnique({
+      where: { id: asignadoAUserId },
+      select: { id: true, name: true, role: true, active: true },
+    });
+    if (!target || !target.active) {
+      return { error: 'Usuario asignado no existe o está inactivo' };
+    }
+    if (target.role !== 'ADMIN' && target.role !== 'SOPORTE') {
+      return { error: 'Solo se puede asignar a STAFF (ADMIN/SOPORTE)' };
+    }
+    targetName = target.name;
+  }
+
+  // Si no cambia, no hacemos nada — ahorra entrada en bitácora.
+  if (sol.asignadoAUserId === asignadoAUserId) {
+    return { ok: true };
+  }
+
+  const descripcion = asignadoAUserId ? `Asignada a ${targetName}` : 'Asignación removida';
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.soporteAfiliacion.update({
+        where: { id: soporteAfId },
+        data: { asignadoAUserId },
+      });
+      await tx.soporteAfGestion.create({
+        data: {
+          soporteAfId,
+          accionadaPor: 'SOPORTE',
+          nuevoEstado: null,
+          descripcion,
+          userId,
+          userName,
+        },
+      });
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError) {
+      return { error: `Error al asignar (${e.code})` };
+    }
+    return { error: 'Error al asignar la solicitud' };
+  }
+
+  revalidatePath('/admin/soporte/afiliaciones');
+  revalidatePath(`/admin/soporte/afiliaciones/${soporteAfId}`);
+  return { ok: true };
 }

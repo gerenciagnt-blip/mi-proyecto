@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Download, History, Paperclip, FileCheck, Loader2 } from 'lucide-react';
-import type { SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
+import type { SoporteAfAccionadaPor, SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { listarSoportesPorAfiliacionAction } from './actions';
 
@@ -41,13 +41,13 @@ type Solicitud = {
     id: string;
     nombre: string;
     tamano: number;
-    accionadaPor: 'SOPORTE' | 'ALIADO';
+    accionadaPor: SoporteAfAccionadaPor;
     eliminado: boolean;
     fecha: string;
   }>;
   gestiones: Array<{
     id: string;
-    accionadaPor: 'SOPORTE' | 'ALIADO';
+    accionadaPor: SoporteAfAccionadaPor;
     descripcion: string;
     nuevoEstado: SoporteAfEstado | null;
     userName: string | null;
@@ -94,13 +94,9 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
     <section className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
       <header className="mb-3 flex items-center gap-2">
         <FileCheck className="h-4 w-4 text-brand-blue" />
-        <h3 className="text-sm font-semibold text-slate-700">
-          Soporte Afiliaciones
-        </h3>
+        <h3 className="text-sm font-semibold text-slate-700">Soporte Afiliaciones</h3>
         {items.length > 0 && (
-          <span className="font-mono text-[10px] text-slate-500">
-            ({items.length})
-          </span>
+          <span className="font-mono text-[10px] text-slate-500">({items.length})</span>
         )}
       </header>
 
@@ -110,9 +106,7 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
         </p>
       )}
 
-      {!loading && error && (
-        <p className="text-xs text-red-600">{error}</p>
-      )}
+      {!loading && error && <p className="text-xs text-red-600">{error}</p>}
 
       {!loading && !error && items.length === 0 && (
         <p className="text-xs text-slate-500">
@@ -123,10 +117,7 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
       {!loading && !error && items.length > 0 && (
         <ul className="space-y-3">
           {items.map((s) => (
-            <li
-              key={s.id}
-              className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-            >
+            <li key={s.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-slate-900">
                   {s.consecutivo}
@@ -173,7 +164,11 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
                         <Paperclip className="h-3 w-3 text-slate-400" />
                         <span className="flex-1 truncate">{d.nombre}</span>
                         <span className="text-[10px] text-slate-500">
-                          {d.accionadaPor === 'SOPORTE' ? 'Soporte' : 'Aliado'}
+                          {d.accionadaPor === 'SOPORTE'
+                            ? 'Soporte'
+                            : d.accionadaPor === 'BOT'
+                              ? 'Bot'
+                              : 'Aliado'}
                         </span>
                         {d.eliminado ? (
                           <span className="text-[10px] italic text-slate-400">
@@ -207,12 +202,14 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
                           <span
                             className={cn(
                               'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                              g.accionadaPor === 'SOPORTE'
-                                ? 'bg-brand-blue/10 text-brand-blue-dark'
-                                : 'bg-violet-50 text-violet-700',
+                              g.accionadaPor === 'BOT'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : g.accionadaPor === 'SOPORTE'
+                                  ? 'bg-brand-blue/10 text-brand-blue-dark'
+                                  : 'bg-violet-50 text-violet-700',
                             )}
                           >
-                            {g.accionadaPor}
+                            {g.accionadaPor === 'BOT' ? 'Bot' : g.accionadaPor}
                           </span>
                           {g.nuevoEstado && (
                             <span className="text-[10px] text-slate-500">
@@ -223,13 +220,9 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
                             {fmtDateTime(g.fecha)}
                           </span>
                         </div>
-                        <p className="mt-0.5 whitespace-pre-line text-slate-700">
-                          {g.descripcion}
-                        </p>
+                        <p className="mt-0.5 whitespace-pre-line text-slate-700">{g.descripcion}</p>
                         {g.userName && (
-                          <p className="text-[10px] text-slate-500">
-                            por {g.userName}
-                          </p>
+                          <p className="text-[10px] text-slate-500">por {g.userName}</p>
                         )}
                       </li>
                     ))}

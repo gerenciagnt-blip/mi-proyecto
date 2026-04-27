@@ -282,6 +282,7 @@ model User {
   incapacidadesGestiones  IncapacidadGestion[]         @relation("IncapacidadGestionesUser")
   soportesAfCreados       SoporteAfiliacion[]          @relation("SoporteAfCreator")
   soportesAfGestionados   SoporteAfiliacion[]          @relation("SoporteAfGestor")
+  soportesAfAsignados     SoporteAfiliacion[]          @relation("SoporteAfAsignado")
   soportesAfGestionesUser SoporteAfGestion[]           @relation("SoporteAfGestionUser")
   soportesAfDocsUser      SoporteAfDocumento[]         @relation("SoporteAfDocUser")
   cobrosAliadoCreados     CobroAliado[]                @relation("CobroAliadoCreator")
@@ -566,6 +567,9 @@ model EntidadSgss {
   incapacidadesComoAfp Incapacidad[] @relation("IncapacidadAfp")
   incapacidadesComoArl Incapacidad[] @relation("IncapacidadArl")
   incapacidadesComoCcf Incapacidad[] @relation("IncapacidadCcf")
+
+  // Movimientos bancarios de incapacidades cuya entidad origen es ésta.
+  movimientosIncapacidad MovimientoIncapacidad[] @relation("MovIncEntidad")
 
   @@unique([tipo, codigo])
   @@index([tipo])
@@ -1758,10 +1762,16 @@ enum SoporteAfEstado {
 
 /**
  * Quién ejecutó la gestión / subida de documento.
+ *
+ * BOT — gestión automática registrada por el worker del bot Colpatria
+ *       cuando termina la afiliación ARL en el portal (Sprint Soporte
+ *       reorg, 2026-04-27). Lleva el PDF descargado como soporte y
+ *       aparece en la bitácora del modal con etiqueta diferenciada.
  */
 enum SoporteAfAccionadaPor {
   SOPORTE
   ALIADO
+  BOT
 }
 
 /**
@@ -1793,6 +1803,15 @@ model SoporteAfiliacion {
   gestionadoPorId     String?
   gestionadoEn        DateTime?
 
+  /**
+   * Sprint Soporte reorg — usuario STAFF al que se le asignó la
+   * solicitud para ejecutar tareas manuales (validación, llamadas, etc).
+   * Se diferencia de `gestionadoPorId` (que es el último que cambió el
+   * estado): la asignación es PROACTIVA (alguien decide quién atiende),
+   * no reactiva. Cualquier ADMIN o SOPORTE puede asignar/reasignar.
+   */
+  asignadoAUserId String?
+
   periodoId String?
 
   createdAt DateTime @default(now())
@@ -1803,6 +1822,7 @@ model SoporteAfiliacion {
   sucursal      Sucursal         @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   createdBy     User?            @relation("SoporteAfCreator", fields: [createdById], references: [id], onDelete: SetNull)
   gestionadoPor User?            @relation("SoporteAfGestor", fields: [gestionadoPorId], references: [id], onDelete: SetNull)
+  asignadoA     User?            @relation("SoporteAfAsignado", fields: [asignadoAUserId], references: [id], onDelete: SetNull)
   periodo       PeriodoContable? @relation(fields: [periodoId], references: [id], onDelete: SetNull)
 
   documentos SoporteAfDocumento[]
@@ -1814,6 +1834,7 @@ model SoporteAfiliacion {
   @@index([afiliacionId])
   @@index([cotizanteId])
   @@index([fechaRadicacion])
+  @@index([asignadoAUserId])
   @@map("soporte_afiliacion")
 }
 
@@ -2023,6 +2044,14 @@ model MovimientoIncapacidad {
   id            String              @id @default(cuid())
   consecutivo   String              @unique // MI-000001
   empresaId     String? // empresa planilla asociada (si se identifica al importar)
+  /**
+   * Sprint Soporte reorg — entidad SGSS de origen del depósito (solo
+   * EPS y ARL hoy). En el modal de registro manual el usuario la
+   * elige por autocomplete; en imports queda null hasta que soporte
+   * lo asigne en la tabla. Reemplaza al uso libre de `concepto` para
+   * casos estructurados (concepto sigue libre para # de autorización).
+   */
+  entidadSgssId String?
   fechaIngreso  DateTime // fecha del movimiento en el banco
   concepto      String // referencia/descripción del extracto
   valor         Decimal             @db.Decimal(14, 2)
@@ -2039,13 +2068,15 @@ model MovimientoIncapacidad {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  empresa   Empresa?               @relation(fields: [empresaId], references: [id], onDelete: SetNull)
-  createdBy User?                  @relation("MovIncCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  detalles  MovimientoIncDetalle[]
+  empresa     Empresa?               @relation(fields: [empresaId], references: [id], onDelete: SetNull)
+  entidadSgss EntidadSgss?           @relation("MovIncEntidad", fields: [entidadSgssId], references: [id], onDelete: SetNull)
+  createdBy   User?                  @relation("MovIncCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  detalles    MovimientoIncDetalle[]
 
   @@index([estado])
   @@index([fechaIngreso])
   @@index([empresaId])
+  @@index([entidadSgssId])
   @@map("movimiento_incapacidad")
 }
 

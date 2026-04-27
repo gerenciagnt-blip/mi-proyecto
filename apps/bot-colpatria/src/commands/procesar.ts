@@ -361,6 +361,12 @@ async function marcarOk(
       pdfPath,
     },
   });
+  // Sprint Soporte reorg — registrar gestión automática en la bitácora
+  // de la SoporteAfiliacion correspondiente (si existe). Esto deja
+  // trazabilidad uniforme en el modal de detalle: el usuario soporte ve
+  // que el bot procesó la ARL y puede descargar el PDF desde la propia
+  // tarjeta del bot.
+  await registrarGestionBot(jobId, 'SUCCESS', mensajeInfo, pdfPath);
 }
 
 async function marcarFallo(
@@ -378,6 +384,64 @@ async function marcarFallo(
       error: mensaje,
     },
   });
+  await registrarGestionBot(jobId, retryable ? 'RETRYABLE' : 'FAILED', mensaje, null);
+}
+
+/**
+ * Sprint Soporte reorg — Espeja el resultado del job a la bitácora de
+ * la SoporteAfiliacion (cuando existe una para esa afiliación). El bot
+ * NO falla si esto no funciona — la bitácora es informativa, el job ya
+ * persistió su propio estado.
+ */
+async function registrarGestionBot(
+  jobId: string,
+  status: 'SUCCESS' | 'FAILED' | 'RETRYABLE',
+  mensaje: string,
+  pdfPath: string | null,
+): Promise<void> {
+  try {
+    const job = await prisma.colpatriaAfiliacionJob.findUnique({
+      where: { id: jobId },
+      select: { afiliacionId: true, intento: true },
+    });
+    if (!job) return;
+
+    // Buscamos la SoporteAfiliacion vigente para esa afiliación. Es
+    // razonable que haya una (la que disparó la creación del job vía
+    // `dispatch`). Si no la hay, no escribimos nada — el job de bot
+    // pudo ser creado manualmente sin pasar por una solicitud.
+    const sol = await prisma.soporteAfiliacion.findFirst({
+      where: { afiliacionId: job.afiliacionId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!sol) return;
+
+    const descripcion =
+      status === 'SUCCESS'
+        ? `Bot Colpatria · afiliación ARL completada (intento ${job.intento})${
+            pdfPath ? ' · PDF de afiliación disponible para descarga.' : ''
+          }${mensaje ? `\n${mensaje}` : ''}`
+        : status === 'RETRYABLE'
+          ? `Bot Colpatria · falló intento ${job.intento} (reintentable). ${mensaje}`
+          : `Bot Colpatria · falló intento ${job.intento} (definitivo). ${mensaje}`;
+
+    await prisma.soporteAfGestion.create({
+      data: {
+        soporteAfId: sol.id,
+        accionadaPor: 'BOT',
+        nuevoEstado: null,
+        descripcion,
+        userId: null,
+        userName: 'Bot Colpatria',
+      },
+    });
+  } catch (err) {
+    log.warn(
+      { jobId, err: err instanceof Error ? err.message : err },
+      'no se pudo registrar gestión BOT en SoporteAfiliacion',
+    );
+  }
 }
 
 // ============================================================================

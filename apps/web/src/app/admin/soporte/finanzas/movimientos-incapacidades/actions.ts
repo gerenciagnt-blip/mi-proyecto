@@ -141,6 +141,11 @@ export async function importarExtractoAction(
  * Registra manualmente un movimiento bancario. Útil cuando el extracto
  * no está disponible o el formato del PDF no es parseable.
  *
+ * Sprint Soporte reorg — el campo "concepto" libre fue reemplazado por
+ * un selector estructurado de entidad SGSS (EPS/ARL). El concepto sigue
+ * existiendo pero ahora es opcional y sirve para # de autorización.
+ * Si se omite, se autocompleta con el nombre de la entidad.
+ *
  * Genera el mismo `hashIdentidad` que el parser para que si después se
  * importa el extracto con esa misma fila, no se duplique.
  */
@@ -151,23 +156,52 @@ export async function crearMovimientoManualAction(
   const session = await requireStaff();
 
   const fechaIso = String(formData.get('fechaIngreso') ?? '').trim();
-  const concepto = String(formData.get('concepto') ?? '').trim();
+  const conceptoRaw = String(formData.get('concepto') ?? '').trim();
   const valorStr = String(formData.get('valor') ?? '').trim();
   const bancoOrigen = String(formData.get('bancoOrigen') ?? '').trim() || null;
+  const entidadSgssId = String(formData.get('entidadSgssId') ?? '').trim() || null;
+  const empresaId = String(formData.get('empresaId') ?? '').trim() || null;
 
   if (!fechaIso || !/^\d{4}-\d{2}-\d{2}$/.test(fechaIso)) {
     return { error: 'Fecha inválida (formato AAAA-MM-DD)' };
   }
-  if (!concepto || concepto.length < 3) {
-    return { error: 'El concepto es obligatorio (mín. 3 caracteres)' };
+  if (!entidadSgssId) {
+    return { error: 'La entidad SGSS es obligatoria (selecciona una EPS o ARL)' };
   }
-  if (concepto.length > 500) {
+  if (conceptoRaw.length > 500) {
     return { error: 'Concepto demasiado largo (máx. 500 caracteres)' };
   }
   const valor = Number(valorStr.replace(/[^\d.-]/g, ''));
   if (!Number.isFinite(valor) || valor <= 0) {
     return { error: 'Valor inválido (debe ser un número > 0)' };
   }
+
+  // Validar que la entidad exista y sea EPS/ARL (defensa contra IDs forjados).
+  const entidad = await prisma.entidadSgss.findUnique({
+    where: { id: entidadSgssId },
+    select: { id: true, tipo: true, codigo: true, nombre: true, active: true },
+  });
+  if (!entidad || !entidad.active) {
+    return { error: 'Entidad SGSS no existe o está inactiva' };
+  }
+  if (entidad.tipo !== 'EPS' && entidad.tipo !== 'ARL') {
+    return { error: 'Solo se permiten entidades EPS o ARL en movimientos manuales' };
+  }
+
+  // Validar empresa si vino — debe existir y estar activa.
+  if (empresaId) {
+    const emp = await prisma.empresa.findUnique({
+      where: { id: empresaId },
+      select: { id: true, active: true },
+    });
+    if (!emp || !emp.active) {
+      return { error: 'La empresa planilla no existe o está inactiva' };
+    }
+  }
+
+  // Si no escribieron concepto, lo autocompletamos con el nombre de la
+  // entidad para preservar trazabilidad humana en listados/exportes.
+  const concepto = conceptoRaw || `${entidad.tipo} ${entidad.nombre}`;
 
   const [y, m, d] = fechaIso.split('-').map(Number);
   const fechaIngreso = new Date(Date.UTC(y!, m! - 1, d!, 12, 0, 0));
@@ -200,11 +234,50 @@ export async function crearMovimientoManualAction(
         hashIdentidad,
         estado: 'PENDIENTE',
         createdById: session.user.id,
+        entidadSgssId,
+        empresaId,
       },
     });
   } catch (e) {
     return {
       error: `Error al guardar: ${e instanceof Error ? e.message : 'desconocido'}`,
+    };
+  }
+
+  revalidatePath('/admin/soporte/finanzas/movimientos-incapacidades');
+  return { ok: true };
+}
+
+/**
+ * Sprint Soporte reorg — Asigna (o desasigna pasando `null`) la
+ * empresa planilla a un movimiento ya creado. Útil para los movimientos
+ * que vienen del import del extracto, que llegan sin empresa porque el
+ * archivo bancario no tiene esa información.
+ */
+export async function asignarEmpresaMovimientoAction(
+  movimientoId: string,
+  empresaId: string | null,
+): Promise<ActionState> {
+  await requireStaff();
+
+  if (empresaId) {
+    const emp = await prisma.empresa.findUnique({
+      where: { id: empresaId },
+      select: { id: true, active: true },
+    });
+    if (!emp || !emp.active) {
+      return { error: 'La empresa planilla no existe o está inactiva' };
+    }
+  }
+
+  try {
+    await prisma.movimientoIncapacidad.update({
+      where: { id: movimientoId },
+      data: { empresaId },
+    });
+  } catch (e) {
+    return {
+      error: `Error al asignar: ${e instanceof Error ? e.message : 'desconocido'}`,
     };
   }
 

@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { FileCheck, AlertCircle, UserCog } from 'lucide-react';
-import type { Prisma, SoporteAfEstado } from '@pila/db';
+import type { ColpatriaJobStatus, Prisma, SoporteAfEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
+import { requireStaff } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
+import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
 import { SolicitudesTable, type SolicitudRow } from './solicitudes-table';
+import { listarStaffAsignablesAction } from './actions';
 
 export const metadata = { title: 'Soporte · Afiliaciones — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -14,6 +17,7 @@ type SP = {
   desde?: string;
   hasta?: string;
   createdById?: string;
+  asignadoAUserId?: string;
   q?: string;
 };
 
@@ -41,6 +45,8 @@ export default async function SoporteAfiliacionesPage({
 }: {
   searchParams: Promise<SP>;
 }) {
+  const session = await requireStaff();
+  const myUserId = session.user.id;
   const sp = await searchParams;
 
   const estadoFilter: SoporteAfEstado | undefined =
@@ -58,9 +64,28 @@ export default async function SoporteAfiliacionesPage({
   const createdByFilter = sp.createdById?.trim() ?? '';
   const q = sp.q?.trim() ?? '';
 
+  // Filtro de asignación. Valores especiales:
+  //   "" / undefined  → todas
+  //   "__sin_asignar" → solo las que no tienen `asignadoAUserId`
+  //   "__mias"        → asignadas al usuario actual
+  //   <userId>        → asignadas a ese usuario
+  const asignadoFilterRaw = sp.asignadoAUserId?.trim() ?? '';
+  const asignadoFilter: 'sin' | 'mias' | string | null =
+    asignadoFilterRaw === ''
+      ? null
+      : asignadoFilterRaw === '__sin_asignar'
+        ? 'sin'
+        : asignadoFilterRaw === '__mias'
+          ? 'mias'
+          : asignadoFilterRaw;
+
   const where: Prisma.SoporteAfiliacionWhereInput = {};
   if (estadoFilter) where.estado = estadoFilter;
   if (createdByFilter) where.createdById = createdByFilter;
+  if (asignadoFilter === 'sin') where.asignadoAUserId = null;
+  else if (asignadoFilter === 'mias') where.asignadoAUserId = myUserId;
+  else if (typeof asignadoFilter === 'string') where.asignadoAUserId = asignadoFilter;
+
   const fechaDesdeD = desde ? new Date(desde + 'T00:00:00') : null;
   const fechaHastaD = hasta ? new Date(hasta + 'T23:59:59') : null;
   if (fechaDesdeD || fechaHastaD) {
@@ -83,66 +108,102 @@ export default async function SoporteAfiliacionesPage({
     ];
   }
 
-  const [solicitudes, statsByEstado, owners, gestionesEnRango] = await Promise.all([
-    prisma.soporteAfiliacion.findMany({
-      where,
-      orderBy: { fechaRadicacion: 'desc' },
-      take: 500,
-      include: {
-        cotizante: {
-          select: {
-            tipoDocumento: true,
-            numeroDocumento: true,
-            primerNombre: true,
-            primerApellido: true,
-            segundoApellido: true,
+  const [solicitudes, statsByEstado, owners, gestionesEnRango, staffAsignables] = await Promise.all(
+    [
+      prisma.soporteAfiliacion.findMany({
+        where,
+        orderBy: { fechaRadicacion: 'desc' },
+        take: 500,
+        include: {
+          cotizante: {
+            select: {
+              tipoDocumento: true,
+              numeroDocumento: true,
+              primerNombre: true,
+              primerApellido: true,
+              segundoApellido: true,
+            },
           },
+          createdBy: { select: { id: true, name: true } },
+          sucursal: { select: { codigo: true, nombre: true } },
+          asignadoA: { select: { id: true, name: true } },
+          afiliacion: {
+            select: {
+              id: true,
+              planSgss: { select: { incluyeArl: true } },
+              empresa: { select: { colpatriaActivo: true } },
+            },
+          },
+          _count: { select: { documentos: true } },
         },
-        createdBy: { select: { id: true, name: true } },
-        sucursal: { select: { codigo: true, nombre: true } },
-        _count: { select: { documentos: true } },
-      },
-    }),
-    prisma.soporteAfiliacion.groupBy({
-      by: ['estado'],
-      where,
-      _count: { _all: true },
-    }),
-    prisma.user.findMany({
-      where: { role: 'ALIADO_OWNER', active: true },
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true, sucursal: { select: { codigo: true } } },
-    }),
-    // Traemos las gestiones SOPORTE crudas en el rango. Después agrupamos
-    // en JS quedándonos con la PRIMERA gestión por solicitud — el "dueño"
-    // de esa solicitud es el primer usuario que la tocó. Si después otro
-    // usuario gestiona la misma solicitud, no se le cuenta (regla de
-    // negocio: una gestión por registro).
-    prisma.soporteAfGestion.findMany({
-      where: {
-        accionadaPor: 'SOPORTE',
-        userId: { not: null },
-        ...(fechaDesdeD || fechaHastaD
-          ? {
-              createdAt: {
-                ...(fechaDesdeD ? { gte: fechaDesdeD } : {}),
-                ...(fechaHastaD ? { lte: fechaHastaD } : {}),
-              },
-            }
-          : {}),
-      },
-      select: {
-        userId: true,
-        userName: true,
-        soporteAfId: true,
-        createdAt: true,
-      },
-      orderBy: [{ soporteAfId: 'asc' }, { createdAt: 'asc' }],
-    }),
-  ]);
+      }),
+      prisma.soporteAfiliacion.groupBy({
+        by: ['estado'],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.user.findMany({
+        where: { role: 'ALIADO_OWNER', active: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, sucursal: { select: { codigo: true } } },
+      }),
+      // Traemos las gestiones SOPORTE crudas en el rango. Después agrupamos
+      // en JS quedándonos con la PRIMERA gestión por solicitud — el "dueño"
+      // de esa solicitud es el primer usuario que la tocó. Si después otro
+      // usuario gestiona la misma solicitud, no se le cuenta (regla de
+      // negocio: una gestión por registro).
+      prisma.soporteAfGestion.findMany({
+        where: {
+          accionadaPor: 'SOPORTE',
+          userId: { not: null },
+          ...(fechaDesdeD || fechaHastaD
+            ? {
+                createdAt: {
+                  ...(fechaDesdeD ? { gte: fechaDesdeD } : {}),
+                  ...(fechaHastaD ? { lte: fechaHastaD } : {}),
+                },
+              }
+            : {}),
+        },
+        select: {
+          userId: true,
+          userName: true,
+          soporteAfId: true,
+          createdAt: true,
+        },
+        orderBy: [{ soporteAfId: 'asc' }, { createdAt: 'asc' }],
+      }),
+      listarStaffAsignablesAction(),
+    ],
+  );
 
   const counts = new Map<SoporteAfEstado, number>();
   for (const r of statsByEstado) counts.set(r.estado, r._count._all);
+
+  // Sprint Soporte reorg — para las afiliaciones cuyo plan incluye ARL
+  // y cuya empresa tiene el bot activo, traemos el último job Colpatria
+  // en una sola query batch (groupBy max no es trivial con Prisma así
+  // que usamos un `findMany` ordenado y luego deduplicamos en JS — son
+  // <= 500 solicitudes por página, costo bajo).
+  const afiliacionIdsConBot = solicitudes
+    .filter((s) => s.afiliacion?.planSgss?.incluyeArl && s.afiliacion?.empresa?.colpatriaActivo)
+    .map((s) => s.afiliacion.id);
+
+  const lastJobMap = new Map<string, ColpatriaJobStatus>();
+  if (afiliacionIdsConBot.length > 0) {
+    const jobs = await prisma.colpatriaAfiliacionJob.findMany({
+      where: { afiliacionId: { in: afiliacionIdsConBot } },
+      orderBy: [{ afiliacionId: 'asc' }, { createdAt: 'desc' }],
+      select: { afiliacionId: true, status: true, createdAt: true },
+    });
+    // findMany con orderBy desc por createdAt: el primero por afiliacionId
+    // es el más reciente. Nos quedamos con ese.
+    for (const j of jobs) {
+      if (!lastJobMap.has(j.afiliacionId)) {
+        lastJobMap.set(j.afiliacionId, j.status);
+      }
+    }
+  }
 
   // Reglas:
   //   1. Iteramos las gestiones ya ordenadas por (soporteAfId, createdAt asc).
@@ -184,6 +245,9 @@ export default async function SoporteAfiliacionesPage({
     ]
       .filter(Boolean)
       .join(' ');
+    const planIncluyeArl = s.afiliacion?.planSgss?.incluyeArl ?? false;
+    const empresaColpatriaActivo = s.afiliacion?.empresa?.colpatriaActivo ?? false;
+    const lastJobStatus = lastJobMap.get(s.afiliacion?.id ?? '') ?? null;
     return {
       id: s.id,
       consecutivo: s.consecutivo,
@@ -198,10 +262,18 @@ export default async function SoporteAfiliacionesPage({
       disparos: s.disparos,
       cantidadDocs: s._count.documentos,
       estado: s.estado,
+      arlStatus: arlStatusFromBot({
+        planIncluyeArl,
+        empresaColpatriaActivo,
+        lastJobStatus,
+      }),
+      asignadoA: s.asignadoA ? { id: s.asignadoA.id, name: s.asignadoA.name } : null,
     };
   });
 
-  const hayFiltrosExtra = Boolean(estadoFilter || createdByFilter || q || sp.desde || sp.hasta);
+  const hayFiltrosExtra = Boolean(
+    estadoFilter || createdByFilter || asignadoFilterRaw || q || sp.desde || sp.hasta,
+  );
 
   return (
     <div className="space-y-6">
@@ -363,7 +435,7 @@ export default async function SoporteAfiliacionesPage({
               <select
                 name="createdById"
                 defaultValue={createdByFilter}
-                className="h-9 min-w-[180px] rounded-lg border border-slate-300 bg-white px-2 text-xs"
+                className="h-9 min-w-[160px] rounded-lg border border-slate-300 bg-white px-2 text-xs"
               >
                 <option value="">Todos los aliados</option>
                 {owners.map((u) => (
@@ -372,6 +444,27 @@ export default async function SoporteAfiliacionesPage({
                     {u.name}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                Asignado a
+              </span>
+              <select
+                name="asignadoAUserId"
+                defaultValue={asignadoFilterRaw}
+                className="h-9 min-w-[160px] rounded-lg border border-slate-300 bg-white px-2 text-xs"
+              >
+                <option value="">Todos</option>
+                <option value="__mias">Asignadas a mí</option>
+                <option value="__sin_asignar">Sin asignar</option>
+                <optgroup label="Por usuario">
+                  {staffAsignables.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
             <label className="flex flex-col gap-1">
@@ -389,14 +482,15 @@ export default async function SoporteAfiliacionesPage({
                 ))}
               </select>
             </label>
-            <label className="flex flex-1 flex-col gap-1">
+            {/* Buscar reducido (160px) para acomodar el nuevo filtro Asignado. */}
+            <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-slate-500">Buscar</span>
               <input
                 type="search"
                 name="q"
                 defaultValue={q}
-                placeholder="Consecutivo, documento o nombre…"
-                className="h-9 min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 text-xs"
+                placeholder="Consec. / doc / nombre"
+                className="h-9 w-[160px] rounded-lg border border-slate-300 bg-white px-3 text-xs"
               />
             </label>
             <button
@@ -428,7 +522,7 @@ export default async function SoporteAfiliacionesPage({
             </span>
           </Alert>
         ) : (
-          <SolicitudesTable rows={rows} />
+          <SolicitudesTable rows={rows} staffAsignables={staffAsignables} />
         )}
       </section>
     </div>

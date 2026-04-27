@@ -1,24 +1,69 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { Upload, Loader2, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { useActionState, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Upload, Loader2, CheckCircle2, AlertTriangle, Info, FileUp } from 'lucide-react';
+import { Dialog } from '@/components/ui/dialog';
 import { importarExtractoAction, type ActionState } from './actions';
 
-export function UploadExtractoForm() {
+/**
+ * Sprint Soporte reorg — Convertimos el form que estaba pegado en la
+ * página en un modal con su propio botón disparador, alineado visualmente
+ * al "Registro manual". El usuario abre el modal, sube el extracto, ve
+ * el resumen y cierra cuando termina.
+ *
+ * Nota Q5 (asignación empresa): NO se selecciona empresa al importar.
+ * Los movimientos se crean sin empresa y luego se asignan inline en
+ * cada fila de la tabla (modelo "B" elegido en el sprint).
+ */
+export function UploadExtractoButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-blue bg-brand-blue px-3 text-xs font-medium text-white shadow-sm transition hover:bg-brand-blue-dark"
+      >
+        <FileUp className="h-3.5 w-3.5" />
+        Importar extracto
+      </button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Importar extracto bancario"
+        description="Sube un archivo Excel, CSV o PDF con los movimientos del banco. Los duplicados se descartan automáticamente."
+        size="md"
+      >
+        <UploadForm onClose={() => setOpen(false)} />
+      </Dialog>
+    </>
+  );
+}
+
+function UploadForm({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
   const [state, submit, pending] = useActionState<ActionState, FormData>(
     importarExtractoAction,
     {},
   );
   const [fileName, setFileName] = useState<string>('');
 
+  // Auto-refresh cuando termina OK con creados > 0 (la lista necesita
+  // mostrar las nuevas filas). Si fueron 0 creados (todos duplicados),
+  // tampoco hace daño refrescar.
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [state.ok, router]);
+
   return (
-    <form action={submit} className="space-y-3">
+    <form action={submit} className="space-y-4">
       <div>
         <label
           htmlFor="archivo"
           className="text-[10px] font-medium uppercase tracking-wider text-slate-500"
         >
-          Archivo (Excel, CSV o PDF)
+          Archivo (Excel, CSV o PDF) <span className="text-red-500">*</span>
         </label>
         <input
           id="archivo"
@@ -31,8 +76,8 @@ export function UploadExtractoForm() {
         />
         {fileName && <p className="mt-1 text-[11px] text-slate-500">{fileName}</p>}
         <p className="mt-1 text-[10px] text-slate-400">
-          PDF: detecta líneas con patrón “fecha … valor”. Si tu extracto no es estándar, usa{' '}
-          <strong>Registro manual</strong>.
+          PDF: detecta líneas con patrón &ldquo;fecha … valor&rdquo;. Si tu extracto no es estándar,
+          usa <strong>Registro manual</strong>.
         </p>
       </div>
 
@@ -50,6 +95,12 @@ export function UploadExtractoForm() {
           className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
         />
       </div>
+
+      <p className="rounded-md bg-sky-50 px-3 py-2 text-[10px] text-sky-800">
+        <Info className="mr-1 inline h-3 w-3" />
+        Los movimientos importados llegan sin empresa planilla — la asignas después en la tabla,
+        fila por fila.
+      </p>
 
       {state.error && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -115,14 +166,28 @@ export function UploadExtractoForm() {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-        {pending ? 'Procesando…' : 'Importar extracto'}
-      </button>
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={pending}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {state.ok ? 'Cerrar' : 'Cancelar'}
+        </button>
+        <button
+          type="submit"
+          disabled={pending}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-4 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {pending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Upload className="h-3.5 w-3.5" />
+          )}
+          {pending ? 'Procesando…' : 'Importar'}
+        </button>
+      </div>
     </form>
   );
 }

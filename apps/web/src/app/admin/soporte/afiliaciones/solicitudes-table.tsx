@@ -5,6 +5,9 @@ import { Paperclip } from 'lucide-react';
 import type { SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { DetalleModal } from './detalle-modal';
+import { AsignarPopover } from './asignar-popover';
+import type { ArlStatus } from '@/lib/soporte-af/arl-status';
+import type { StaffAsignable } from './actions';
 
 const ESTADO_LABEL: Record<SoporteAfEstado, string> = {
   EN_PROCESO: 'En proceso',
@@ -41,6 +44,10 @@ export type SolicitudRow = {
   disparos: SoporteAfTipoDisparo[];
   cantidadDocs: number;
   estado: SoporteAfEstado;
+  /** Sprint Soporte reorg — estado del bot ARL si aplica al plan/empresa. */
+  arlStatus: ArlStatus | null;
+  /** Sprint Soporte reorg — usuario asignado a la solicitud. */
+  asignadoA: { id: string; name: string } | null;
 };
 
 function fmtDateTime(iso: string) {
@@ -54,7 +61,22 @@ function fmtDateTime(iso: string) {
   };
 }
 
-export function SolicitudesTable({ rows }: { rows: SolicitudRow[] }) {
+function inicialesDe(nombre: string): string {
+  return nombre
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join('');
+}
+
+export function SolicitudesTable({
+  rows,
+  staffAsignables,
+}: {
+  rows: SolicitudRow[];
+  staffAsignables: StaffAsignable[];
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (rows.length === 0) {
@@ -71,60 +93,62 @@ export function SolicitudesTable({ rows }: { rows: SolicitudRow[] }) {
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="px-4 py-2">Consecutivo</th>
-              <th className="px-4 py-2">Recibido</th>
-              <th className="px-4 py-2">Aliado</th>
-              <th className="px-4 py-2">Cotizante</th>
-              <th className="px-4 py-2">Modalidad</th>
-              <th className="px-4 py-2">Plan SGSS</th>
-              <th className="px-4 py-2">Régimen</th>
-              <th className="px-4 py-2">Disparos</th>
-              <th className="px-4 py-2">Docs</th>
-              <th className="px-4 py-2">Estado</th>
+              <th className="px-3 py-2">Consecutivo</th>
+              <th className="px-3 py-2">Recibido</th>
+              <th className="px-3 py-2">Aliado</th>
+              <th className="px-3 py-2">Cotizante</th>
+              <th className="px-3 py-2">Modalidad</th>
+              {/* Plan + Régimen unidos en una sola columna para ahorrar espacio. */}
+              <th className="px-3 py-2">Plan / Régimen</th>
+              <th className="px-3 py-2">Disparos</th>
+              <th className="px-3 py-2 text-center">Estado ARL</th>
+              <th className="px-3 py-2 text-center">Docs</th>
+              <th className="px-3 py-2">Estado</th>
+              <th className="px-3 py-2">Asignado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((s) => {
               const { fecha, hora } = fmtDateTime(s.fechaRadicacion);
               return (
-                <tr
-                  key={s.id}
-                  className="cursor-pointer hover:bg-slate-50"
-                  onClick={() => setOpenId(s.id)}
-                >
-                  <td className="px-4 py-2 font-mono text-xs font-semibold text-brand-blue hover:underline">
+                <tr key={s.id} className="hover:bg-slate-50">
+                  <td
+                    className="cursor-pointer px-3 py-2 font-mono text-xs font-semibold text-brand-blue hover:underline"
+                    onClick={() => setOpenId(s.id)}
+                  >
                     {s.consecutivo}
                   </td>
-                  <td className="px-4 py-2 text-[11px] text-slate-500">
+                  <td
+                    className="cursor-pointer px-3 py-2 text-[11px] text-slate-500"
+                    onClick={() => setOpenId(s.id)}
+                  >
                     <p>{fecha}</p>
                     <p className="font-mono text-[10px] text-slate-400">{hora}</p>
                   </td>
-                  <td className="px-4 py-2 text-xs">
-                    <p className="font-medium text-slate-900">
-                      {s.aliadoNombre ?? '—'}
-                    </p>
+                  <td className="cursor-pointer px-3 py-2 text-xs" onClick={() => setOpenId(s.id)}>
+                    <p className="font-medium text-slate-900">{s.aliadoNombre ?? '—'}</p>
                     {s.sucursalCodigo && (
-                      <p className="font-mono text-[10px] text-slate-500">
-                        {s.sucursalCodigo}
-                      </p>
+                      <p className="font-mono text-[10px] text-slate-500">{s.sucursalCodigo}</p>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-xs">
+                  <td className="cursor-pointer px-3 py-2 text-xs" onClick={() => setOpenId(s.id)}>
                     <p className="font-medium">{s.cotizanteNombre}</p>
-                    <p className="font-mono text-[10px] text-slate-500">
-                      {s.cotizanteDoc}
-                    </p>
+                    <p className="font-mono text-[10px] text-slate-500">{s.cotizanteDoc}</p>
                   </td>
-                  <td className="px-4 py-2 text-[11px] text-slate-600">
+                  <td
+                    className="cursor-pointer px-3 py-2 text-[11px] text-slate-600"
+                    onClick={() => setOpenId(s.id)}
+                  >
                     {s.modalidadLabel}
                   </td>
-                  <td className="px-4 py-2 text-[11px] text-slate-600">
-                    {s.planLabel ?? '—'}
+                  <td
+                    className="cursor-pointer px-3 py-2 text-[11px]"
+                    onClick={() => setOpenId(s.id)}
+                  >
+                    <p className="font-medium text-slate-700">{s.planLabel ?? '—'}</p>
+                    <p className="text-[10px] text-slate-500">{s.regimenLabel ?? '—'}</p>
                   </td>
-                  <td className="px-4 py-2 text-[11px] text-slate-600">
-                    {s.regimenLabel ?? '—'}
-                  </td>
-                  <td className="px-4 py-2">
+                  <td className="cursor-pointer px-3 py-2" onClick={() => setOpenId(s.id)}>
                     <div className="flex flex-wrap gap-1">
                       {s.disparos.map((d) => (
                         <span
@@ -136,11 +160,31 @@ export function SolicitudesTable({ rows }: { rows: SolicitudRow[] }) {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-2 text-[11px] text-slate-500">
+                  <td
+                    className="cursor-pointer px-3 py-2 text-center"
+                    onClick={() => setOpenId(s.id)}
+                  >
+                    {s.arlStatus ? (
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          s.arlStatus.tone,
+                        )}
+                      >
+                        {s.arlStatus.label}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-300">—</span>
+                    )}
+                  </td>
+                  <td
+                    className="cursor-pointer px-3 py-2 text-center text-[11px] text-slate-500"
+                    onClick={() => setOpenId(s.id)}
+                  >
                     <Paperclip className="mr-0.5 inline h-3 w-3" />
                     {s.cantidadDocs}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="cursor-pointer px-3 py-2" onClick={() => setOpenId(s.id)}>
                     <span
                       className={cn(
                         'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
@@ -149,6 +193,16 @@ export function SolicitudesTable({ rows }: { rows: SolicitudRow[] }) {
                     >
                       {ESTADO_LABEL[s.estado]}
                     </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {/* No abre detalle al click — el popover gestiona su propio
+                       estado. Por eso este td no tiene cursor-pointer. */}
+                    <AsignarPopover
+                      soporteAfId={s.id}
+                      actual={s.asignadoA}
+                      staff={staffAsignables}
+                      compact
+                    />
                   </td>
                 </tr>
               );
@@ -161,7 +215,11 @@ export function SolicitudesTable({ rows }: { rows: SolicitudRow[] }) {
         soporteAfId={openId}
         open={openId !== null}
         onClose={() => setOpenId(null)}
+        staffAsignables={staffAsignables}
       />
     </>
   );
 }
+
+// Helper exportado para uso en otros lugares (modal detalle).
+export { inicialesDe };

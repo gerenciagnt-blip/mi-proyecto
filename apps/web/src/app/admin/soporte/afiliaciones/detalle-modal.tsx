@@ -9,15 +9,16 @@ import {
   History,
   AlertTriangle,
   Loader2,
+  Bot,
+  Shield,
 } from 'lucide-react';
 import type { SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { Dialog } from '@/components/ui/dialog';
-import {
-  getSoporteAfDetailAction,
-  type DetalleSoporteAf,
-} from './actions';
+import { getSoporteAfDetailAction, type DetalleSoporteAf, type StaffAsignable } from './actions';
 import { GestionForm } from './[id]/gestion-form';
+import { AsignarPopover } from './asignar-popover';
+import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
 
 const ESTADO_LABEL: Record<SoporteAfEstado, string> = {
   EN_PROCESO: 'En proceso',
@@ -64,10 +65,12 @@ export function DetalleModal({
   soporteAfId,
   open,
   onClose,
+  staffAsignables,
 }: {
   soporteAfId: string | null;
   open: boolean;
   onClose: () => void;
+  staffAsignables: StaffAsignable[];
 }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,9 +134,7 @@ export function DetalleModal({
       )}
 
       {!loading && error && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error}
-        </p>
+        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
       )}
 
       {!loading && data && (
@@ -156,9 +157,7 @@ export function DetalleModal({
             <section className="rounded-lg border border-slate-200 bg-white">
               <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
                 <UserIcon className="h-4 w-4 text-slate-500" />
-                <h3 className="text-xs font-semibold text-slate-700">
-                  Cotizante
-                </h3>
+                <h3 className="text-xs font-semibold text-slate-700">Cotizante</h3>
               </header>
               <dl className="divide-y divide-slate-100 px-4 py-1">
                 <DataRow
@@ -166,10 +165,7 @@ export function DetalleModal({
                   value={`${data.cotizante.tipoDocumento} ${data.cotizante.numeroDocumento}`}
                 />
                 <DataRow label="Nombre" value={data.cotizante.nombreCompleto} />
-                <DataRow
-                  label="Nacimiento"
-                  value={fmtFecha(data.cotizante.fechaNacimiento)}
-                />
+                <DataRow label="Nacimiento" value={fmtFecha(data.cotizante.fechaNacimiento)} />
                 <DataRow label="Género" value={data.cotizante.genero} />
                 <DataRow
                   label="Teléfono"
@@ -185,9 +181,7 @@ export function DetalleModal({
             <section className="rounded-lg border border-slate-200 bg-white">
               <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
                 <Building2 className="h-4 w-4 text-slate-500" />
-                <h3 className="text-xs font-semibold text-slate-700">
-                  Afiliación
-                </h3>
+                <h3 className="text-xs font-semibold text-slate-700">Afiliación</h3>
                 <span
                   className={cn(
                     'ml-auto inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
@@ -201,22 +195,13 @@ export function DetalleModal({
               </header>
               <dl className="divide-y divide-slate-100 px-4 py-1">
                 <DataRow label="Modalidad" value={data.afiliacion.modalidad} />
-                <DataRow
-                  label="Empresa planilla"
-                  value={data.afiliacion.empresa}
-                />
+                <DataRow label="Empresa planilla" value={data.afiliacion.empresa} />
                 <DataRow label="Tipo / Subtipo" value={data.afiliacion.tipoSubtipo} />
                 <DataRow label="Plan SGSS" value={data.afiliacion.plan} />
                 <DataRow label="Régimen" value={data.afiliacion.regimen} />
                 <DataRow label="Nivel ARL" value={data.afiliacion.nivelArl} />
-                <DataRow
-                  label="Fecha ingreso"
-                  value={fmtFecha(data.afiliacion.fechaIngreso)}
-                />
-                <DataRow
-                  label="Fecha retiro"
-                  value={fmtFecha(data.afiliacion.fechaRetiro)}
-                />
+                <DataRow label="Fecha ingreso" value={fmtFecha(data.afiliacion.fechaIngreso)} />
+                <DataRow label="Fecha retiro" value={fmtFecha(data.afiliacion.fechaRetiro)} />
                 <DataRow
                   label="Salario / Admón"
                   value={`${data.afiliacion.salarioLabel}  ·  ${data.afiliacion.adminLabel}`}
@@ -233,14 +218,8 @@ export function DetalleModal({
                     .map((x) => x ?? '—')
                     .join(' · ')}
                 />
-                <DataRow
-                  label="Actividad económica"
-                  value={data.afiliacion.actividad}
-                />
-                <DataRow
-                  label="Cuenta de cobro"
-                  value={data.afiliacion.cuentaCobro}
-                />
+                <DataRow label="Actividad económica" value={data.afiliacion.actividad} />
+                <DataRow label="Cuenta de cobro" value={data.afiliacion.cuentaCobro} />
                 <DataRow label="Asesor comercial" value={data.afiliacion.asesor} />
                 <DataRow label="Comentarios" value={data.afiliacion.comentarios} />
               </dl>
@@ -251,9 +230,7 @@ export function DetalleModal({
               <section className="rounded-lg border border-amber-200 bg-amber-50/40">
                 <header className="flex items-center gap-2 border-b border-amber-200/70 px-4 py-2">
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  <h3 className="text-xs font-semibold text-amber-800">
-                    Cambios detectados
-                  </h3>
+                  <h3 className="text-xs font-semibold text-amber-800">Cambios detectados</h3>
                 </header>
                 <table className="w-full text-xs">
                   <thead className="bg-amber-100/60 text-left text-[10px] uppercase tracking-wider text-amber-700">
@@ -266,15 +243,9 @@ export function DetalleModal({
                   <tbody className="divide-y divide-amber-100">
                     {data.cambios.map((c) => (
                       <tr key={c.campo}>
-                        <td className="px-4 py-1.5 font-medium text-amber-900">
-                          {c.label}
-                        </td>
-                        <td className="px-4 py-1.5 text-slate-600 line-through">
-                          {c.antes}
-                        </td>
-                        <td className="px-4 py-1.5 font-semibold text-slate-900">
-                          {c.despues}
-                        </td>
+                        <td className="px-4 py-1.5 font-medium text-amber-900">{c.label}</td>
+                        <td className="px-4 py-1.5 text-slate-600 line-through">{c.antes}</td>
+                        <td className="px-4 py-1.5 font-semibold text-slate-900">{c.despues}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -291,21 +262,20 @@ export function DetalleModal({
                 </h3>
               </header>
               {data.documentos.length === 0 ? (
-                <p className="px-4 py-2.5 text-xs text-slate-500">
-                  Sin documentos adjuntos.
-                </p>
+                <p className="px-4 py-2.5 text-xs text-slate-500">Sin documentos adjuntos.</p>
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {data.documentos.map((d) => (
-                    <li
-                      key={d.id}
-                      className="flex items-center gap-2 px-4 py-2 text-xs"
-                    >
+                    <li key={d.id} className="flex items-center gap-2 px-4 py-2 text-xs">
                       <Paperclip className="h-3 w-3 text-slate-400" />
                       <div className="flex-1 truncate">
                         <p className="font-medium">{d.nombre}</p>
                         <p className="text-[10px] text-slate-500">
-                          {d.accionadaPor === 'SOPORTE' ? 'Soporte' : 'Aliado'}
+                          {d.accionadaPor === 'SOPORTE'
+                            ? 'Soporte'
+                            : d.accionadaPor === 'BOT'
+                              ? 'Bot'
+                              : 'Aliado'}
                           {' · '}
                           {d.userName ?? '—'}
                           {' · '}
@@ -345,76 +315,167 @@ export function DetalleModal({
                 </p>
               ) : (
                 <ol className="divide-y divide-slate-100">
-                  {data.gestiones.map((g) => (
-                    <li key={g.id} className="px-4 py-2 text-xs">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={cn(
-                            'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium',
-                            g.accionadaPor === 'SOPORTE'
-                              ? 'bg-brand-blue/10 text-brand-blue-dark'
-                              : 'bg-violet-50 text-violet-700',
-                          )}
-                        >
-                          {g.accionadaPor}
-                        </span>
-                        {g.nuevoEstado && (
+                  {data.gestiones.map((g) => {
+                    const tone =
+                      g.accionadaPor === 'BOT'
+                        ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
+                        : g.accionadaPor === 'SOPORTE'
+                          ? 'bg-brand-blue/10 text-brand-blue-dark'
+                          : 'bg-violet-50 text-violet-700';
+                    const label = g.accionadaPor === 'BOT' ? 'Bot Colpatria' : g.accionadaPor;
+                    return (
+                      <li key={g.id} className="px-4 py-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span
                             className={cn(
-                              'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset',
-                              ESTADO_TONE[g.nuevoEstado],
+                              'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium',
+                              tone,
                             )}
                           >
-                            → {ESTADO_LABEL[g.nuevoEstado]}
+                            {g.accionadaPor === 'BOT' && <Bot className="h-2.5 w-2.5" />}
+                            {label}
                           </span>
-                        )}
-                        <span className="ml-auto text-[10px] text-slate-500">
-                          {fmtDateTime(g.fecha)} · {g.userName ?? '—'}
-                        </span>
-                      </div>
-                      <p className="mt-1 whitespace-pre-line text-slate-700">
-                        {g.descripcion}
-                      </p>
-                    </li>
-                  ))}
+                          {g.nuevoEstado && (
+                            <span
+                              className={cn(
+                                'inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset',
+                                ESTADO_TONE[g.nuevoEstado],
+                              )}
+                            >
+                              → {ESTADO_LABEL[g.nuevoEstado]}
+                            </span>
+                          )}
+                          <span className="ml-auto text-[10px] text-slate-500">
+                            {fmtDateTime(g.fecha)} · {g.userName ?? '—'}
+                          </span>
+                        </div>
+                        <p className="mt-1 whitespace-pre-line text-slate-700">{g.descripcion}</p>
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </section>
           </div>
 
-          {/* Derecha — gestión */}
+          {/* Derecha — asignación + gestión */}
           <aside className="space-y-3">
+            {/* Asignación */}
+            <section className="rounded-lg border border-slate-200 bg-white p-4">
+              <h3 className="mb-2 text-xs font-semibold text-slate-700">Asignación</h3>
+              <AsignarPopover
+                soporteAfId={data.id}
+                actual={data.asignadoA}
+                staff={staffAsignables}
+                onAfter={(nuevo) =>
+                  setData((prev) => (prev ? { ...prev, asignadoA: nuevo } : prev))
+                }
+              />
+              <p className="mt-2 text-[10px] text-slate-500">
+                Cualquier ADMIN/SOPORTE puede tomar o reasignar.
+              </p>
+            </section>
+
+            {/* Bot ARL Colpatria — solo si aplica */}
+            {data.arlBot.planIncluyeArl && data.arlBot.empresaColpatriaActivo && (
+              <BotArlSection arlBot={data.arlBot} soporteAfId={data.id} />
+            )}
+
+            {/* Gestionar */}
             <section className="rounded-lg border border-slate-200 bg-white">
               <header className="border-b border-slate-100 px-4 py-2">
-                <h3 className="text-xs font-semibold text-slate-700">
-                  Gestionar solicitud
-                </h3>
+                <h3 className="text-xs font-semibold text-slate-700">Gestionar solicitud</h3>
                 <p className="mt-0.5 text-[10px] text-slate-500">
                   Cambia el estado, registra la observación y adjunta soportes.
                 </p>
               </header>
               <div className="px-4 py-3">
-                <GestionForm
-                  soporteAfId={data.id}
-                  estadoActual={data.estado}
-                />
+                <GestionForm soporteAfId={data.id} estadoActual={data.estado} />
               </div>
             </section>
 
             {data.gestionadoPor && (
               <p className="text-[10px] text-slate-500">
                 Última gestión por{' '}
-                <span className="font-medium text-slate-700">
-                  {data.gestionadoPor}
-                </span>
-                {data.gestionadoEn && (
-                  <> el {fmtDateTime(data.gestionadoEn)}</>
-                )}
+                <span className="font-medium text-slate-700">{data.gestionadoPor}</span>
+                {data.gestionadoEn && <> el {fmtDateTime(data.gestionadoEn)}</>}
               </p>
             )}
           </aside>
         </div>
       )}
     </Dialog>
+  );
+}
+
+/**
+ * Sprint Soporte reorg — Bloque que muestra el estado del bot Colpatria
+ * para la afiliación ARL. Si terminó OK con PDF disponible, ofrece la
+ * descarga. Si el archivo fue archivado por retención, muestra un aviso.
+ */
+function BotArlSection({
+  arlBot,
+  soporteAfId,
+}: {
+  arlBot: DetalleSoporteAf['arlBot'];
+  soporteAfId: string;
+}) {
+  const status = arlStatusFromBot({
+    planIncluyeArl: arlBot.planIncluyeArl,
+    empresaColpatriaActivo: arlBot.empresaColpatriaActivo,
+    lastJobStatus: arlBot.lastJob?.status ?? null,
+  });
+  const job = arlBot.lastJob;
+  const archivado = !!job?.pdfArchivedAt;
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <Shield className="h-4 w-4 text-emerald-600" />
+        <h3 className="text-xs font-semibold text-slate-700">Bot ARL · Colpatria</h3>
+        {status && (
+          <span
+            className={cn(
+              'ml-auto inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+              status.tone,
+            )}
+          >
+            {status.label}
+          </span>
+        )}
+      </div>
+
+      {!job ? (
+        <p className="text-[11px] text-slate-500">
+          Aún no se ha creado un job para esta afiliación.
+        </p>
+      ) : (
+        <div className="space-y-1.5 text-[11px] text-slate-600">
+          <p>
+            Intento <span className="font-mono">{job.intento}</span>
+            {job.finishedAt && <> · Terminado {new Date(job.finishedAt).toLocaleString('es-CO')}</>}
+          </p>
+          {job.error && (
+            <p className="rounded bg-red-50 px-2 py-1 text-[10px] text-red-700">{job.error}</p>
+          )}
+          {job.status === 'SUCCESS' && job.pdfPath && !archivado && (
+            <a
+              href={`/api/colpatria/jobs/${job.id}/pdf`}
+              target="_blank"
+              rel="noopener"
+              className="mt-1 inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              <Download className="h-3 w-3" />
+              Descargar PDF afiliación
+            </a>
+          )}
+          {job.status === 'SUCCESS' && archivado && (
+            <p className="text-[10px] italic text-slate-400">
+              PDF archivado por retención — solo metadata disponible.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
