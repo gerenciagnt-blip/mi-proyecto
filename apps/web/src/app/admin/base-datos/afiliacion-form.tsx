@@ -77,10 +77,35 @@ export type CuentaCobroOpt = {
 export type AsesorOpt = { id: string; codigo: string; nombre: string };
 export type ServicioOpt = { id: string; codigo: string; nombre: string; precio: number };
 
+/**
+ * Sprint Soporte reorg fase 2 — además del header (tipo+doc+nombre) ahora
+ * propagamos TODOS los campos demográficos del cotizante para que el
+ * form los muestre como `defaultValue` en modo edit/view. Antes los
+ * inputs aparecían vacíos al consultar/editar.
+ */
 export type CotizanteSnapshot = {
   tipoDocumento: string;
   numeroDocumento: string;
   nombreCompleto: string;
+  /** Datos demográficos completos (opcional para no romper callers viejos). */
+  datos?: {
+    fechaExpedicionDoc: string | null;
+    primerNombre: string;
+    segundoNombre: string | null;
+    primerApellido: string;
+    segundoApellido: string | null;
+    fechaNacimiento: string; // yyyy-mm-dd
+    genero: 'M' | 'F' | 'O';
+    estadoCivil: string | null;
+    telefono: string | null;
+    celular: string | null;
+    email: string | null;
+    direccion: string | null;
+    departamentoId: string | null;
+    departamentoNombre: string | null;
+    municipioId: string | null;
+    municipioNombre: string | null;
+  };
 };
 
 export type InitialAfiliacion = {
@@ -157,12 +182,22 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
   const [state, action, pending] = useActionState<ActionState, FormData>(boundAction, {});
 
   // === Identificación (controlada) — necesaria para autocompletar BDUA/RUAF ===
-  const [tipoDocumento, setTipoDocumento] = useState<string>('CC');
-  const [numeroDocumento, setNumeroDocumento] = useState<string>('');
-  const [primerNombre, setPrimerNombre] = useState<string>('');
-  const [segundoNombre, setSegundoNombre] = useState<string>('');
-  const [primerApellido, setPrimerApellido] = useState<string>('');
-  const [segundoApellido, setSegundoApellido] = useState<string>('');
+  // Sprint Soporte reorg fase 2 — pre-poblar con cotizanteSnapshot.datos
+  // en modo edit/view para que la ficha no salga vacía.
+  const cotInit = props.cotizanteSnapshot?.datos;
+  const [tipoDocumento, setTipoDocumento] = useState<string>(
+    // El snapshot de header guarda label ("CC", "TI", ...) — coincide con el value.
+    props.cotizanteSnapshot && /^[A-Z]+$/.test(props.cotizanteSnapshot.tipoDocumento)
+      ? props.cotizanteSnapshot.tipoDocumento
+      : 'CC',
+  );
+  const [numeroDocumento, setNumeroDocumento] = useState<string>(
+    props.cotizanteSnapshot?.numeroDocumento ?? '',
+  );
+  const [primerNombre, setPrimerNombre] = useState<string>(cotInit?.primerNombre ?? '');
+  const [segundoNombre, setSegundoNombre] = useState<string>(cotInit?.segundoNombre ?? '');
+  const [primerApellido, setPrimerApellido] = useState<string>(cotInit?.primerApellido ?? '');
+  const [segundoApellido, setSegundoApellido] = useState<string>(cotInit?.segundoApellido ?? '');
 
   // EPS/AFP controladas para poder autollenar
   const [epsIdState, setEpsIdState] = useState<string>(initial?.epsId ?? '');
@@ -339,9 +374,10 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 
   // (`planId`, `plan` y `requiereArl` ya declarados arriba)
 
-  // Dirección (solo en create)
-  const [deptoNombre, setDeptoNombre] = useState('');
-  const [municipioNombre, setMunicipioNombre] = useState('');
+  // Dirección — pre-pobladas desde cotizanteSnapshot en edit/view.
+  // Sprint Soporte reorg fase 2 — antes solo se inicializaba en create (vacío).
+  const [deptoNombre, setDeptoNombre] = useState(cotInit?.departamentoNombre ?? '');
+  const [municipioNombre, setMunicipioNombre] = useState(cotInit?.municipioNombre ?? '');
   const depto = useMemo(
     () => props.departamentos.find((d) => d.nombre === deptoNombre),
     [props.departamentos, deptoNombre],
@@ -496,6 +532,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   id="fechaExpedicionDoc"
                   name="fechaExpedicionDoc"
                   type="date"
+                  defaultValue={props.cotizanteSnapshot?.datos?.fechaExpedicionDoc ?? ''}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -508,6 +546,8 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   name="fechaNacimiento"
                   type="date"
                   required
+                  defaultValue={props.cotizanteSnapshot?.datos?.fechaNacimiento ?? ''}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -522,6 +562,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   required
                   value={primerNombre}
                   onChange={(e) => setPrimerNombre(e.target.value)}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -532,6 +573,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   name="segundoNombre"
                   value={segundoNombre}
                   onChange={(e) => setSegundoNombre(e.target.value)}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -545,6 +587,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   required
                   value={primerApellido}
                   onChange={(e) => setPrimerApellido(e.target.value)}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -555,6 +598,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   name="segundoApellido"
                   value={segundoApellido}
                   onChange={(e) => setSegundoApellido(e.target.value)}
+                  disabled={readOnly}
                   className="mt-1"
                 />
               </div>
@@ -563,7 +607,14 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 <Label htmlFor="genero">
                   Género <Req />
                 </Label>
-                <select id="genero" name="genero" required defaultValue="M" className={selectClass}>
+                <select
+                  id="genero"
+                  name="genero"
+                  required
+                  defaultValue={props.cotizanteSnapshot?.datos?.genero ?? 'M'}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
                   <option value="M">Masculino</option>
                   <option value="F">Femenino</option>
                   <option value="O">Otro</option>
@@ -572,7 +623,13 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
 
               <div>
                 <Label htmlFor="estadoCivil">Estado civil</Label>
-                <select id="estadoCivil" name="estadoCivil" defaultValue="" className={selectClass}>
+                <select
+                  id="estadoCivil"
+                  name="estadoCivil"
+                  defaultValue={props.cotizanteSnapshot?.datos?.estadoCivil ?? ''}
+                  disabled={readOnly}
+                  className={selectClass}
+                >
                   <option value="">— No especificado —</option>
                   <option value="1">Soltero(a)</option>
                   <option value="2">Casado(a)</option>
@@ -649,19 +706,44 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <div>
                 <Label htmlFor="telefono">Teléfono</Label>
-                <Input id="telefono" name="telefono" className="mt-1" />
+                <Input
+                  id="telefono"
+                  name="telefono"
+                  defaultValue={props.cotizanteSnapshot?.datos?.telefono ?? ''}
+                  disabled={readOnly}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label htmlFor="celular">Celular</Label>
-                <Input id="celular" name="celular" className="mt-1" />
+                <Input
+                  id="celular"
+                  name="celular"
+                  defaultValue={props.cotizanteSnapshot?.datos?.celular ?? ''}
+                  disabled={readOnly}
+                  className="mt-1"
+                />
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="email">Correo</Label>
-                <Input id="email" name="email" type="email" className="mt-1" />
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  defaultValue={props.cotizanteSnapshot?.datos?.email ?? ''}
+                  disabled={readOnly}
+                  className="mt-1"
+                />
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="direccion">Dirección</Label>
-                <Input id="direccion" name="direccion" className="mt-1" />
+                <Input
+                  id="direccion"
+                  name="direccion"
+                  defaultValue={props.cotizanteSnapshot?.datos?.direccion ?? ''}
+                  disabled={readOnly}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <Label htmlFor="departamentoNombre">Departamento</Label>

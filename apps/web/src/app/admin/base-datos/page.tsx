@@ -86,7 +86,14 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
-        cotizante: true,
+        cotizante: {
+          include: {
+            // Sprint Soporte reorg fase 2 — necesarios para pre-poblar
+            // los autocompletes de dirección en el modal consultar/editar.
+            departamento: { select: { id: true, nombre: true } },
+            municipio: { select: { id: true, nombre: true } },
+          },
+        },
         empresa: { select: { nit: true, nombre: true } },
         tipoCotizante: { select: { codigo: true, nombre: true } },
         planSgss: { select: { codigo: true, nombre: true, regimen: true } },
@@ -293,6 +300,23 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
       segundoNombre: a.cotizante.segundoNombre,
       primerApellido: a.cotizante.primerApellido,
       segundoApellido: a.cotizante.segundoApellido,
+      // Sprint Soporte reorg fase 2 — datos demográficos completos para
+      // pre-poblar el modal consultar/editar (antes los inputs salían
+      // vacíos).
+      fechaExpedicionDoc: a.cotizante.fechaExpedicionDoc
+        ? dateInput(a.cotizante.fechaExpedicionDoc)
+        : null,
+      fechaNacimiento: dateInput(a.cotizante.fechaNacimiento),
+      genero: a.cotizante.genero,
+      estadoCivil: a.cotizante.estadoCivil,
+      telefono: a.cotizante.telefono,
+      celular: a.cotizante.celular,
+      email: a.cotizante.email,
+      direccion: a.cotizante.direccion,
+      departamentoId: a.cotizante.departamentoId,
+      departamentoNombre: a.cotizante.departamento?.nombre ?? null,
+      municipioId: a.cotizante.municipioId,
+      municipioNombre: a.cotizante.municipio?.nombre ?? null,
     },
     empresa: a.empresa,
     tipoCotizante: a.tipoCotizante,

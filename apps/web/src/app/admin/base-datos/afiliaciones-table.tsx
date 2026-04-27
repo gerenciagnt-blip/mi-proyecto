@@ -58,6 +58,20 @@ export type AfiliacionRow = {
     segundoNombre: string | null;
     primerApellido: string;
     segundoApellido: string | null;
+    // Sprint Soporte reorg fase 2 — datos demográficos completos para
+    // alimentar el modal consultar/editar.
+    fechaExpedicionDoc: string | null; // yyyy-mm-dd
+    fechaNacimiento: string; // yyyy-mm-dd
+    genero: 'M' | 'F' | 'O';
+    estadoCivil: string | null;
+    telefono: string | null;
+    celular: string | null;
+    email: string | null;
+    direccion: string | null;
+    departamentoId: string | null;
+    departamentoNombre: string | null;
+    municipioId: string | null;
+    municipioNombre: string | null;
   };
   empresa: { nit: string; nombre: string } | null;
   tipoCotizante: { codigo: string; nombre: string };
@@ -76,7 +90,10 @@ type Props = {
   rows: AfiliacionRow[];
   emptyMessage: string;
   // Catálogos compartidos para los modales de edit/view
-  catalogos: Omit<AfiliacionFormProps, 'mode' | 'modalidad' | 'initial' | 'afiliacionId' | 'cotizanteSnapshot' | 'onSuccess'>;
+  catalogos: Omit<
+    AfiliacionFormProps,
+    'mode' | 'modalidad' | 'initial' | 'afiliacionId' | 'cotizanteSnapshot' | 'onSuccess'
+  >;
   /** Muestra la columna "Dueño aliado" (solo staff). */
   mostrarDueno?: boolean;
 };
@@ -94,10 +111,7 @@ function fullName(c: AfiliacionRow['cotizante']) {
 }
 
 export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno = false }: Props) {
-  const [dialog, setDialog] = useState<
-    | { mode: 'edit' | 'view'; row: AfiliacionRow }
-    | null
-  >(null);
+  const [dialog, setDialog] = useState<{ mode: 'edit' | 'view'; row: AfiliacionRow } | null>(null);
   const [pendingToggle, startTransition] = useTransition();
   const [toggleId, setToggleId] = useState<string | null>(null);
 
@@ -139,7 +153,10 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno 
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={mostrarDueno ? 13 : 12} className="px-4 py-8 text-center text-slate-400">
+                <td
+                  colSpan={mostrarDueno ? 13 : 12}
+                  className="px-4 py-8 text-center text-slate-400"
+                >
                   {emptyMessage}
                 </td>
               </tr>
@@ -246,18 +263,10 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno 
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <IconButton
-                        title="Consultar"
-                        onClick={() => openView(a)}
-                        color="slate"
-                      >
+                      <IconButton title="Consultar" onClick={() => openView(a)} color="slate">
                         <Eye className="h-4 w-4" />
                       </IconButton>
-                      <IconButton
-                        title="Editar"
-                        onClick={() => openEdit(a)}
-                        color="blue"
-                      >
+                      <IconButton title="Editar" onClick={() => openEdit(a)} color="blue">
                         <Pencil className="h-4 w-4" />
                       </IconButton>
                       <IconButton
@@ -291,10 +300,29 @@ export function AfiliacionesTable({ rows, emptyMessage, catalogos, mostrarDueno 
           initial={dialog.row.initial}
           cotizanteSnapshot={{
             tipoDocumento:
-              DOC_LABELS[dialog.row.cotizante.tipoDocumento] ??
-              dialog.row.cotizante.tipoDocumento,
+              DOC_LABELS[dialog.row.cotizante.tipoDocumento] ?? dialog.row.cotizante.tipoDocumento,
             numeroDocumento: dialog.row.cotizante.numeroDocumento,
             nombreCompleto: fullName(dialog.row.cotizante),
+            // Sprint Soporte reorg fase 2 — datos completos del cotizante
+            // para pre-poblar la ficha demográfica (consultar/editar).
+            datos: {
+              fechaExpedicionDoc: dialog.row.cotizante.fechaExpedicionDoc,
+              primerNombre: dialog.row.cotizante.primerNombre,
+              segundoNombre: dialog.row.cotizante.segundoNombre,
+              primerApellido: dialog.row.cotizante.primerApellido,
+              segundoApellido: dialog.row.cotizante.segundoApellido,
+              fechaNacimiento: dialog.row.cotizante.fechaNacimiento,
+              genero: dialog.row.cotizante.genero,
+              estadoCivil: dialog.row.cotizante.estadoCivil,
+              telefono: dialog.row.cotizante.telefono,
+              celular: dialog.row.cotizante.celular,
+              email: dialog.row.cotizante.email,
+              direccion: dialog.row.cotizante.direccion,
+              departamentoId: dialog.row.cotizante.departamentoId,
+              departamentoNombre: dialog.row.cotizante.departamentoNombre,
+              municipioId: dialog.row.cotizante.municipioId,
+              municipioNombre: dialog.row.cotizante.municipioNombre,
+            },
           }}
           {...catalogos}
         />

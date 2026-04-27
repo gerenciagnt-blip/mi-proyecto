@@ -1,33 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
 import type { Role } from '@pila/db';
 import { PilaLogo } from '@/components/brand/pila-logo';
 import { AdminNav } from '@/components/admin/admin-nav';
 import { NotificacionesBell } from '@/components/admin/notificaciones-bell';
 import { GlobalSearch } from '@/components/admin/global-search';
-import { Avatar } from '@/components/ui/avatar';
+import { MiPerfilButton } from '@/components/admin/mi-perfil-button';
 import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
 import { cn } from '@/lib/utils';
-
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Administrador',
-  ALIADO_OWNER: 'Dueño Aliado',
-  ALIADO_USER: 'Usuario Aliado',
-};
 
 const STORAGE_KEY = 'pila.sidebar.open';
 
 export function AdminShell({
   userName,
   userRole,
+  userEmail,
+  userSucursalCodigo,
   children,
 }: {
   userName: string;
   userRole: Role;
+  userEmail: string;
+  userSucursalCodigo: string | null;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
@@ -91,17 +88,14 @@ export function AdminShell({
           <div className="flex items-center gap-2">
             <GlobalSearch />
             <NotificacionesBell />
-            <Link
-              href="/admin/perfil"
-              title="Ver mi perfil"
-              className="flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-slate-50"
-            >
-              <div className="hidden text-right leading-tight sm:block">
-                <p className="text-sm font-medium text-slate-900">{userName}</p>
-                <p className="text-[11px] text-slate-500">{ROLE_LABELS[userRole] ?? userRole}</p>
-              </div>
-              <Avatar name={userName} />
-            </Link>
+            {/* Sprint Soporte reorg fase 2 — antes era Link a /admin/perfil,
+               ahora es modal con tabs (datos + cambio de contraseña). */}
+            <MiPerfilButton
+              userName={userName}
+              userRole={userRole}
+              userEmail={userEmail}
+              userSucursalCodigo={userSucursalCodigo}
+            />
             <LogoutButton compact />
           </div>
         </header>
