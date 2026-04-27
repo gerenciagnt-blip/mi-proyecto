@@ -2,41 +2,19 @@
 
 import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Eye,
-  LifeBuoy,
-  Building2,
-  Clock3,
-  MessageSquarePlus,
-  CheckCircle2,
-} from 'lucide-react';
-import type { IncapacidadEstado } from '@pila/db';
+import { Eye, LifeBuoy, Building2, Clock3, MessageSquarePlus, CheckCircle2 } from 'lucide-react';
+import type { IncapacidadAccionadaPor, IncapacidadEstado } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { ESTADO_LABEL, ESTADO_TONE } from '@/lib/incapacidades/validations';
 import {
   listarGestionesIncapAction,
   gestionAliadoIncapAction,
   type IncapGestionRow,
 } from './actions';
-
-const ESTADO_LABEL: Record<IncapacidadEstado, string> = {
-  RADICADA: 'Radicada',
-  EN_REVISION: 'En revisión',
-  APROBADA: 'Aprobada',
-  PAGADA: 'Pagada',
-  RECHAZADA: 'Rechazada',
-};
-
-const ESTADO_TONE: Record<IncapacidadEstado, string> = {
-  RADICADA: 'bg-sky-50 text-sky-700 ring-sky-200',
-  EN_REVISION: 'bg-amber-50 text-amber-700 ring-amber-200',
-  APROBADA: 'bg-violet-50 text-violet-700 ring-violet-200',
-  PAGADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  RECHAZADA: 'bg-red-50 text-red-700 ring-red-200',
-};
 
 export function VerGestionesIncapButton({
   incapacidadId,
@@ -118,9 +96,7 @@ export function VerGestionesIncapButton({
         description={cotizanteNombre}
         size="md"
       >
-        {pending && !rows && (
-          <p className="py-6 text-center text-sm text-slate-500">Cargando…</p>
-        )}
+        {pending && !rows && <p className="py-6 text-center text-sm text-slate-500">Cargando…</p>}
         {loadError && (
           <Alert variant="danger">
             <span>{loadError}</span>
@@ -135,26 +111,47 @@ export function VerGestionesIncapButton({
         {rows && rows.length > 0 && (
           <ol className="space-y-3">
             {rows.map((g) => (
-              <li
-                key={g.id}
-                className="rounded-lg border border-slate-200 bg-white p-3"
-              >
+              <li key={g.id} className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                      g.accionadaPor === 'SOPORTE'
-                        ? 'bg-sky-50 text-sky-700 ring-sky-200'
-                        : 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20',
-                    )}
-                  >
-                    {g.accionadaPor === 'SOPORTE' ? (
-                      <LifeBuoy className="h-3 w-3" />
-                    ) : (
-                      <Building2 className="h-3 w-3" />
-                    )}
-                    {g.accionadaPor === 'SOPORTE' ? 'Soporte' : 'Aliado'}
-                  </span>
+                  {/* Sprint Soporte reorg fase 2 — switch exhaustivo (antes
+                     ternario que pintaba cualquier futuro valor del enum como
+                     ALIADO). */}
+                  {(() => {
+                    const accionadaPor = g.accionadaPor as IncapacidadAccionadaPor;
+                    let tone: string;
+                    let icon: React.ReactNode;
+                    let label: string;
+                    switch (accionadaPor) {
+                      case 'SOPORTE':
+                        tone = 'bg-sky-50 text-sky-700 ring-sky-200';
+                        icon = <LifeBuoy className="h-3 w-3" />;
+                        label = 'Soporte';
+                        break;
+                      case 'ALIADO':
+                        tone = 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20';
+                        icon = <Building2 className="h-3 w-3" />;
+                        label = 'Aliado';
+                        break;
+                      default: {
+                        const _exhaustive: never = accionadaPor;
+                        void _exhaustive;
+                        tone = 'bg-slate-100 text-slate-600 ring-slate-200';
+                        icon = null;
+                        label = String(accionadaPor);
+                      }
+                    }
+                    return (
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          tone,
+                        )}
+                      >
+                        {icon}
+                        {label}
+                      </span>
+                    );
+                  })()}
                   {g.nuevoEstado && (
                     <span
                       className={cn(
@@ -175,9 +172,7 @@ export function VerGestionesIncapButton({
                     Por <strong>{g.userName}</strong>
                   </p>
                 )}
-                <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700">
-                  {g.descripcion}
-                </p>
+                <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700">{g.descripcion}</p>
               </li>
             ))}
           </ol>

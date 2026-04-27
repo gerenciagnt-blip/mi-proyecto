@@ -280,6 +280,7 @@ model User {
   carterasGestiones       CarteraGestion[]             @relation("CarterasGestionesUser")
   incapacidadesCreadas    Incapacidad[]                @relation("IncapacidadesCreadas")
   incapacidadesGestiones  IncapacidadGestion[]         @relation("IncapacidadGestionesUser")
+  incapacidadesDocsUser   IncapacidadDocumento[]       @relation("IncapacidadDocumentoUser")
   soportesAfCreados       SoporteAfiliacion[]          @relation("SoporteAfCreator")
   soportesAfGestionados   SoporteAfiliacion[]          @relation("SoporteAfGestor")
   soportesAfAsignados     SoporteAfiliacion[]          @relation("SoporteAfAsignado")
@@ -1699,13 +1700,26 @@ model IncapacidadDocumento {
    */
   eliminado             Boolean                  @default(false)
   eliminadoEn           DateTime?
+  /**
+   * Sprint Soporte reorg fase 2 — Quién subió el documento. Default
+   * `ALIADO` para que los registros existentes (todos pre-feature)
+   * queden marcados consistentemente con la realidad: hasta ahora solo
+   * el aliado podía subir documentos al radicar. Cuando soporte
+   * empiece a subir resoluciones EPS/respuestas oficiales, irán como
+   * `SOPORTE`.
+   */
+  accionadaPor          IncapacidadAccionadaPor  @default(ALIADO)
+  /** Usuario que subió el archivo. NULL si el aliado aún no estaba autenticado en la sesión cuando se subió (no debería pasar, pero defensivo). */
+  userId                String?
   createdAt             DateTime                 @default(now())
 
   incapacidad Incapacidad @relation(fields: [incapacidadId], references: [id], onDelete: Cascade)
+  user        User?       @relation("IncapacidadDocumentoUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([incapacidadId])
   @@index([tipo])
   @@index([eliminado])
+  @@index([userId])
   @@map("incapacidad_documentos")
 }
 

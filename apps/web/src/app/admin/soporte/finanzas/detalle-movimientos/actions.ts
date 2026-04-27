@@ -271,9 +271,17 @@ export async function gestionarDetalleMovimientoAction(
   }
 
   // Verificar que el detalle exista (defensa contra IDs forjados).
+  // Traemos también incapacidadId + estado actual de la incapacidad para
+  // poder propagar el cambio a la incapacidad si pasa a PAGADA (auto-sync,
+  // ver bloque post-transacción).
   const det = await prisma.movimientoIncDetalle.findUnique({
     where: { id: detalleId },
-    select: { id: true, movimientoId: true },
+    select: {
+      id: true,
+      movimientoId: true,
+      incapacidadId: true,
+      incapacidad: { select: { id: true, estado: true, consecutivo: true } },
+    },
   });
   if (!det) return { error: 'Detalle no encontrado' };
 
@@ -304,6 +312,8 @@ export async function gestionarDetalleMovimientoAction(
     };
   }
 
+  const userName = session.user.name;
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.movimientoIncDetalle.update({
@@ -330,6 +340,40 @@ export async function gestionarDetalleMovimientoAction(
           },
         });
       }
+
+      // Sprint Soporte reorg fase 2 — Auto-sync detalle PAGADA → Incapacidad PAGADA.
+      //
+      // Cuando se marca el detalle bancario como PAGADA y vincula a una
+      // incapacidad existente, escalamos el estado de la incapacidad a
+      // PAGADA automáticamente. Esto cierra el gap operativo donde
+      // soporte tenía que ir a dos lugares para reflejar el mismo
+      // hecho. Idempotente: si la incapacidad ya está en PAGADA o
+      // RECHAZADA (estados terminales), no hacemos nada.
+      //
+      // No tocamos el caso DEVUELTA (banco rechazó el pago) — ahí la
+      // incapacidad sigue en su estado anterior y soporte decide si
+      // reabre/anula manualmente.
+      if (
+        estado === 'PAGADA' &&
+        det.incapacidad &&
+        det.incapacidad.estado !== 'PAGADA' &&
+        det.incapacidad.estado !== 'RECHAZADA'
+      ) {
+        await tx.incapacidad.update({
+          where: { id: det.incapacidad.id },
+          data: { estado: 'PAGADA' },
+        });
+        await tx.incapacidadGestion.create({
+          data: {
+            incapacidadId: det.incapacidad.id,
+            accionadaPor: 'SOPORTE',
+            nuevoEstado: 'PAGADA',
+            descripcion: `Sistema · Pago detalle bancario aplicado (movimiento ${det.movimientoId.slice(-8)}, gestionado por ${userName}).`,
+            userId,
+            userName: userName ? `${userName} · auto-sync` : 'auto-sync',
+          },
+        });
+      }
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError) {
@@ -340,5 +384,11 @@ export async function gestionarDetalleMovimientoAction(
 
   revalidatePath('/admin/soporte/finanzas/detalle-movimientos');
   revalidatePath(`/admin/soporte/finanzas/movimientos-incapacidades/${det.movimientoId}`);
+  // Si hubo auto-sync de incapacidad, refrescamos también esa ruta.
+  if (det.incapacidad) {
+    revalidatePath('/admin/soporte/incapacidades');
+    revalidatePath(`/admin/soporte/incapacidades/${det.incapacidad.id}`);
+    revalidatePath('/admin/administrativo/incapacidades');
+  }
   return { ok: true };
 }

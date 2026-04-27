@@ -11,13 +11,14 @@ import {
   Clock3,
   FileX,
 } from 'lucide-react';
-import type { IncapacidadEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { Alert } from '@/components/ui/alert';
 import {
   TIPO_LABEL,
   DOC_TIPO_LABEL,
+  ESTADO_LABEL,
+  ESTADO_TONE,
 } from '@/lib/incapacidades/validations';
 import { GestionSoporteIncapButton } from './gestion-soporte-button';
 import { AnularIncapacidadButton } from './anular-button';
@@ -25,20 +26,8 @@ import { AnularIncapacidadButton } from './anular-button';
 export const metadata = { title: 'Incapacidad · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-const ESTADO_LABEL: Record<IncapacidadEstado, string> = {
-  RADICADA: 'Radicada',
-  EN_REVISION: 'En revisión',
-  APROBADA: 'Aprobada',
-  PAGADA: 'Pagada',
-  RECHAZADA: 'Rechazada',
-};
-const ESTADO_TONE: Record<IncapacidadEstado, string> = {
-  RADICADA: 'bg-sky-50 text-sky-700 ring-sky-200',
-  EN_REVISION: 'bg-amber-50 text-amber-700 ring-amber-200',
-  APROBADA: 'bg-violet-50 text-violet-700 ring-violet-200',
-  PAGADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  RECHAZADA: 'bg-red-50 text-red-700 ring-red-200',
-};
+// ESTADO_LABEL y ESTADO_TONE ahora viven en lib/incapacidades/validations.ts
+// (Sprint Soporte reorg fase 2 — antes estaban duplicados en 4 archivos).
 
 export default async function IncapacidadDetallePage({
   params,
@@ -101,8 +90,8 @@ export default async function IncapacidadDetallePage({
               <span className="font-mono">{inc.consecutivo}</span>
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              {TIPO_LABEL[inc.tipo]} · {nombre} ·{' '}
-              {inc.cotizante.tipoDocumento} {inc.cotizante.numeroDocumento}
+              {TIPO_LABEL[inc.tipo]} · {nombre} · {inc.cotizante.tipoDocumento}{' '}
+              {inc.cotizante.numeroDocumento}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -111,10 +100,7 @@ export default async function IncapacidadDetallePage({
               estadoActual={inc.estado}
               consecutivo={inc.consecutivo}
             />
-            <AnularIncapacidadButton
-              incapacidadId={inc.id}
-              consecutivo={inc.consecutivo}
-            />
+            <AnularIncapacidadButton incapacidadId={inc.id} consecutivo={inc.consecutivo} />
           </div>
         </div>
       </div>
@@ -134,26 +120,16 @@ export default async function IncapacidadDetallePage({
             </span>
           }
         />
-        <Field
-          label="Tipo"
-          value={TIPO_LABEL[inc.tipo]}
-        />
+        <Field label="Tipo" value={TIPO_LABEL[inc.tipo]} />
         <Field
           label="Período"
           value={`${inc.fechaInicio.toISOString().slice(0, 10)} → ${inc.fechaFin.toISOString().slice(0, 10)}`}
         />
         <Field label="Días" value={String(inc.diasIncapacidad)} highlight />
-        <Field
-          label="Sucursal"
-          value={`${inc.sucursal.codigo} · ${inc.sucursal.nombre}`}
-        />
+        <Field label="Sucursal" value={`${inc.sucursal.codigo} · ${inc.sucursal.nombre}`} />
         <Field
           label="Empresa planilla"
-          value={
-            inc.empresaPlanilla?.nombre ??
-            inc.empresaPlanillaNombreSnap ??
-            '—'
-          }
+          value={inc.empresaPlanilla?.nombre ?? inc.empresaPlanillaNombreSnap ?? '—'}
           sub={inc.empresaPlanilla?.nit ? `NIT ${inc.empresaPlanilla.nit}` : undefined}
         />
         <Field label="EPS" value={inc.eps?.nombre ?? '—'} />
@@ -162,11 +138,7 @@ export default async function IncapacidadDetallePage({
         <Field label="CCF" value={inc.ccf?.nombre ?? '—'} />
         <Field
           label="Fecha afiliación"
-          value={
-            inc.fechaAfiliacionSnap
-              ? inc.fechaAfiliacionSnap.toISOString().slice(0, 10)
-              : '—'
-          }
+          value={inc.fechaAfiliacionSnap ? inc.fechaAfiliacionSnap.toISOString().slice(0, 10) : '—'}
         />
         <Field
           label="Radicada por"
@@ -178,9 +150,7 @@ export default async function IncapacidadDetallePage({
             <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
               Observaciones
             </p>
-            <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">
-              {inc.observaciones}
-            </p>
+            <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{inc.observaciones}</p>
           </div>
         )}
       </section>
@@ -194,43 +164,29 @@ export default async function IncapacidadDetallePage({
           </h2>
         </header>
         {inc.documentos.length === 0 ? (
-          <p className="p-5 text-xs text-slate-400">
-            Esta radicación no tiene documentos.
-          </p>
+          <p className="p-5 text-xs text-slate-400">Esta radicación no tiene documentos.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {inc.documentos.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center gap-3 px-5 py-3 text-sm"
-              >
+              <li key={d.id} className="flex items-center gap-3 px-5 py-3 text-sm">
                 <div
                   className={cn(
                     'inline-flex h-9 w-9 items-center justify-center rounded-lg',
-                    d.eliminado
-                      ? 'bg-slate-100 text-slate-400'
-                      : 'bg-sky-50 text-sky-700',
+                    d.eliminado ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-700',
                   )}
                 >
-                  {d.eliminado ? (
-                    <FileX className="h-4 w-4" />
-                  ) : (
-                    <Paperclip className="h-4 w-4" />
-                  )}
+                  {d.eliminado ? <FileX className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
                 </div>
                 <div className="flex-1">
-                  <p className="font-medium text-slate-800">
-                    {DOC_TIPO_LABEL[d.tipo]}
-                  </p>
+                  <p className="font-medium text-slate-800">{DOC_TIPO_LABEL[d.tipo]}</p>
                   <p className="font-mono text-[10px] text-slate-500">
                     {d.archivoNombreOriginal} · {d.archivoMime} ·{' '}
                     {(d.archivoSize / 1024).toFixed(0)} KB
                   </p>
                   {d.eliminado && (
                     <p className="mt-0.5 text-[10px] font-medium text-amber-700">
-                      Archivo eliminado por retención ({' '}
-                      {d.eliminadoEn?.toLocaleDateString('es-CO')}). Queda el
-                      registro como evidencia.
+                      Archivo eliminado por retención ( {d.eliminadoEn?.toLocaleDateString('es-CO')}
+                      ). Queda el registro como evidencia.
                     </p>
                   )}
                 </div>
@@ -262,29 +218,54 @@ export default async function IncapacidadDetallePage({
           </h2>
         </header>
         {inc.gestiones.length === 0 ? (
-          <p className="p-5 text-xs text-slate-400">
-            Aún no hay gestiones registradas.
-          </p>
+          <p className="p-5 text-xs text-slate-400">Aún no hay gestiones registradas.</p>
         ) : (
           <ol className="divide-y divide-slate-100">
             {inc.gestiones.map((g) => (
               <li key={g.id} className="px-5 py-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
-                      g.accionadaPor === 'SOPORTE'
-                        ? 'bg-sky-50 text-sky-700 ring-sky-200'
-                        : 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20',
-                    )}
-                  >
-                    {g.accionadaPor === 'SOPORTE' ? (
-                      <LifeBuoy className="h-3 w-3" />
-                    ) : (
-                      <Building2 className="h-3 w-3" />
-                    )}
-                    {g.accionadaPor === 'SOPORTE' ? 'Soporte' : 'Aliado'}
-                  </span>
+                  {/* Sprint Soporte reorg fase 2 — switch exhaustivo en lugar
+                     de ternario (que pintaba cualquier futuro valor del enum
+                     como ALIADO). Hoy son 2 valores; si se agregan BOT/SISTEMA
+                     más adelante el TS forzará a actualizar este bloque. */}
+                  {(() => {
+                    const accionadaPor: typeof g.accionadaPor = g.accionadaPor;
+                    let tone: string;
+                    let icon: React.ReactNode;
+                    let label: string;
+                    switch (accionadaPor) {
+                      case 'SOPORTE':
+                        tone = 'bg-sky-50 text-sky-700 ring-sky-200';
+                        icon = <LifeBuoy className="h-3 w-3" />;
+                        label = 'Soporte';
+                        break;
+                      case 'ALIADO':
+                        tone = 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20';
+                        icon = <Building2 className="h-3 w-3" />;
+                        label = 'Aliado';
+                        break;
+                      default: {
+                        // Exhaustiveness check — si se agrega un valor al enum
+                        // sin actualizar este switch, TS marca error aquí.
+                        const _exhaustive: never = accionadaPor;
+                        void _exhaustive;
+                        tone = 'bg-slate-100 text-slate-600 ring-slate-200';
+                        icon = null;
+                        label = String(accionadaPor);
+                      }
+                    }
+                    return (
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                          tone,
+                        )}
+                      >
+                        {icon}
+                        {label}
+                      </span>
+                    );
+                  })()}
                   {g.nuevoEstado && (
                     <span
                       className={cn(
@@ -304,9 +285,7 @@ export default async function IncapacidadDetallePage({
                     Por <strong>{g.userName}</strong>
                   </p>
                 )}
-                <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700">
-                  {g.descripcion}
-                </p>
+                <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700">{g.descripcion}</p>
               </li>
             ))}
           </ol>
@@ -329,9 +308,7 @@ function Field({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
       <div
         className={cn(
           'mt-0.5 font-mono text-sm',
