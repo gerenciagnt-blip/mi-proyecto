@@ -461,32 +461,40 @@ export async function llenarYCrearEmpleado(
 
 /**
  * Tras un submit exitoso, AXA muestra un botón para imprimir/descargar
- * el comprobante de afiliación. El form se llama `formImpresion` y
- * apunta a `/EmpleadoDependiente/ImprimirCreacionIndividual`.
+ * el comprobante de afiliación. El form `formImpresion` apunta a
+ * `/EmpleadoDependiente/ImprimirCreacionIndividual` con method POST.
  *
- * Hay 2 patrones que el portal puede usar:
- *   a) Click en botón → Playwright `download` event → buffer directo
- *   b) Click → abre PDF en pestaña nueva (popup) → leemos el contenido
+ * **Estrategia network-layer**: registramos un listener en el
+ * `BrowserContext` que captura la PRIMERA response con
+ * `Content-Type: application/pdf` Y firma binaria `%PDF-` válida.
+ * Esto evita problemas con:
+ *   - Endpoint POST (no podemos refetchear con GET, perdemos cuerpo)
+ *   - PDF renderizado inline en popup (Chrome PDF viewer)
+ *   - Download tradicional con header Attachment
+ * Validar la firma `%PDF-` descarta HTML mal-tipado o redirects de
+ * sesión expirada que vuelven con content-type pdf engañoso.
  *
- * Probamos ambos via `Promise.race`. Si ninguno dispara en 15s,
- * retornamos null (no es bloqueante).
+ * **Fallback download**: si el listener no captura nada en 20s pero
+ * Playwright sí emitió un download event (raro), leemos ese archivo.
  *
- * Selectores tolerantes — buscamos por texto visible para sobrevivir
- * cambios de id/class del portal.
+ * Selectores del botón tolerantes — por texto visible para sobrevivir
+ * cambios de id/class del portal AXA.
  */
 async function descargarComprobante(page: Page): Promise<Buffer | null> {
   log.info('buscando botón de comprobante PDF');
 
-  // Intenta encontrar el botón. Lista en orden de probabilidad.
   const btn = page
     .locator(
       [
-        // Por texto típico
+        // Por texto específico (priorizar el más exacto primero)
+        "button:has-text('Imprimir Comprobante')",
+        "a:has-text('Imprimir Comprobante')",
+        "input[value*='Imprimir Comprobante' i]",
+        "button:has-text('Comprobante')",
+        "a:has-text('Comprobante')",
         "button:has-text('Imprimir')",
         "a:has-text('Imprimir')",
         "input[value*='Imprimir' i]",
-        "button:has-text('Comprobante')",
-        "a:has-text('Comprobante')",
         "button:has-text('Descargar')",
         "a:has-text('Descargar')",
         // Por form/action
@@ -507,60 +515,70 @@ async function descargarComprobante(page: Page): Promise<Buffer | null> {
 
   log.info('click botón comprobante');
 
-  // Capturar download O popup, lo que llegue primero
-  const downloadPromise = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
-  const popupPromise = page
-    .context()
-    .waitForEvent('page', { timeout: 20000 })
-    .catch(() => null);
-
-  await btn.click({ force: true });
-
-  const [download, popup] = await Promise.all([downloadPromise, popupPromise]);
-
-  // Caso (a): download tradicional
-  if (download) {
-    log.info({ filename: download.suggestedFilename() }, 'download capturado');
-    const tmpPath = await download.path();
-    if (!tmpPath) {
-      log.warn('download.path() retornó null — descarga falló');
-      return null;
+  // Listener network-layer: captura responses con CT pdf en cualquier
+  // página/popup del context, valida firma %PDF- antes de aceptar.
+  let pdfBuffer: Buffer | null = null;
+  const ctx = page.context();
+  const onResponse = async (response: import('playwright').Response): Promise<void> => {
+    if (pdfBuffer) return; // ya tenemos uno
+    const ct = (response.headers()['content-type'] ?? '').toLowerCase();
+    const url = response.url();
+    const ctEsPdf = ct.includes('application/pdf') || ct.includes('/pdf');
+    const urlEsPdf = url.toLowerCase().endsWith('.pdf');
+    if (!ctEsPdf && !urlEsPdf) return;
+    try {
+      const buf = await response.body();
+      // Validar firma binaria PDF — descarta HTML/JSON mal-tipados
+      if (buf.length > 100 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+        pdfBuffer = buf;
+        log.info({ url, size: buf.length }, 'PDF capturado del network');
+      } else {
+        log.warn(
+          { url, size: buf.length, head: buf.subarray(0, 8).toString('hex') },
+          'response con CT pdf pero firma %PDF- ausente — descartado',
+        );
+      }
+    } catch (err) {
+      log.warn({ url, err: err instanceof Error ? err.message : err }, 'response.body() falló');
     }
-    const fs = await import('node:fs/promises');
-    const buf = await fs.readFile(tmpPath);
-    return buf.length > 0 ? buf : null;
-  }
+  };
+  ctx.on('response', onResponse);
 
-  // Caso (b): popup con PDF inline
-  if (popup) {
-    log.info({ url: popup.url() }, 'popup capturado');
-    await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  const downloadPromise = page.waitForEvent('download', { timeout: 18000 }).catch(() => null);
 
-    // Intentar leer el PDF como response del popup. El URL del popup
-    // puede ser el endpoint `/ImprimirCreacionIndividual` directamente.
-    const popupUrl = popup.url();
-    if (popupUrl && (popupUrl.includes('Imprimir') || popupUrl.endsWith('.pdf'))) {
-      // Hacemos un fetch en el contexto del popup para obtener el binario
-      const buf = await popup
-        .evaluate(async (url) => {
-          const res = await fetch(url, { credentials: 'include' });
-          if (!res.ok) return null;
-          const ab = await res.arrayBuffer();
-          return Array.from(new Uint8Array(ab));
-        }, popupUrl)
-        .then((arr) => (arr ? Buffer.from(arr) : null))
-        .catch(() => null);
+  try {
+    await btn.click({ force: true });
 
-      await popup.close().catch(() => {});
-      return buf && buf.length > 0 ? buf : null;
+    // Poll hasta 20s esperando el response PDF
+    const start = Date.now();
+    while (Date.now() - start < 20000) {
+      if (pdfBuffer) break;
+      await page.waitForTimeout(500);
     }
 
-    await popup.close().catch(() => {});
+    if (pdfBuffer) return pdfBuffer;
+
+    // Fallback: download tradicional
+    log.info('Sin response PDF en network — esperando download tradicional');
+    const download = await downloadPromise;
+    if (download) {
+      log.info({ filename: download.suggestedFilename() }, 'download capturado');
+      const tmpPath = await download.path();
+      if (tmpPath) {
+        const fs = await import('node:fs/promises');
+        const buf = await fs.readFile(tmpPath);
+        if (buf.length > 100 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+          return buf;
+        }
+        log.warn({ size: buf.length }, 'download capturado pero firma %PDF- ausente');
+      }
+    }
+
+    log.warn('No se capturó PDF — ni del network ni del download');
     return null;
+  } finally {
+    ctx.off('response', onResponse);
   }
-
-  log.warn('Ni download ni popup tras click en botón comprobante');
-  return null;
 }
 
 // ============================================================================
