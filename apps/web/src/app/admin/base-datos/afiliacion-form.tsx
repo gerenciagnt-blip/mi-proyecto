@@ -466,50 +466,58 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
         </div>
       )}
 
-      {/* Identificación del cotizante (solo en CREATE) */}
-      {isCreate && (
-        <>
-          <section className={sectionCls}>
-            <h3 className={sectionTitle}>
-              Identificación del cotizante
-              <span className="ml-2 text-[11px] font-normal uppercase tracking-wider text-brand-blue">
-                · {modalidad.toLowerCase()}
-              </span>
-            </h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div>
-                <Label htmlFor="tipoDocumento">
-                  Tipo doc. <Req />
-                </Label>
-                <select
-                  id="tipoDocumento"
-                  name="tipoDocumento"
+      {/* Identificación del cotizante — visible en CREATE / EDIT / VIEW.
+         Sprint Soporte reorg fase 2 — antes envuelta en {isCreate && ...}
+         lo cual escondía toda la ficha al consultar o editar. Ahora se
+         muestra siempre con `disabled={readOnly}` para deshabilitar en
+         modo view. El botón "Consultar BDUA/RUAF" sí queda solo en
+         create — en edit/view los datos ya existen y reconsultar BDUA
+         no aporta. */}
+      <>
+        <section className={sectionCls}>
+          <h3 className={sectionTitle}>
+            Identificación del cotizante
+            <span className="ml-2 text-[11px] font-normal uppercase tracking-wider text-brand-blue">
+              · {modalidad.toLowerCase()}
+            </span>
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <div>
+              <Label htmlFor="tipoDocumento">
+                Tipo doc. <Req />
+              </Label>
+              <select
+                id="tipoDocumento"
+                name="tipoDocumento"
+                required
+                value={tipoDocumento}
+                onChange={(e) => setTipoDocumento(e.target.value)}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="CC">CC</option>
+                <option value="CE">CE</option>
+                <option value="TI">TI</option>
+                <option value="RC">RC</option>
+                <option value="PAS">PAS</option>
+                <option value="NIP">NIP</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="numeroDocumento">
+                Número <Req />
+              </Label>
+              <div className="mt-1 flex gap-2">
+                <Input
+                  id="numeroDocumento"
+                  name="numeroDocumento"
                   required
-                  value={tipoDocumento}
-                  onChange={(e) => setTipoDocumento(e.target.value)}
-                  className={selectClass}
-                >
-                  <option value="CC">CC</option>
-                  <option value="CE">CE</option>
-                  <option value="TI">TI</option>
-                  <option value="RC">RC</option>
-                  <option value="PAS">PAS</option>
-                  <option value="NIP">NIP</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="numeroDocumento">
-                  Número <Req />
-                </Label>
-                <div className="mt-1 flex gap-2">
-                  <Input
-                    id="numeroDocumento"
-                    name="numeroDocumento"
-                    required
-                    value={numeroDocumento}
-                    onChange={(e) => setNumeroDocumento(e.target.value)}
-                    className="flex-1"
-                  />
+                  value={numeroDocumento}
+                  onChange={(e) => setNumeroDocumento(e.target.value)}
+                  disabled={readOnly}
+                  className="flex-1"
+                />
+                {isCreate && (
                   <Button
                     type="button"
                     variant="outline"
@@ -524,269 +532,270 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                     )}
                     <span>BDUA/RUAF</span>
                   </Button>
+                )}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="fechaExpedicionDoc">Fecha expedición</Label>
+              <Input
+                id="fechaExpedicionDoc"
+                name="fechaExpedicionDoc"
+                type="date"
+                defaultValue={props.cotizanteSnapshot?.datos?.fechaExpedicionDoc ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="fechaNacimiento">
+                Fecha nacimiento <Req />
+              </Label>
+              <Input
+                id="fechaNacimiento"
+                name="fechaNacimiento"
+                type="date"
+                required
+                defaultValue={props.cotizanteSnapshot?.datos?.fechaNacimiento ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="primerNombre">
+                Primer nombre <Req />
+              </Label>
+              <Input
+                id="primerNombre"
+                name="primerNombre"
+                required
+                value={primerNombre}
+                onChange={(e) => setPrimerNombre(e.target.value)}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="segundoNombre">Segundo nombre</Label>
+              <Input
+                id="segundoNombre"
+                name="segundoNombre"
+                value={segundoNombre}
+                onChange={(e) => setSegundoNombre(e.target.value)}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="primerApellido">
+                Primer apellido <Req />
+              </Label>
+              <Input
+                id="primerApellido"
+                name="primerApellido"
+                required
+                value={primerApellido}
+                onChange={(e) => setPrimerApellido(e.target.value)}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="segundoApellido">Segundo apellido</Label>
+              <Input
+                id="segundoApellido"
+                name="segundoApellido"
+                value={segundoApellido}
+                onChange={(e) => setSegundoApellido(e.target.value)}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="genero">
+                Género <Req />
+              </Label>
+              <select
+                id="genero"
+                name="genero"
+                required
+                defaultValue={props.cotizanteSnapshot?.datos?.genero ?? 'M'}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="M">Masculino</option>
+                <option value="F">Femenino</option>
+                <option value="O">Otro</option>
+              </select>
+            </div>
+
+            <div>
+              <Label htmlFor="estadoCivil">Estado civil</Label>
+              <select
+                id="estadoCivil"
+                name="estadoCivil"
+                defaultValue={props.cotizanteSnapshot?.datos?.estadoCivil ?? ''}
+                disabled={readOnly}
+                className={selectClass}
+              >
+                <option value="">— No especificado —</option>
+                <option value="1">Soltero(a)</option>
+                <option value="2">Casado(a)</option>
+                <option value="3">Unión Libre</option>
+                <option value="4">Separado(a)</option>
+                <option value="5">Viudo(a)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Banner de resultado BDUA/RUAF — solo aplica en CREATE
+               porque es donde se dispara la consulta. */}
+          {isCreate && bduaResult && (
+            <div className="mt-3">
+              {bduaResult.kind === 'ok' && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <div className="space-y-0.5">
+                      <p className="font-medium">BDUA/RUAF · consulta OK</p>
+                      <ul className="space-y-0.5">
+                        {bduaResult.nombres && <li>✓ Nombres/apellidos completados</li>}
+                        {bduaResult.eps && <li>✓ EPS: {bduaResult.eps}</li>}
+                        {bduaResult.afp && <li>✓ AFP: {bduaResult.afp}</li>}
+                        {bduaResult.epsMiss && (
+                          <li className="text-amber-800">
+                            ⚠ EPS código {bduaResult.epsMiss} no está en el catálogo local
+                          </li>
+                        )}
+                        {bduaResult.afpMiss && (
+                          <li className="text-amber-800">
+                            ⚠ AFP código {bduaResult.afpMiss} no está en el catálogo local
+                          </li>
+                        )}
+                        {bduaResult.isPensionary === 'SI' && (
+                          <li className="text-violet-800">
+                            ℹ Cotizante marcado como <strong>pensionado</strong> en RUAF
+                          </li>
+                        )}
+                        {!bduaResult.nombres && !bduaResult.eps && !bduaResult.afp && (
+                          <li className="text-slate-600">Sin datos nuevos para autollenar.</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="fechaExpedicionDoc">Fecha expedición</Label>
-                <Input
-                  id="fechaExpedicionDoc"
-                  name="fechaExpedicionDoc"
-                  type="date"
-                  defaultValue={props.cotizanteSnapshot?.datos?.fechaExpedicionDoc ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fechaNacimiento">
-                  Fecha nacimiento <Req />
-                </Label>
-                <Input
-                  id="fechaNacimiento"
-                  name="fechaNacimiento"
-                  type="date"
-                  required
-                  defaultValue={props.cotizanteSnapshot?.datos?.fechaNacimiento ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="primerNombre">
-                  Primer nombre <Req />
-                </Label>
-                <Input
-                  id="primerNombre"
-                  name="primerNombre"
-                  required
-                  value={primerNombre}
-                  onChange={(e) => setPrimerNombre(e.target.value)}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="segundoNombre">Segundo nombre</Label>
-                <Input
-                  id="segundoNombre"
-                  name="segundoNombre"
-                  value={segundoNombre}
-                  onChange={(e) => setSegundoNombre(e.target.value)}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="primerApellido">
-                  Primer apellido <Req />
-                </Label>
-                <Input
-                  id="primerApellido"
-                  name="primerApellido"
-                  required
-                  value={primerApellido}
-                  onChange={(e) => setPrimerApellido(e.target.value)}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="segundoApellido">Segundo apellido</Label>
-                <Input
-                  id="segundoApellido"
-                  name="segundoApellido"
-                  value={segundoApellido}
-                  onChange={(e) => setSegundoApellido(e.target.value)}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="genero">
-                  Género <Req />
-                </Label>
-                <select
-                  id="genero"
-                  name="genero"
-                  required
-                  defaultValue={props.cotizanteSnapshot?.datos?.genero ?? 'M'}
-                  disabled={readOnly}
-                  className={selectClass}
-                >
-                  <option value="M">Masculino</option>
-                  <option value="F">Femenino</option>
-                  <option value="O">Otro</option>
-                </select>
-              </div>
-
-              <div>
-                <Label htmlFor="estadoCivil">Estado civil</Label>
-                <select
-                  id="estadoCivil"
-                  name="estadoCivil"
-                  defaultValue={props.cotizanteSnapshot?.datos?.estadoCivil ?? ''}
-                  disabled={readOnly}
-                  className={selectClass}
-                >
-                  <option value="">— No especificado —</option>
-                  <option value="1">Soltero(a)</option>
-                  <option value="2">Casado(a)</option>
-                  <option value="3">Unión Libre</option>
-                  <option value="4">Separado(a)</option>
-                  <option value="5">Viudo(a)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Banner de resultado BDUA/RUAF */}
-            {bduaResult && (
-              <div className="mt-3">
-                {bduaResult.kind === 'ok' && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                    <div className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      <div className="space-y-0.5">
-                        <p className="font-medium">BDUA/RUAF · consulta OK</p>
-                        <ul className="space-y-0.5">
-                          {bduaResult.nombres && <li>✓ Nombres/apellidos completados</li>}
-                          {bduaResult.eps && <li>✓ EPS: {bduaResult.eps}</li>}
-                          {bduaResult.afp && <li>✓ AFP: {bduaResult.afp}</li>}
-                          {bduaResult.epsMiss && (
-                            <li className="text-amber-800">
-                              ⚠ EPS código {bduaResult.epsMiss} no está en el catálogo local
-                            </li>
-                          )}
-                          {bduaResult.afpMiss && (
-                            <li className="text-amber-800">
-                              ⚠ AFP código {bduaResult.afpMiss} no está en el catálogo local
-                            </li>
-                          )}
-                          {bduaResult.isPensionary === 'SI' && (
-                            <li className="text-violet-800">
-                              ℹ Cotizante marcado como <strong>pensionado</strong> en RUAF
-                            </li>
-                          )}
-                          {!bduaResult.nombres && !bduaResult.eps && !bduaResult.afp && (
-                            <li className="text-slate-600">Sin datos nuevos para autollenar.</li>
-                          )}
-                        </ul>
-                      </div>
+              )}
+              {bduaResult.kind === 'empty' && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                    <div>
+                      <p className="font-medium">Sin registros en BDUA/RUAF</p>
+                      <p className="text-slate-500">
+                        La persona no aparece afiliada al SGSS con ese documento. Continúa llenando
+                        el formulario manualmente.
+                      </p>
                     </div>
                   </div>
-                )}
-                {bduaResult.kind === 'empty' && (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-                      <div>
-                        <p className="font-medium">Sin registros en BDUA/RUAF</p>
-                        <p className="text-slate-500">
-                          La persona no aparece afiliada al SGSS con ese documento. Continúa
-                          llenando el formulario manualmente.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {bduaResult.kind === 'error' && (
-                  <Alert variant="danger">
-                    <AlertCircle className="h-4 w-4 shrink-0" />
-                    <span>{bduaResult.message}</span>
-                  </Alert>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* Contacto */}
-          <section className={sectionCls}>
-            <h3 className={sectionTitle}>Contacto</h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <div>
-                <Label htmlFor="telefono">Teléfono</Label>
-                <Input
-                  id="telefono"
-                  name="telefono"
-                  defaultValue={props.cotizanteSnapshot?.datos?.telefono ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="celular">Celular</Label>
-                <Input
-                  id="celular"
-                  name="celular"
-                  defaultValue={props.cotizanteSnapshot?.datos?.celular ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="email">Correo</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  defaultValue={props.cotizanteSnapshot?.datos?.email ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="direccion">Dirección</Label>
-                <Input
-                  id="direccion"
-                  name="direccion"
-                  defaultValue={props.cotizanteSnapshot?.datos?.direccion ?? ''}
-                  disabled={readOnly}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label htmlFor="departamentoNombre">Departamento</Label>
-                <input
-                  id="departamentoNombre"
-                  list="depto-list"
-                  value={deptoNombre}
-                  onChange={(e) => {
-                    setDeptoNombre(e.target.value);
-                    setMunicipioNombre('');
-                  }}
-                  placeholder="Escribe o selecciona..."
-                  className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
-                />
-                <datalist id="depto-list">
-                  {props.departamentos.map((d) => (
-                    <option key={d.id} value={d.nombre} />
-                  ))}
-                </datalist>
-                <input type="hidden" name="departamentoId" value={depto?.id ?? ''} />
-              </div>
-              <div>
-                <Label htmlFor="municipioNombre">Municipio</Label>
-                <input
-                  id="municipioNombre"
-                  list="muni-list"
-                  value={municipioNombre}
-                  onChange={(e) => setMunicipioNombre(e.target.value)}
-                  disabled={!depto}
-                  placeholder={depto ? 'Escribe o selecciona...' : 'Primero elige depto'}
-                  className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm disabled:opacity-50"
-                />
-                <datalist id="muni-list">
-                  {depto?.municipios.map((m) => (
-                    <option key={m.id} value={m.nombre} />
-                  ))}
-                </datalist>
-                <input type="hidden" name="municipioId" value={municipio?.id ?? ''} />
-              </div>
+                </div>
+              )}
+              {bduaResult.kind === 'error' && (
+                <Alert variant="danger">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{bduaResult.message}</span>
+                </Alert>
+              )}
             </div>
-          </section>
-        </>
-      )}
+          )}
+        </section>
+
+        {/* Contacto */}
+        <section className={sectionCls}>
+          <h3 className={sectionTitle}>Contacto</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <div>
+              <Label htmlFor="telefono">Teléfono</Label>
+              <Input
+                id="telefono"
+                name="telefono"
+                defaultValue={props.cotizanteSnapshot?.datos?.telefono ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="celular">Celular</Label>
+              <Input
+                id="celular"
+                name="celular"
+                defaultValue={props.cotizanteSnapshot?.datos?.celular ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="email">Correo</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                defaultValue={props.cotizanteSnapshot?.datos?.email ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="direccion">Dirección</Label>
+              <Input
+                id="direccion"
+                name="direccion"
+                defaultValue={props.cotizanteSnapshot?.datos?.direccion ?? ''}
+                disabled={readOnly}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="departamentoNombre">Departamento</Label>
+              <input
+                id="departamentoNombre"
+                list="depto-list"
+                value={deptoNombre}
+                onChange={(e) => {
+                  setDeptoNombre(e.target.value);
+                  setMunicipioNombre('');
+                }}
+                placeholder="Escribe o selecciona..."
+                className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
+              />
+              <datalist id="depto-list">
+                {props.departamentos.map((d) => (
+                  <option key={d.id} value={d.nombre} />
+                ))}
+              </datalist>
+              <input type="hidden" name="departamentoId" value={depto?.id ?? ''} />
+            </div>
+            <div>
+              <Label htmlFor="municipioNombre">Municipio</Label>
+              <input
+                id="municipioNombre"
+                list="muni-list"
+                value={municipioNombre}
+                onChange={(e) => setMunicipioNombre(e.target.value)}
+                disabled={!depto}
+                placeholder={depto ? 'Escribe o selecciona...' : 'Primero elige depto'}
+                className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm disabled:opacity-50"
+              />
+              <datalist id="muni-list">
+                {depto?.municipios.map((m) => (
+                  <option key={m.id} value={m.nombre} />
+                ))}
+              </datalist>
+              <input type="hidden" name="municipioId" value={municipio?.id ?? ''} />
+            </div>
+          </div>
+        </section>
+      </>
 
       {/* Afiliación */}
       <section className={sectionCls}>
