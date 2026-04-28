@@ -32,7 +32,7 @@ import {
   MIMES_PERMITIDOS,
   TAMANO_MAX,
 } from '@/lib/incapacidades/storage';
-import { IncapacidadDocumentoTipoEnum } from '@/lib/incapacidades/validations';
+import { IncapacidadDocumentoTipoJuridicoEnum } from '@/lib/incapacidades/validations';
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -207,9 +207,11 @@ export async function subirDocumentoJuridicoAction(
   const tipoRaw = String(formData.get('tipo') ?? '').trim();
   if (!incapacidadId) return { error: 'Incapacidad no especificada' };
 
-  const tipoParsed = IncapacidadDocumentoTipoEnum.safeParse(tipoRaw);
+  // Solo se aceptan los tipos jurídicos. Si llega uno médico, se rechaza
+  // para que el flujo confidencial no quede contaminado.
+  const tipoParsed = IncapacidadDocumentoTipoJuridicoEnum.safeParse(tipoRaw);
   if (!tipoParsed.success) {
-    return { error: 'Tipo de documento inválido' };
+    return { error: 'Tipo de documento jurídico inválido' };
   }
   const tipo = tipoParsed.data as IncapacidadDocumentoTipo;
 

@@ -22,14 +22,13 @@ import {
   radicarIncapacidadAction,
   type CotizanteIncap,
 } from './actions';
-import {
-  TIPO_LABEL,
-  DOC_TIPO_LABEL,
-} from '@/lib/incapacidades/validations';
+import { TIPO_LABEL, DOC_TIPO_MEDICO_LABEL } from '@/lib/incapacidades/validations';
 
 const TIPOS = Object.entries(TIPO_LABEL) as [keyof typeof TIPO_LABEL, string][];
-const DOC_TIPOS = Object.entries(DOC_TIPO_LABEL) as [
-  keyof typeof DOC_TIPO_LABEL,
+// Al radicar el aliado solo sube documentos médicos / administrativos.
+// Los jurídicos los sube después el área legal con confidencial=true.
+const DOC_TIPOS = Object.entries(DOC_TIPO_MEDICO_LABEL) as [
+  keyof typeof DOC_TIPO_MEDICO_LABEL,
   string,
 ][];
 
@@ -50,7 +49,7 @@ export function RadicarIncapacidadForm() {
   const [fechaFin, setFechaFin] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [archivos, setArchivos] = useState<
-    Partial<Record<keyof typeof DOC_TIPO_LABEL, File>>
+    Partial<Record<keyof typeof DOC_TIPO_MEDICO_LABEL, File>>
   >({});
 
   const [errorRadicar, setErrorRadicar] = useState<string | null>(null);
@@ -69,7 +68,7 @@ export function RadicarIncapacidadForm() {
     });
   }
 
-  function handleFile(tipo: keyof typeof DOC_TIPO_LABEL, file: File | null) {
+  function handleFile(tipo: keyof typeof DOC_TIPO_MEDICO_LABEL, file: File | null) {
     setArchivos((prev) => {
       const next = { ...prev };
       if (file) next[tipo] = file;
@@ -129,12 +128,10 @@ export function RadicarIncapacidadForm() {
     >
       {/* Paso 1 — Buscar cotizante */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-900">
-          1 · Cotizante afectado
-        </h3>
+        <h3 className="text-sm font-semibold text-slate-900">1 · Cotizante afectado</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Buscamos dentro de tu sucursal para arrastrar empresa planilla,
-          entidades SGSS y fecha de afiliación.
+          Buscamos dentro de tu sucursal para arrastrar empresa planilla, entidades SGSS y fecha de
+          afiliación.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-6">
           <div className="sm:col-span-1">
@@ -186,28 +183,26 @@ export function RadicarIncapacidadForm() {
 
         {cotizante && (
           <div className="mt-4 rounded-lg bg-emerald-50 p-3 ring-1 ring-inset ring-emerald-200">
-            <p className="text-xs font-semibold text-emerald-900">
-              ✓ {cotizante.nombreCompleto}
-            </p>
+            <p className="text-xs font-semibold text-emerald-900">✓ {cotizante.nombreCompleto}</p>
             <p className="font-mono text-[10px] text-emerald-700">
               {cotizante.tipoDocumento} {cotizante.numeroDocumento}
             </p>
             {cotizante.afiliacionActiva ? (
               <dl className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700 sm:grid-cols-5">
-                <Snap label="Empresa planilla" value={cotizante.afiliacionActiva.empresaPlanillaNombre} />
+                <Snap
+                  label="Empresa planilla"
+                  value={cotizante.afiliacionActiva.empresaPlanillaNombre}
+                />
                 <Snap label="EPS" value={cotizante.afiliacionActiva.epsNombre} />
                 <Snap label="AFP" value={cotizante.afiliacionActiva.afpNombre} />
                 <Snap label="ARL" value={cotizante.afiliacionActiva.arlNombre} />
                 <Snap label="CCF" value={cotizante.afiliacionActiva.ccfNombre} />
-                <Snap
-                  label="Fecha afiliación"
-                  value={cotizante.afiliacionActiva.fechaIngreso}
-                />
+                <Snap label="Fecha afiliación" value={cotizante.afiliacionActiva.fechaIngreso} />
               </dl>
             ) : (
               <p className="mt-2 text-[11px] text-amber-700">
-                ⚠ El cotizante no tiene afiliación activa — puedes radicar
-                de todas formas pero los snapshots quedarán vacíos.
+                ⚠ El cotizante no tiene afiliación activa — puedes radicar de todas formas pero los
+                snapshots quedarán vacíos.
               </p>
             )}
           </div>
@@ -220,9 +215,7 @@ export function RadicarIncapacidadForm() {
         disabled={!cotizante}
       >
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-900">
-            2 · Detalles de la incapacidad
-          </h3>
+          <h3 className="text-sm font-semibold text-slate-900">2 · Detalles de la incapacidad</h3>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-6">
             <div className="sm:col-span-3">
               <Label htmlFor="tipo">Tipo de incapacidad</Label>
@@ -284,9 +277,7 @@ export function RadicarIncapacidadForm() {
 
         {/* Paso 3 — Adjuntos */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-900">
-            3 · Documentos adjuntos
-          </h3>
+          <h3 className="text-sm font-semibold text-slate-900">3 · Documentos adjuntos</h3>
           <p className="mt-1 text-xs text-slate-500">
             PDF o imágenes (JPG/PNG/WebP). Máx 5 MB por documento. El{' '}
             <strong>Certificado de incapacidad</strong> es obligatorio.
@@ -320,10 +311,7 @@ export function RadicarIncapacidadForm() {
       )}
 
       <div className="flex justify-end gap-2">
-        <Button
-          type="submit"
-          disabled={pending || !cotizante || !fechaInicio || !fechaFin}
-        >
+        <Button type="submit" disabled={pending || !cotizante || !fechaInicio || !fechaFin}>
           <Upload className="h-4 w-4" />
           {pending ? 'Radicando…' : 'Radicar incapacidad'}
         </Button>
@@ -335,9 +323,7 @@ export function RadicarIncapacidadForm() {
 function Snap({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <p className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
-        {label}
-      </p>
+      <p className="text-[9px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
       <p className="font-medium text-slate-800">{value ?? '—'}</p>
     </div>
   );
@@ -364,13 +350,12 @@ function DocField({
       <label htmlFor={id} className="flex cursor-pointer items-start justify-between gap-2">
         <div className="flex-1">
           <p className="text-xs font-medium text-slate-700">
-            {label}{' '}
-            {required && <span className="text-red-600">*</span>}
+            {label} {required && <span className="text-red-600">*</span>}
           </p>
           {file ? (
             <p className="mt-1 text-[10px] text-emerald-700">
-              <Paperclip className="inline h-3 w-3" /> {file.name} ·{' '}
-              {(file.size / 1024).toFixed(0)} KB
+              <Paperclip className="inline h-3 w-3" /> {file.name} · {(file.size / 1024).toFixed(0)}{' '}
+              KB
             </p>
           ) : (
             <p className="mt-1 text-[10px] text-slate-500">

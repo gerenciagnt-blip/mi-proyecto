@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
-import { DOC_TIPO_LABEL } from '@/lib/incapacidades/validations';
+import { DOC_TIPO_MEDICO_LABEL } from '@/lib/incapacidades/validations';
 import { subirDocumentoSoporteIncapAction, type ActionState } from '../actions';
 
 export function SubirDocumentoSoporteButton({ incapacidadId }: { incapacidadId: string }) {
@@ -78,11 +78,13 @@ function SubirForm({ incapacidadId, onClose }: { incapacidadId: string; onClose:
           <option value="" disabled>
             — Selecciona —
           </option>
-          {(Object.keys(DOC_TIPO_LABEL) as Array<keyof typeof DOC_TIPO_LABEL>).map((k) => (
-            <option key={k} value={k}>
-              {DOC_TIPO_LABEL[k]}
-            </option>
-          ))}
+          {(Object.keys(DOC_TIPO_MEDICO_LABEL) as Array<keyof typeof DOC_TIPO_MEDICO_LABEL>).map(
+            (k) => (
+              <option key={k} value={k}>
+                {DOC_TIPO_MEDICO_LABEL[k]}
+              </option>
+            ),
+          )}
         </select>
       </div>
 

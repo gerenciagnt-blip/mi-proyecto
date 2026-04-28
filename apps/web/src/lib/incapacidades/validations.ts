@@ -9,14 +9,31 @@ export const IncapacidadTipoEnum = z.enum([
   'ACCIDENTE_TRANSITO_SOAT',
 ]);
 
-export const IncapacidadDocumentoTipoEnum = z.enum([
+/** Tipos médicos / administrativos — flujo regular (no confidencial). */
+export const DOC_TIPOS_MEDICOS = [
   'COPIA_CEDULA',
   'CERTIFICADO_INCAPACIDAD',
   'HISTORIA_CLINICA',
   'CERTIFICADO_BANCARIO',
   'AUTORIZACION_PAGO_TERCEROS',
   'FURIPS_SOAT',
-]);
+] as const;
+
+/** Tipos jurídicos — solo se suben con `confidencial=true` desde el flujo legal. */
+export const DOC_TIPOS_JURIDICOS = [
+  'DERECHO_PETICION',
+  'TUTELA',
+  'DESACATO',
+  'RESOLUCION',
+  'OTRO_JURIDICO',
+] as const;
+
+export const IncapacidadDocumentoTipoEnum = z.enum([...DOC_TIPOS_MEDICOS, ...DOC_TIPOS_JURIDICOS]);
+
+/** Subset Zod para validar uploads médicos — rechaza tipos jurídicos. */
+export const IncapacidadDocumentoTipoMedicoEnum = z.enum(DOC_TIPOS_MEDICOS);
+/** Subset Zod para validar uploads jurídicos — rechaza tipos médicos. */
+export const IncapacidadDocumentoTipoJuridicoEnum = z.enum(DOC_TIPOS_JURIDICOS);
 
 /** Etiquetas legibles para UI. */
 export const TIPO_LABEL: Record<z.infer<typeof IncapacidadTipoEnum>, string> = {
@@ -28,13 +45,30 @@ export const TIPO_LABEL: Record<z.infer<typeof IncapacidadTipoEnum>, string> = {
 };
 
 export const DOC_TIPO_LABEL: Record<z.infer<typeof IncapacidadDocumentoTipoEnum>, string> = {
+  // Médicos / administrativos
   COPIA_CEDULA: 'Copia de cédula',
   CERTIFICADO_INCAPACIDAD: 'Certificado de incapacidad',
   HISTORIA_CLINICA: 'Historia clínica',
   CERTIFICADO_BANCARIO: 'Certificado bancario',
   AUTORIZACION_PAGO_TERCEROS: 'Autorización pago a terceros',
   FURIPS_SOAT: 'FURIPS · Copia SOAT',
+  // Jurídicos
+  DERECHO_PETICION: 'Derecho de petición',
+  TUTELA: 'Tutela',
+  DESACATO: 'Desacato',
+  RESOLUCION: 'Resolución',
+  OTRO_JURIDICO: 'Otros documentos',
 };
+
+/** Labels solo para los tipos médicos — usar en forms del flujo regular. */
+export const DOC_TIPO_MEDICO_LABEL = Object.fromEntries(
+  DOC_TIPOS_MEDICOS.map((k) => [k, DOC_TIPO_LABEL[k]]),
+) as Record<(typeof DOC_TIPOS_MEDICOS)[number], string>;
+
+/** Labels solo para los tipos jurídicos — usar en forms del flujo legal. */
+export const DOC_TIPO_JURIDICO_LABEL = Object.fromEntries(
+  DOC_TIPOS_JURIDICOS.map((k) => [k, DOC_TIPO_LABEL[k]]),
+) as Record<(typeof DOC_TIPOS_JURIDICOS)[number], string>;
 
 /**
  * Sprint Soporte reorg fase 2 — Etiquetas + tonos centralizados para

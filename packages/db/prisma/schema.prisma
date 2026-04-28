@@ -1628,15 +1628,31 @@ enum IncapacidadEstado {
 }
 
 /**
- * Tipos de adjunto permitidos en una radicación.
+ * Tipos de adjunto permitidos en una radicación. Se dividen en dos
+ * grupos lógicos:
+ *   - Médicos / administrativos (los 6 primeros) — los sube el aliado al
+ *     radicar o soporte como respaldo del trámite normal.
+ *   - Jurídicos (los 5 últimos) — solo se suben desde el flujo
+ *     `confidencial=true` cuando el caso pasa al área legal. Cubren
+ *     derechos de petición, tutelas, etc.
+ *
+ * El UI de cada flujo filtra qué subset mostrar, así no se mezclan
+ * conceptualmente. La enum es plana para evitar dos relaciones distintas.
  */
 enum IncapacidadDocumentoTipo {
+  // --- Médicos / administrativos ---
   COPIA_CEDULA
   CERTIFICADO_INCAPACIDAD
   HISTORIA_CLINICA
   CERTIFICADO_BANCARIO
   AUTORIZACION_PAGO_TERCEROS
   FURIPS_SOAT
+  // --- Jurídicos (confidencial=true) ---
+  DERECHO_PETICION
+  TUTELA
+  DESACATO
+  RESOLUCION
+  OTRO_JURIDICO
 }
 
 /**

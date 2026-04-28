@@ -13,7 +13,7 @@ import {
 } from '@/lib/incapacidades/storage';
 import {
   IncapacidadRadicarSchema,
-  IncapacidadDocumentoTipoEnum,
+  IncapacidadDocumentoTipoMedicoEnum,
 } from '@/lib/incapacidades/validations';
 import { emitirNotificacion } from '@/lib/notificaciones';
 import { auditarCreate } from '@/lib/auditoria';
@@ -207,7 +207,9 @@ export async function radicarIncapacidadAction(
     file: File;
   };
   const archivos: ArchivoIn[] = [];
-  for (const key of IncapacidadDocumentoTipoEnum.options) {
+  // Solo aceptamos los tipos médicos al radicar — los jurídicos se
+  // suben después desde el flujo legal y van marcados como confidenciales.
+  for (const key of IncapacidadDocumentoTipoMedicoEnum.options) {
     const entry = formData.get(`doc.${key}`);
     if (entry instanceof File && entry.size > 0) {
       archivos.push({ tipo: key, file: entry });
