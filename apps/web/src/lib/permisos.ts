@@ -103,6 +103,20 @@ export const MODULOS: readonly ModuloDef[] = [
   { key: 'soporte.cartera', label: 'Cartera', grupo: 'Soporte', rolesAplica: STAFF },
   { key: 'soporte.afiliaciones', label: 'Afiliaciones', grupo: 'Soporte', rolesAplica: STAFF },
   { key: 'soporte.incapacidades', label: 'Incapacidades', grupo: 'Soporte', rolesAplica: STAFF },
+  // Sprint Jurídico — bandeja con casos derivados a área legal. Visible
+  // a TODO STAFF (cualquier soporte ve la sección y los listados).
+  { key: 'soporte.juridico', label: 'Jurídico', grupo: 'Soporte', rolesAplica: STAFF },
+  // Permiso de privacidad — solo los users con este permiso pueden
+  // DESCARGAR documentos marcados como confidenciales en el flujo
+  // jurídico. Los demás staff ven que el documento existe en el listado
+  // pero el botón de descarga aparece bloqueado. ADMIN siempre puede
+  // (regla del sistema). Para SOPORTE, requiere RolCustom específico.
+  {
+    key: 'soporte.juridico_confidencial',
+    label: 'Jurídico · descargar documentos confidenciales',
+    grupo: 'Soporte',
+    rolesAplica: STAFF,
+  },
   {
     key: 'soporte.finanzas.cobro_aliados',
     label: 'Finanzas · Cobro aliados',

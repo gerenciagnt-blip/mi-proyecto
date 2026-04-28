@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { uploadsRoot } from '@/lib/cartera/storage';
+import { puedeDescargarDocConfidencial } from '@/lib/permisos-runtime';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,12 +15,16 @@ export const dynamic = 'force-dynamic';
  *   - Scope: SUCURSAL sólo puede descargar documentos de su sucursal.
  *   - Que el documento no esté marcado como eliminado (retención 120 días).
  *   - Path sanitization contra traversal.
+ *   - Sprint Jurídico — si el documento es `confidencial`, sólo lo
+ *     puede descargar ADMIN o un usuario con permiso
+ *     `soporte.juridico_confidencial`. Aliado nunca puede descargar
+ *     confidenciales (los del flujo legal son privacidad del proceso).
  */
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string; docId: string }> },
 ) {
-  await requireAuth();
+  const session = await requireAuth();
   const { id, docId } = await params;
 
   const doc = await prisma.incapacidadDocumento.findUnique({
@@ -31,6 +36,7 @@ export async function GET(
       archivoMime: true,
       archivoNombreOriginal: true,
       eliminado: true,
+      confidencial: true,
       incapacidad: { select: { sucursalId: true } },
     },
   });
@@ -50,10 +56,31 @@ export async function GET(
     return NextResponse.json({ error: 'Sesión inválida' }, { status: 401 });
   }
   if (scope.tipo === 'SUCURSAL' && doc.incapacidad.sucursalId !== scope.sucursalId) {
-    return NextResponse.json(
-      { error: 'Sin permiso sobre este documento' },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: 'Sin permiso sobre este documento' }, { status: 403 });
+  }
+
+  // Privacidad del proceso jurídico: documentos confidenciales solo se
+  // descargan por ADMIN o RolCustom con permiso soporte.juridico_confidencial.
+  // Aliado nunca, ni siquiera de su propia sucursal — los documentos del
+  // proceso legal son confidenciales por diseño.
+  if (doc.confidencial) {
+    if (scope.tipo === 'SUCURSAL') {
+      return NextResponse.json(
+        { error: 'Documento confidencial — restringido al área jurídica' },
+        { status: 403 },
+      );
+    }
+    const puede = await puedeDescargarDocConfidencial({
+      id: session.user.id,
+      role: session.user.role,
+      rolCustomId: session.user.rolCustomId,
+    });
+    if (!puede) {
+      return NextResponse.json(
+        { error: 'Documento confidencial — sin permiso para descargar' },
+        { status: 403 },
+      );
+    }
   }
 
   // Path sanitization.
@@ -70,10 +97,7 @@ export async function GET(
   try {
     buf = await readFile(abs);
   } catch {
-    return NextResponse.json(
-      { error: 'Archivo no encontrado en disco' },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: 'Archivo no encontrado en disco' }, { status: 404 });
   }
 
   return new NextResponse(buf as unknown as BodyInit, {

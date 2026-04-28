@@ -132,6 +132,15 @@ export function VerGestionesIncapButton({
                         icon = <Building2 className="h-3 w-3" />;
                         label = 'Aliado';
                         break;
+                      case 'JURIDICO':
+                        // Sprint Jurídico — gestiones registradas desde la
+                        // bandeja Soporte/Jurídico. Tono índigo, distinto
+                        // del flujo regular para que el aliado identifique
+                        // que el caso pasó a área legal.
+                        tone = 'bg-indigo-50 text-indigo-700 ring-indigo-200';
+                        icon = <LifeBuoy className="h-3 w-3" />;
+                        label = 'Jurídico';
+                        break;
                       default: {
                         const _exhaustive: never = accionadaPor;
                         void _exhaustive;

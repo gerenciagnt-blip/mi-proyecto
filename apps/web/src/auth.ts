@@ -68,6 +68,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           sucursalId: user.sucursalId,
+          // Sprint Jurídico — `rolCustomId` viaja en el JWT para chequear
+          // permisos finos (ej: descargar documentos confidenciales) sin
+          // tener que consultar BD en cada request.
+          rolCustomId: user.rolCustomId,
         };
       },
     }),

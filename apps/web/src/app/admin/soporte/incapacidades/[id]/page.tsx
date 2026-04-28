@@ -96,14 +96,41 @@ export default async function IncapacidadDetallePage({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <GestionSoporteIncapButton
-              incapacidadId={inc.id}
-              estadoActual={inc.estado}
-              consecutivo={inc.consecutivo}
-            />
+            {/* Sprint Jurídico — si el caso ya está en flujo legal, NO
+                mostramos el botón de Gestión (solo jurídico puede tocar).
+                En su lugar, link directo a la bandeja jurídico. */}
+            {inc.estado === 'TRASLADO_A_JURIDICO' || inc.estado === 'EN_PROCESO_JURIDICO' ? (
+              <Link
+                href={`/admin/soporte/juridico/${inc.id}`}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700"
+              >
+                Abrir en Jurídico →
+              </Link>
+            ) : (
+              <GestionSoporteIncapButton
+                incapacidadId={inc.id}
+                estadoActual={inc.estado}
+                consecutivo={inc.consecutivo}
+              />
+            )}
             <AnularIncapacidadButton incapacidadId={inc.id} consecutivo={inc.consecutivo} />
           </div>
         </div>
+        {(inc.estado === 'TRASLADO_A_JURIDICO' || inc.estado === 'EN_PROCESO_JURIDICO') && (
+          <Alert variant="info" className="mt-3">
+            <p className="text-xs">
+              Este caso está en flujo jurídico. Las gestiones y documentos del proceso legal se
+              registran desde la bandeja{' '}
+              <Link
+                href={`/admin/soporte/juridico/${inc.id}`}
+                className="font-medium text-indigo-700 hover:underline"
+              >
+                Soporte / Jurídico
+              </Link>
+              .
+            </p>
+          </Alert>
+        )}
       </div>
 
       {/* Cabecera */}
@@ -274,6 +301,12 @@ export default async function IncapacidadDetallePage({
                         tone = 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/20';
                         icon = <Building2 className="h-3 w-3" />;
                         label = 'Aliado';
+                        break;
+                      case 'JURIDICO':
+                        // Sprint Jurídico — gestión del área legal.
+                        tone = 'bg-indigo-50 text-indigo-700 ring-indigo-200';
+                        icon = <LifeBuoy className="h-3 w-3" />;
+                        label = 'Jurídico';
                         break;
                       default: {
                         // Exhaustiveness check — si se agrega un valor al enum

@@ -48,6 +48,8 @@ export const ESTADO_LABEL: Record<IncapacidadEstado, string> = {
   APROBADA: 'Aprobada',
   PAGADA: 'Pagada',
   RECHAZADA: 'Rechazada',
+  TRASLADO_A_JURIDICO: 'Traslado a jurídico',
+  EN_PROCESO_JURIDICO: 'En proceso jurídico',
 };
 
 export const ESTADO_TONE: Record<IncapacidadEstado, string> = {
@@ -56,6 +58,10 @@ export const ESTADO_TONE: Record<IncapacidadEstado, string> = {
   APROBADA: 'bg-violet-50 text-violet-700 ring-violet-200',
   PAGADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   RECHAZADA: 'bg-red-50 text-red-700 ring-red-200',
+  // Estados jurídicos en tono índigo — diferenciados visualmente del flujo
+  // regular para que el operador identifique de un vistazo casos legales.
+  TRASLADO_A_JURIDICO: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  EN_PROCESO_JURIDICO: 'bg-indigo-100 text-indigo-800 ring-indigo-300',
 };
 
 export const IncapacidadRadicarSchema = z

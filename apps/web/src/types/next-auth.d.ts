@@ -6,6 +6,7 @@ declare module 'next-auth' {
   interface User {
     role: Role;
     sucursalId: string | null;
+    rolCustomId: string | null;
   }
 
   interface Session {
@@ -15,6 +16,7 @@ declare module 'next-auth' {
       name: string;
       role: Role;
       sucursalId: string | null;
+      rolCustomId: string | null;
     };
   }
 }
@@ -24,5 +26,6 @@ declare module 'next-auth/jwt' {
     id: string;
     role: Role;
     sucursalId: string | null;
+    rolCustomId: string | null;
   }
 }

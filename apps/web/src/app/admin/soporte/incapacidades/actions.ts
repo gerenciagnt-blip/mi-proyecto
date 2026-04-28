@@ -53,6 +53,15 @@ export async function gestionSoporteIncapAction(
   });
   if (!inc) return { error: 'Incapacidad no encontrada' };
 
+  // Sprint Jurídico — si el caso ya está en flujo legal, soporte NO
+  // puede gestionarlo desde acá. Decisión Q3 = solo jurídico cierra.
+  if (inc.estado === 'TRASLADO_A_JURIDICO' || inc.estado === 'EN_PROCESO_JURIDICO') {
+    return {
+      error:
+        'Este caso está en flujo jurídico. Solo el área legal puede gestionarlo desde la bandeja Soporte / Jurídico.',
+    };
+  }
+
   const cambio =
     params.nuevoEstado && params.nuevoEstado !== inc.estado ? params.nuevoEstado : undefined;
 

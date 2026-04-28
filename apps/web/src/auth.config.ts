@@ -25,6 +25,7 @@ export const authConfig = {
         token.id = user.id as string;
         token.role = user.role;
         token.sucursalId = user.sucursalId;
+        token.rolCustomId = user.rolCustomId;
       }
       return token;
     },
@@ -33,6 +34,7 @@ export const authConfig = {
         session.user.id = token.id;
         session.user.role = token.role;
         session.user.sucursalId = token.sucursalId;
+        session.user.rolCustomId = token.rolCustomId;
       }
       return session;
     },

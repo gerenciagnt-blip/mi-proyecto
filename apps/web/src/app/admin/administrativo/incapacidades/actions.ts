@@ -422,7 +422,9 @@ export async function gestionAliadoIncapAction(
 
 export type IncapGestionRow = {
   id: string;
-  accionadaPor: 'SOPORTE' | 'ALIADO';
+  // Sprint Jurídico — `JURIDICO` distingue gestiones del proceso legal
+  // de las gestiones regulares de soporte.
+  accionadaPor: 'SOPORTE' | 'ALIADO' | 'JURIDICO';
   nuevoEstado: string | null;
   descripcion: string;
   userName: string | null;

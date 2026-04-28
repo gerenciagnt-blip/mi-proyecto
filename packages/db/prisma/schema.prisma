@@ -1604,11 +1604,18 @@ enum IncapacidadTipo {
 
 /**
  * Estados de una incapacidad — flujo típico:
- * RADICADA      aliado envío formulario + documentos
- * EN_REVISION   soporte la esta revisando (puede pedir ajustes)
- * APROBADA      soporte validó, entidad pagará
- * PAGADA        el aliado / cotizante recibió el pago
- * RECHAZADA     la entidad la negó definitivamente
+ * RADICADA              aliado envío formulario + documentos
+ * EN_REVISION           soporte la esta revisando (puede pedir ajustes)
+ * APROBADA              soporte validó, entidad pagará
+ * PAGADA                el aliado / cotizante recibió el pago
+ * RECHAZADA             la entidad la negó definitivamente
+ * TRASLADO_A_JURIDICO   soporte detectó que necesita revisión legal
+ *                       (impugnación, controversia con la entidad, etc.).
+ *                       Caso aparece en bandeja Soporte/Jurídico.
+ * EN_PROCESO_JURIDICO   el área jurídica tomó el caso y está gestionando
+ *                       (envío de impugnación, espera de respuesta, etc.).
+ *                       Solo el rol jurídico puede mover de vuelta a
+ *                       APROBADA / PAGADA / RECHAZADA al cerrar.
  */
 enum IncapacidadEstado {
   RADICADA
@@ -1616,6 +1623,8 @@ enum IncapacidadEstado {
   APROBADA
   PAGADA
   RECHAZADA
+  TRASLADO_A_JURIDICO
+  EN_PROCESO_JURIDICO
 }
 
 /**
@@ -1632,10 +1641,17 @@ enum IncapacidadDocumentoTipo {
 
 /**
  * Quién ejecutó la gestión en la bitácora.
+ *  SOPORTE   — gestión registrada por staff (ADMIN/SOPORTE) en la bandeja
+ *              de soporte/incapacidades.
+ *  ALIADO    — gestión registrada por aliado (responder pedido, anexar doc).
+ *  JURIDICO  — gestión registrada en la bandeja Soporte/Jurídico por staff
+ *              con rol jurídico. Permite distinguir en la bitácora qué
+ *              gestiones son del proceso legal.
  */
 enum IncapacidadAccionadaPor {
   SOPORTE
   ALIADO
+  JURIDICO
 }
 
 /**
@@ -1727,9 +1743,19 @@ model IncapacidadDocumento {
    * queden marcados consistentemente con la realidad: hasta ahora solo
    * el aliado podía subir documentos al radicar. Cuando soporte
    * empiece a subir resoluciones EPS/respuestas oficiales, irán como
-   * `SOPORTE`.
+   * `SOPORTE`. Los documentos del flujo jurídico van como `JURIDICO`.
    */
   accionadaPor          IncapacidadAccionadaPor  @default(ALIADO)
+  /**
+   * Sprint Jurídico — `true` indica documento del proceso legal (carta
+   * impugnación, comunicación oficial, dictamen, etc.). Cualquier usuario
+   * staff puede VER que existe el documento (en el listado), pero solo
+   * los que tienen el permiso `soporte.juridico_confidencial` (rol ADMIN
+   * o RolCustom específico) pueden DESCARGARLO. Default `false` —
+   * documentos del flujo regular (cédula, incapacidad, etc.) son
+   * visibles para todo soporte.
+   */
+  confidencial          Boolean                  @default(false)
   /** Usuario que subió el archivo. NULL si el aliado aún no estaba autenticado en la sesión cuando se subió (no debería pasar, pero defensivo). */
   userId                String?
   createdAt             DateTime                 @default(now())

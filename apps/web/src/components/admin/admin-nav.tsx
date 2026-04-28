@@ -26,6 +26,7 @@ import {
   History,
   Activity,
   Bot,
+  Scale,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -98,6 +99,10 @@ const NAV: NavItem[] = [
       { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet },
       { label: 'Afiliaciones', href: '/admin/soporte/afiliaciones', icon: FileCheck },
       { label: 'Incapacidades', href: '/admin/soporte/incapacidades', icon: FileText },
+      // Sprint Jurídico — bandeja de casos derivados al área legal.
+      // Visible a todo STAFF; los documentos confidenciales se filtran
+      // por permiso `soporte.juridico_confidencial` en el endpoint.
+      { label: 'Jurídico', href: '/admin/soporte/juridico', icon: Scale },
       { label: 'Finanzas', href: '/admin/soporte/finanzas', icon: DollarSign },
     ],
   },
