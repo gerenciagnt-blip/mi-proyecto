@@ -541,11 +541,14 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               </div>
             </div>
             <div>
-              <Label htmlFor="fechaExpedicionDoc">Fecha expedición</Label>
+              <Label htmlFor="fechaExpedicionDoc">
+                Fecha expedición <Req />
+              </Label>
               <Input
                 id="fechaExpedicionDoc"
                 name="fechaExpedicionDoc"
                 type="date"
+                required
                 defaultValue={props.cotizanteSnapshot?.datos?.fechaExpedicionDoc ?? ''}
                 disabled={readOnly}
                 className="mt-1"
@@ -636,15 +639,20 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             </div>
 
             <div>
-              <Label htmlFor="estadoCivil">Estado civil</Label>
+              <Label htmlFor="estadoCivil">
+                Estado civil <Req />
+              </Label>
               <select
                 id="estadoCivil"
                 name="estadoCivil"
+                required
                 defaultValue={props.cotizanteSnapshot?.datos?.estadoCivil ?? ''}
                 disabled={readOnly}
                 className={selectClass}
               >
-                <option value="">— No especificado —</option>
+                <option value="" disabled>
+                  — Selecciona —
+                </option>
                 <option value="1">Soltero(a)</option>
                 <option value="2">Casado(a)</option>
                 <option value="3">Unión Libre</option>
@@ -730,21 +738,29 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               />
             </div>
             <div>
-              <Label htmlFor="celular">Celular</Label>
+              <Label htmlFor="celular">
+                Celular <Req />
+              </Label>
               <Input
                 id="celular"
                 name="celular"
+                required
+                minLength={7}
+                maxLength={30}
                 defaultValue={props.cotizanteSnapshot?.datos?.celular ?? ''}
                 disabled={readOnly}
                 className="mt-1"
               />
             </div>
             <div className="sm:col-span-2">
-              <Label htmlFor="email">Correo</Label>
+              <Label htmlFor="email">
+                Correo <Req />
+              </Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
+                required
                 defaultValue={props.cotizanteSnapshot?.datos?.email ?? ''}
                 disabled={readOnly}
                 className="mt-1"
@@ -761,7 +777,9 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               />
             </div>
             <div>
-              <Label htmlFor="departamentoNombre">Departamento</Label>
+              <Label htmlFor="departamentoNombre">
+                Departamento <Req />
+              </Label>
               <input
                 id="departamentoNombre"
                 list="depto-list"
@@ -770,24 +788,31 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   setDeptoNombre(e.target.value);
                   setMunicipioNombre('');
                 }}
+                disabled={readOnly}
                 placeholder="Escribe o selecciona..."
-                className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm"
+                className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
               />
               <datalist id="depto-list">
                 {props.departamentos.map((d) => (
                   <option key={d.id} value={d.nombre} />
                 ))}
               </datalist>
-              <input type="hidden" name="departamentoId" value={depto?.id ?? ''} />
+              {/* Sprint Soporte reorg fase 2 — campo obligatorio. Usamos
+                 `required` en el hidden para que el browser bloquee el
+                 submit si no se eligió un departamento del datalist
+                 (depto.id solo se setea cuando el nombre matches). */}
+              <input type="hidden" name="departamentoId" value={depto?.id ?? ''} required />
             </div>
             <div>
-              <Label htmlFor="municipioNombre">Municipio</Label>
+              <Label htmlFor="municipioNombre">
+                Municipio <Req />
+              </Label>
               <input
                 id="municipioNombre"
                 list="muni-list"
                 value={municipioNombre}
                 onChange={(e) => setMunicipioNombre(e.target.value)}
-                disabled={!depto}
+                disabled={!depto || readOnly}
                 placeholder={depto ? 'Escribe o selecciona...' : 'Primero elige depto'}
                 className="mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm disabled:opacity-50"
               />
@@ -796,7 +821,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   <option key={m.id} value={m.nombre} />
                 ))}
               </datalist>
-              <input type="hidden" name="municipioId" value={municipio?.id ?? ''} />
+              <input type="hidden" name="municipioId" value={municipio?.id ?? ''} required />
             </div>
           </div>
         </section>
@@ -1122,20 +1147,20 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
           </div>
 
           <div>
-            <Label htmlFor="cargo">Cargo</Label>
+            <Label htmlFor="cargo">
+              Cargo <Req />
+            </Label>
             <Input
               id="cargo"
               name="cargo"
               type="text"
+              required
               maxLength={100}
               defaultValue={initial?.cargo ?? ''}
               disabled={readOnly}
               placeholder="ej. Operario"
               className="mt-1"
             />
-            <p className="mt-1 text-[10px] text-slate-400">
-              Requerido por bot Colpatria si la empresa lo tiene activo
-            </p>
           </div>
 
           {/* Asesor comercial (reducido) */}

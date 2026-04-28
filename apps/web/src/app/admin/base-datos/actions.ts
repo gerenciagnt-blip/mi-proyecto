@@ -134,10 +134,10 @@ function parseAfiliacion(fd: FormData) {
     afpId: g('afpId'),
     arlId: g('arlId'),
     ccfId: g('ccfId'),
-    // Sprint 8: requerido por bot Colpatria para DEPENDIENTE.
-    // Normalizamos a null si vino vacío o solo whitespace, así Prisma
-    // guarda NULL y el bot detecta cleanly que falta.
-    cargo: titleCase(g('cargo')) || null,
+    // Sprint Soporte reorg fase 2 — `cargo` es obligatorio para ambas
+    // modalidades. El server schema (CotizanteSchema) y el form lo
+    // marcan required; aquí solo normalizamos con title-case.
+    cargo: titleCase(g('cargo')),
   };
 }
 

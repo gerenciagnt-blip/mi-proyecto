@@ -264,23 +264,24 @@ export const CotizanteSchema = z.object({
     .min(4, 'Mínimo 4 dígitos')
     .max(20)
     .regex(/^[A-Z0-9]+$/i, 'Sin espacios ni símbolos'),
-  fechaExpedicionDoc: z.coerce.date().nullable().optional(),
+  // Sprint Soporte reorg fase 2 — fechaExpedicionDoc, estadoCivil,
+  // celular, email, departamentoId, municipioId pasaron a ser
+  // obligatorios. El form los marca con * y los valida en cliente;
+  // este schema es la defensa-en-profundidad en el server.
+  fechaExpedicionDoc: z.coerce.date({ message: 'Fecha de expedición requerida' }),
   primerNombre: z.string().trim().min(1, 'Requerido').max(100),
   segundoNombre: optional,
   primerApellido: z.string().trim().min(1, 'Requerido').max(100),
   segundoApellido: optional,
   fechaNacimiento: z.coerce.date({ message: 'Fecha inválida' }),
   genero: GeneroEnum,
-  estadoCivil: z.preprocess(
-    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
-    EstadoCivilEnum.nullable().optional(),
-  ),
+  estadoCivil: EstadoCivilEnum,
   telefono: optional,
-  celular: optional,
-  email: optional.pipe(z.string().email('Correo no válido').optional()),
+  celular: z.string().trim().min(7, 'Celular requerido').max(30),
+  email: z.string().trim().min(1, 'Correo requerido').email('Correo no válido'),
   direccion: optional,
-  departamentoId: z.string().nullable().optional(),
-  municipioId: z.string().nullable().optional(),
+  departamentoId: z.string().trim().min(1, 'Departamento requerido'),
+  municipioId: z.string().trim().min(1, 'Municipio requerido'),
 });
 
 const idOrNull = z
@@ -375,12 +376,10 @@ export const AfiliacionSchema = z
     afpId: idOrNull,
     arlId: idOrNull,
     ccfId: idOrNull,
-    /** Cargo del cotizante en la empresa. Requerido por bot Colpatria
-     *  (DEPENDIENTE) — para INDEPENDIENTE puede quedar null. */
-    cargo: z.preprocess(
-      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
-      z.string().trim().max(100, 'Máximo 100 caracteres').nullable().optional(),
-    ),
+    /** Cargo del cotizante. Sprint Soporte reorg fase 2 — obligatorio
+     *  para ambas modalidades (antes era solo recomendado para
+     *  DEPENDIENTE por el bot Colpatria, pero ahora es requerido). */
+    cargo: z.string().trim().min(1, 'Cargo requerido').max(100, 'Máximo 100 caracteres'),
   })
   .refine((v) => v.modalidad !== 'DEPENDIENTE' || !!v.empresaId, {
     message: 'Empresa planilla requerida para dependientes',
