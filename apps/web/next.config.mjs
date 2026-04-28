@@ -33,7 +33,17 @@ const nextConfig = {
   //   - @react-pdf/renderer: usa internals de Node (fs, Buffer, stream).
   //   - pdf-parse: al bundlearse trata de leer un PDF de test en su path
   //     relativo y falla con "Object.defineProperty called on non-object".
-  serverExternalPackages: ['@react-pdf/renderer', 'pdf-parse'],
+  //   - pino / pino-pretty / thread-stream: el transport de pino spawnea
+  //     un worker thread que carga `pino/lib/worker.js` con un path
+  //     dinámico — Webpack no lo resuelve y falla en runtime con
+  //     `Cannot find module ... vendor-chunks/lib/worker.js`.
+  serverExternalPackages: [
+    '@react-pdf/renderer',
+    'pdf-parse',
+    'pino',
+    'pino-pretty',
+    'thread-stream',
+  ],
   experimental: {
     serverActions: {
       // El upload de logo del comprobante y otros adjuntos pasan por server actions.
