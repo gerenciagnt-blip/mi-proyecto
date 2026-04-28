@@ -5,7 +5,7 @@ import { Save } from 'lucide-react';
 import type { Role } from '@pila/db';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
-import { ACCIONES, agruparModulos } from '@/lib/permisos';
+import { ACCIONES, agruparModulosPorRol } from '@/lib/permisos';
 import { savePermisosAction, type ActionState } from './actions';
 
 type Props = {
@@ -18,7 +18,10 @@ export function PermisosForm({ role, roleLabel, granted }: Props) {
   const bound = savePermisosAction.bind(null, role);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
   const grantedSet = useMemo(() => new Set(granted), [granted]);
-  const grupos = useMemo(() => agruparModulos(), []);
+  // Sprint Soporte reorg fase 2 — filtramos por rol para que p.ej.
+  // Bot Colpatria (staff-only) o Administrativo (aliado-only) no
+  // aparezcan como checkboxes inútiles cuando se edita el rol equivocado.
+  const grupos = useMemo(() => agruparModulosPorRol(role), [role]);
 
   const keyFor = (modulo: string, accion: string) => `${modulo}::${accion}`;
 
@@ -69,9 +72,7 @@ export function PermisosForm({ role, roleLabel, granted }: Props) {
       {state.ok && <Alert variant="success">Permisos de {roleLabel} actualizados</Alert>}
 
       <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">
-          Marca lo permitido; lo no marcado queda denegado.
-        </p>
+        <p className="text-xs text-slate-500">Marca lo permitido; lo no marcado queda denegado.</p>
         <Button type="submit" disabled={pending}>
           <Save className="h-4 w-4" />
           {pending ? 'Guardando…' : `Guardar ${roleLabel}`}

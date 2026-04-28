@@ -1,13 +1,13 @@
 'use client';
 
-import { useActionState, useState, useEffect, useRef } from 'react';
+import { useActionState, useMemo, useState, useEffect, useRef } from 'react';
 import { Plus, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
-import { ACCIONES, agruparModulos } from '@/lib/permisos';
+import { ACCIONES, agruparModulosPorRol } from '@/lib/permisos';
 import { createRolCustomAction, type ActionState } from './actions';
 
 const selectClass =
@@ -37,11 +37,12 @@ export function CreateRolCustomDialog() {
 }
 
 function CreateRolForm({ onSuccess }: { onSuccess: () => void }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(
-    createRolCustomAction,
-    {},
-  );
-  const grupos = agruparModulos();
+  const [state, action, pending] = useActionState<ActionState, FormData>(createRolCustomAction, {});
+  // Sprint Soporte reorg fase 2 — filtramos los módulos según el rol
+  // base seleccionado (Dueño Aliado vs Usuario Aliado) para que la
+  // matriz no muestre permisos que no aplican al perfil base elegido.
+  const [basedOn, setBasedOn] = useState<'ALIADO_OWNER' | 'ALIADO_USER'>('ALIADO_USER');
+  const grupos = useMemo(() => agruparModulosPorRol(basedOn), [basedOn]);
   const ref = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -75,7 +76,8 @@ function CreateRolForm({ onSuccess }: { onSuccess: () => void }) {
               id="basedOn"
               name="basedOn"
               required
-              defaultValue="ALIADO_USER"
+              value={basedOn}
+              onChange={(e) => setBasedOn(e.target.value as 'ALIADO_OWNER' | 'ALIADO_USER')}
               className={selectClass}
             >
               <option value="ALIADO_OWNER">Dueño Aliado</option>

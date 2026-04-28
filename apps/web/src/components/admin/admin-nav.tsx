@@ -22,7 +22,6 @@ import {
   Sparkles,
   FileSignature,
   ChevronRight,
-  LogOut,
   DollarSign,
   History,
   Activity,
@@ -31,7 +30,6 @@ import {
 } from 'lucide-react';
 import type { Role } from '@pila/db';
 import { cn } from '@/lib/utils';
-import { logoutAction } from '@/app/dashboard/actions';
 
 /** Conjuntos de roles (para dejar intención clara en la matriz). */
 const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
@@ -256,16 +254,9 @@ export function AdminNav({ role }: { role: Role }) {
           <NavGroup key={item.label} item={item} pathname={pathname} />
         ))}
       </div>
-
-      <form action={logoutAction} className="border-t border-slate-100 pt-3">
-        <button
-          type="submit"
-          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-        >
-          <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
-          <span>Cerrar sesión</span>
-        </button>
-      </form>
+      {/* Sprint Soporte reorg fase 2 — Cerrar sesión vive ahora solo
+         en el header (al lado de "Mi perfil"). Quitamos el botón
+         duplicado del fondo del sidebar. */}
     </nav>
   );
 }
