@@ -1100,6 +1100,9 @@ model Liquidacion {
   @@index([afiliacionId])
   @@index([estado])
   @@index([tipo])
+  // Sprint perf — filtro común en transacciones/actions: liquidaciones
+  // de una afiliación filtradas por estado (BORRADOR/REVISADA/PAGADA).
+  @@index([afiliacionId, estado])
   @@map("liquidaciones")
 }
 
@@ -1551,6 +1554,11 @@ model CarteraDetallado {
   @@index([cotizanteId])
   @@index([estado])
   @@index([numeroDocumento])
+  // Sprint perf — bandeja /admin/administrativo/cartera filtra por
+  // sucursalAsignadaId + estado y ordena por updatedAt; los KPIs del
+  // dashboard agregan por mismo trío. Índice compuesto para soportar
+  // ambos sin extra seq_scan cuando crezca la tabla.
+  @@index([sucursalAsignadaId, estado, updatedAt(sort: Desc)])
   @@map("cartera_detallado")
 }
 
@@ -1687,6 +1695,10 @@ model Incapacidad {
   @@index([estado])
   @@index([tipo])
   @@index([fechaRadicacion])
+  // Sprint perf — bandeja /admin/administrativo/incapacidades y los
+  // KPIs filtran por sucursalId + estado y ordenan por fechaRadicacion
+  // desc. Patrón homogéneo en todos los queries de producción.
+  @@index([sucursalId, estado, fechaRadicacion(sort: Desc)])
   @@map("incapacidades")
 }
 
@@ -1858,6 +1870,13 @@ model SoporteAfiliacion {
   @@index([cotizanteId])
   @@index([fechaRadicacion])
   @@index([asignadoAUserId])
+  // Sprint perf — bandeja /admin/soporte/afiliaciones filtra por
+  // estado y pagina por fechaRadicacion desc (take 500). Soporta
+  // staff que ve todas las solicitudes sin filtro de sucursal.
+  @@index([estado, fechaRadicacion(sort: Desc)])
+  // Sprint perf — vista "mis tareas asignadas" del soportista filtra
+  // por asignadoAUserId + estado.
+  @@index([asignadoAUserId, estado])
   @@map("soporte_afiliacion")
 }
 
