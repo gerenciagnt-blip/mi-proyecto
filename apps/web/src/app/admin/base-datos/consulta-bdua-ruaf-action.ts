@@ -18,6 +18,7 @@
 import { requireAuth } from '@/lib/auth-helpers';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 import { consultarCotizanteBduaRuaf } from '@/lib/pagosimple/bdua-ruaf';
+import { getBduaCached, setBduaCached, invalidateBduaCached } from '@/lib/pagosimple/bdua-cache';
 import { PagosimpleError } from '@/lib/pagosimple/client';
 import type { BduaRuafItem } from '@/lib/pagosimple/types';
 import { createLogger } from '@/lib/logger';
@@ -25,12 +26,13 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('bdua-ruaf');
 
 export type BduaRuafResult =
-  | { ok: true; item: BduaRuafItem | null }
+  | { ok: true; item: BduaRuafItem | null; cached?: boolean }
   | { ok: false; error: string; code?: number };
 
 export async function consultarBduaRuafAction(
   tipoDocumento: string,
   numeroDocumento: string,
+  options: { forceFresh?: boolean } = {},
 ): Promise<BduaRuafResult> {
   await requireAuth();
 
@@ -49,9 +51,25 @@ export async function consultarBduaRuafAction(
     return { ok: false, error: 'El número de documento es demasiado corto.' };
   }
 
+  // Cache lookup primero — si tenemos respuesta vigente (<30 min) y el
+  // caller NO pidió forceFresh, devolvemos sin pegar a PagoSimple.
+  // Cacheamos también `null` (persona sin registro en BDUA) — es
+  // información válida y permite no re-preguntar.
+  if (!options.forceFresh) {
+    const cached = getBduaCached(tipo, num);
+    if (cached !== undefined) {
+      return { ok: true, item: cached, cached: true };
+    }
+  } else {
+    // Bypass explícito: limpiar la entrada vieja antes de re-consultar
+    // para que un eventual fallo de PagoSimple deje el cache también limpio.
+    invalidateBduaCached(tipo, num);
+  }
+
   try {
     const item = await consultarCotizanteBduaRuaf(tipo, num);
-    return { ok: true, item };
+    setBduaCached(tipo, num, item);
+    return { ok: true, item, cached: false };
   } catch (err) {
     if (err instanceof PagosimpleError) {
       // Algunos códigos son "soft" (persona no encontrada) y otros son
@@ -63,7 +81,9 @@ export async function consultarBduaRuafAction(
         msg.includes('not found') ||
         msg.includes('sin registros')
       ) {
-        return { ok: true, item: null };
+        // Cacheamos el "no encontrado" como null para no re-preguntar.
+        setBduaCached(tipo, num, null);
+        return { ok: true, item: null, cached: false };
       }
       return {
         ok: false,

@@ -24,6 +24,7 @@ import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { consultarCotizanteBduaRuaf } from '@/lib/pagosimple/bdua-ruaf';
+import { getBduaCached, setBduaCached } from '@/lib/pagosimple/bdua-cache';
 import {
   validarSubtiposCotizanteEnPagosimple,
   type ValidarSubtiposResult,
@@ -140,7 +141,16 @@ export async function validarSubtiposCotizanteAction(input: {
   let aviso: string | undefined;
 
   try {
-    const bdua = await consultarCotizanteBduaRuaf(input.tipoDocumento, input.numeroDocumento);
+    // Reusamos el cache compartido con la server action de BDUA (mismo
+    // par tipoDocumento+numeroDocumento). Si el aliado consultó BDUA
+    // hace <30 min, no volvemos a pegarle a PagoSimple acá.
+    const tipoUp = input.tipoDocumento.trim().toUpperCase();
+    const numTrim = input.numeroDocumento.trim();
+    let bdua = getBduaCached(tipoUp, numTrim);
+    if (bdua === undefined) {
+      bdua = await consultarCotizanteBduaRuaf(input.tipoDocumento, input.numeroDocumento);
+      setBduaCached(tipoUp, numTrim, bdua);
+    }
     if (bdua) {
       // BDUA usa `bdua_eps_code` (MinSalud); RUAF `ruaf_afp_code`.
       // Mapeamos al `codigoMinSalud` del catálogo local.
