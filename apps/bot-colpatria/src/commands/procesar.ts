@@ -10,7 +10,7 @@ import {
   type ColpatriaPayload,
   type ConfigResuelta,
 } from '../lib/payload-form.js';
-import { guardarPdfComprobante } from '../lib/storage.js';
+import { guardarPdfComprobante, validarUploadsDirOAlertar } from '../lib/storage.js';
 import { createLogger } from '../lib/logger.js';
 import { runWatchdog } from '../lib/watchdog.js';
 
@@ -45,7 +45,19 @@ export async function procesarCommand(options: {
   const inicio = Date.now();
   log.info({ limite: options.limite, empresaId: options.empresaId }, 'iniciando procesar');
 
-  // 0. Watchdog preventivo: revivir zombies + reciclar RETRYABLE +
+  // 0a. Validar UPLOADS_DIR — si está mal, los PDFs se pierden silencioso.
+  //     No bloqueante (con archivos efímeros el bot igual procesa el flujo
+  //     en AXA), pero deja alerta clara en Sentry para el operador.
+  try {
+    await validarUploadsDirOAlertar();
+  } catch (err) {
+    log.error(
+      { err: err instanceof Error ? err.message : err },
+      'validación UPLOADS_DIR falló inesperadamente',
+    );
+  }
+
+  // 0b. Watchdog preventivo: revivir zombies + reciclar RETRYABLE +
   //    detectar tasa anormal de fallos. Es barato (3 queries) y se
   //    ejecuta antes de tomar jobs nuevos para que los zombies y
   //    RETRYABLE listos vuelvan a la cola PENDING que el SELECT de
