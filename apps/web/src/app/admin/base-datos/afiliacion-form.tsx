@@ -1,13 +1,17 @@
 'use client';
 
 import { useActionState, useState, useMemo, useEffect, useTransition } from 'react';
-import { Save, AlertCircle, Search, CheckCircle2, Loader2 } from 'lucide-react';
+import { Save, AlertCircle, Search, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { createAfiliacionAction, updateAfiliacionAction, type ActionState } from './actions';
 import { consultarBduaRuafAction } from './consulta-bdua-ruaf-action';
+import {
+  validarSubtiposCotizanteAction,
+  type ValidarSubtiposActionResult,
+} from './validar-subtipos-action';
 
 const selectClass =
   'mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-base text-brand-text-primary sm:text-sm disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600';
@@ -219,6 +223,29 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
     | { kind: 'empty' }
     | { kind: 'error'; message: string }
   >(null);
+
+  // Sprint Soporte reorg fase 2 — Validación de subtipos PILA contra
+  // PagoSimple. Solo aplica a DEPENDIENTE; envía un plano sintético
+  // con 6 líneas (una por subtipo candidato) y reporta cuáles son
+  // aceptados por el operador para esta persona.
+  const [subtiposPending, startSubtiposTransition] = useTransition();
+  const [subtiposResult, setSubtiposResult] = useState<ValidarSubtiposActionResult | null>(null);
+
+  const handleValidarSubtipos = () => {
+    if (!numeroDocumento || numeroDocumento.length < 4) return;
+    setSubtiposResult(null);
+    startSubtiposTransition(async () => {
+      const res = await validarSubtiposCotizanteAction({
+        tipoDocumento,
+        numeroDocumento,
+        primerNombre: primerNombre || undefined,
+        segundoNombre: segundoNombre || null,
+        primerApellido: primerApellido || undefined,
+        segundoApellido: segundoApellido || null,
+      });
+      setSubtiposResult(res);
+    });
+  };
 
   const handleConsultarBduaRuaf = () => {
     if (!numeroDocumento || numeroDocumento.length < 4) return;
@@ -538,6 +565,26 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                     <span>BDUA/RUAF</span>
                   </Button>
                 )}
+                {/* Sprint Soporte reorg fase 2 — Validar subtipos PILA. Solo
+                   en CREATE de DEPENDIENTE: dispara un plano sintético
+                   contra PagoSimple para detectar qué subtipos acepta el
+                   operador para esta persona (omisión de pensión). */}
+                {isCreate && modalidad === 'DEPENDIENTE' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleValidarSubtipos}
+                    disabled={subtiposPending || numeroDocumento.length < 4}
+                    title="Valida los subtipos PILA aceptados para este cotizante (omisión de pensión)"
+                  >
+                    {subtiposPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4" />
+                    )}
+                    <span>Subtipos</span>
+                  </Button>
+                )}
               </div>
             </div>
             <div>
@@ -717,6 +764,65 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                 <Alert variant="danger">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{bduaResult.message}</span>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {/* Sprint Soporte reorg fase 2 — Banner resultado validar subtipos. */}
+          {isCreate && subtiposResult && (
+            <div className="mt-3">
+              {subtiposResult.ok ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        Subtipos válidos:{' '}
+                        {subtiposResult.validos.length > 0 ? (
+                          <span className="font-mono">{subtiposResult.validos.join(' · ')}</span>
+                        ) : (
+                          <span className="italic text-amber-700">
+                            ninguno (todos rechazados por el operador)
+                          </span>
+                        )}
+                      </p>
+                      {subtiposResult.rechazados.length > 0 && (
+                        <details className="text-[10px] text-slate-600">
+                          <summary className="cursor-pointer text-emerald-700">
+                            Ver rechazados ({subtiposResult.rechazados.length})
+                          </summary>
+                          <ul className="mt-1 space-y-0.5 pl-4">
+                            {subtiposResult.rechazados.map((r) => (
+                              <li key={r.subtipo}>
+                                <span className="font-mono">{r.subtipo}</span>: {r.razon}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      <p className="text-[10px] text-slate-500">
+                        Empresa host:{' '}
+                        <span className="font-medium">{subtiposResult.empresaUsada.nombre}</span> ·
+                        Entidades SGSS:{' '}
+                        <span className="font-medium">
+                          {subtiposResult.fuenteEntidades === 'BDUA'
+                            ? 'BDUA/RUAF'
+                            : 'default catálogo'}
+                        </span>
+                      </p>
+                      {subtiposResult.aviso && (
+                        <p className="text-[10px] italic text-amber-700">
+                          ⚠ {subtiposResult.aviso}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Alert variant="danger">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{subtiposResult.error}</span>
                 </Alert>
               )}
             </div>
