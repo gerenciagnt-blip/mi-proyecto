@@ -10,6 +10,7 @@ import { uploadsCleanupCommand } from './commands/uploads-cleanup.js';
 import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
+import { pagosimpleTestAllCommand } from './commands/pagosimple-test-all.js';
 import { pagosimpleSyncPlanillasCommand } from './commands/pagosimple-sync-planillas.js';
 import { divipolaSeedCommand } from './commands/divipola-seed.js';
 import { entidadesPilaSeedCommand } from './commands/entidades-pila-seed.js';
@@ -130,6 +131,15 @@ program
   .description('Verifica credenciales del usuario master de PagoSimple (login + auth_token)')
   .action(async () => {
     await pagosimplePingCommand();
+  });
+
+program
+  .command('pagosimple:test-all')
+  .description(
+    'Batería E2E de las 6 APIs PagoSimple (auth, aportantes, planillas, vouchers, BDUA/RUAF). Read-only.',
+  )
+  .action(async () => {
+    await pagosimpleTestAllCommand();
   });
 
 program
