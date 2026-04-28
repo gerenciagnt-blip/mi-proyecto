@@ -1,0 +1,84 @@
+name: Bot Colpatria — login automático Lun–Sáb 7 AM
+
+# Login proactivo de TODAS las empresas con Colpatria activo, todos los
+# días hábiles a las 7:00 AM Colombia. Deja la sesión cacheada en
+# `ColpatriaSesion` para que la primera tanda del worker (que corre
+# desde las 8 AM) no pague el costo del login.
+#
+# Colombia = UTC-5, sin DST → 7:00 AM Col = 12:00 UTC.
+# Lun-Sáb = días 1-6 en cron POSIX (1=lunes, 6=sábado).
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-6'
+  workflow_dispatch:
+
+jobs:
+  login-auto:
+    name: Login automático de empresas
+    runs-on: ubuntu-latest
+    # 30 min — N empresas × ~1 min cada login con login fresco. Generoso
+    # porque AXA puede estar lento al inicio del día.
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      COLPATRIA_BASE_URL: ${{ secrets.COLPATRIA_BASE_URL }}
+      COLPATRIA_HEADLESS: 'true'
+      COLPATRIA_ENC_KEY: ${{ secrets.COLPATRIA_ENC_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Install Playwright Chromium
+        working-directory: apps/bot-colpatria
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL OK"
+
+      - name: Validate COLPATRIA_ENC_KEY presence
+        run: |
+          if [ -z "${{ secrets.COLPATRIA_ENC_KEY }}" ]; then
+            echo "::error::COLPATRIA_ENC_KEY no configurado en secrets de GitHub"
+            exit 1
+          fi
+          echo "✓ COLPATRIA_ENC_KEY presente"
+
+      - name: Login automático
+        working-directory: apps/bot-colpatria
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          pnpm exec tsx src/index.ts login-auto

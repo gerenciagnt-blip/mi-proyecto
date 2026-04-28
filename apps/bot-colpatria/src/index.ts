@@ -5,6 +5,8 @@ import { testLoginCommand } from './commands/test-login.js';
 import { testIngresoCommand } from './commands/test-ingreso.js';
 import { procesarCommand } from './commands/procesar.js';
 import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
+import { loginAutoCommand } from './commands/login-auto.js';
+import { logoutAutoCommand } from './commands/logout-auto.js';
 
 const program = new Command();
 
@@ -110,6 +112,33 @@ program
   .action(async (options: { dias?: string; dryRun?: boolean }) => {
     const dias = parseInt(options.dias ?? '3', 10) || 3;
     const code = await limpiarPdfsCommand({ dias, dryRun: options.dryRun });
+    process.exit(code);
+  });
+
+/**
+ * Login automático en cron — Lun–Sáb 7:00 AM Colombia.
+ * Itera todas las empresas con `colpatriaActivo=true` y selectores
+ * completos, hace login fresco y guarda el storageState en
+ * `ColpatriaSesion`. Sin args.
+ */
+program
+  .command('login-auto')
+  .description('Login automático de TODAS las empresas Colpatria activas (cron Lun–Sáb 7 AM)')
+  .action(async () => {
+    const code = await loginAutoCommand();
+    process.exit(code);
+  });
+
+/**
+ * Cierre automático en cron — Lun–Sáb 9:00 PM Colombia.
+ * Borra el storageState cifrado de todas las sesiones activas. No
+ * navega al portal. Sin args.
+ */
+program
+  .command('logout-auto')
+  .description('Cierre automático de sesiones cacheadas Colpatria (cron Lun–Sáb 9 PM)')
+  .action(async () => {
+    const code = await logoutAutoCommand();
     process.exit(code);
   });
 

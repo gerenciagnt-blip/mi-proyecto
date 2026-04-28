@@ -1,0 +1,74 @@
+name: Bot Colpatria — cierre automático Lun–Sáb 9 PM
+
+# Cierre de todas las sesiones cacheadas al final de la jornada.
+# No navega al portal AXA — solo borra el storageState cifrado en
+# `ColpatriaSesion`. La próxima ejecución del bot (o el login-auto
+# de las 7 AM) hará login fresco.
+#
+# Beneficio: las credenciales se prueban diariamente y cualquier
+# cuenta bloqueada/cambiada se detecta temprano.
+#
+# Colombia = UTC-5, sin DST → 9:00 PM Col = 02:00 UTC del día SIGUIENTE.
+# Por eso el cron usa días 0 (domingo) y 2-6 (martes-sábado):
+#   - Lunes 9 PM Col → Martes 02:00 UTC (día 2)
+#   - Martes 9 PM Col → Miércoles 02:00 UTC (día 3)
+#   - …
+#   - Sábado 9 PM Col → Domingo 02:00 UTC (día 0)
+
+on:
+  schedule:
+    - cron: '0 2 * * 0,2,3,4,5,6'
+  workflow_dispatch:
+
+jobs:
+  logout-auto:
+    name: Cierre de sesiones cacheadas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5 # operación trivial, solo DELETEs en BD
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL OK"
+
+      - name: Cierre automático
+        working-directory: apps/bot-colpatria
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          pnpm exec tsx src/index.ts logout-auto
