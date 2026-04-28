@@ -1,9 +1,15 @@
 /**
  * Comando `pagosimple:validar-subtipos` — Test E2E de la validación de
- * subtipos de cotizante. Genera el plano sintético tipo E (6 líneas, una
- * por subtipo candidato), lo envía a PagoSimple `POST /payroll/validate`
- * e imprime el response completo + el plano generado para que el operador
- * pueda diagnosticar manualmente.
+ * subtipos de cotizante. Envía TRES planos sintéticos tipo E a PagoSimple
+ * `POST /payroll/validate` (uno por grupo de subtipos) e imprime el response
+ * de cada uno + el análisis consolidado.
+ *
+ *   Plano A: subtipos 01, 03, 04, 12
+ *   Plano B: subtipo 05
+ *   Plano C: subtipo 06
+ *
+ * En todos los planos los campos relacionados con AFP/pensión van vacíos
+ * o en cero (estamos probando OMISIÓN de pensión).
  *
  * Uso:
  *   pnpm cli pagosimple:validar-subtipos -- --doc 12345
@@ -12,14 +18,9 @@
  * Flags:
  *   --doc <numero>   Número de documento del cotizante (obligatorio).
  *   --tipo <CC|CE|TI|RC|PAS|NIP>  Tipo de documento (default CC).
- *   --raw            Imprime el plano en texto plano además del JSON.
+ *   --raw            Imprime cada plano en texto plano además del JSON.
  *
- * Notas:
- *   - Replica la lógica de `validarSubtiposCotizanteAction` del web app
- *     pero en CLI auto-contenido (sin importar de apps/web). La generación
- *     del plano duplica las primitivas de `lib/planos/format.ts` por la
- *     misma razón.
- *   - Read-only: no toca BD ni PagoSimple en escritura.
+ * Read-only: no toca BD ni PagoSimple en escritura.
  */
 
 import { prisma } from '@pila/db';
@@ -60,9 +61,33 @@ function loadConfig(): Config | { missing: string[] } {
   };
 }
 
-// ============== Subtipos ==============
+// ============== Subtipos / grupos ==============
 
-const SUBTIPOS = ['01', '03', '04', '05', '06', '12'] as const;
+/** Grupos a enviar como planos separados. */
+const GRUPOS_SUBTIPOS: readonly (readonly string[])[] = [
+  ['01', '03', '04', '12'],
+  ['05'],
+  ['06'],
+] as const;
+
+/** Lista plana de todos los subtipos consultados. */
+const SUBTIPOS = GRUPOS_SUBTIPOS.flatMap((g) => [...g]);
+
+/**
+ * Regexes UGPP que identifican subtipo NO permitido para el cotizante.
+ *  A) "El cotizante no puede hacer uso del subtipo de cotizante X."
+ *  B) "Para el uso del subtipo de cotizante X el afiliado debe estar inscrito…"
+ */
+const RE_NO_PERMITIDO_A = /no puede hacer uso del subtipo de cotizante\s+(\d+)/i;
+const RE_NO_PERMITIDO_B = /Para el uso del subtipo de cotizante\s+(\d+)/i;
+
+function extraerSubtipoNoPermitido(description: string): string | null {
+  const a = RE_NO_PERMITIDO_A.exec(description);
+  if (a && a[1]) return a[1].padStart(2, '0');
+  const b = RE_NO_PERMITIDO_B.exec(description);
+  if (b && b[1]) return b[1].padStart(2, '0');
+  return null;
+}
 
 // ============== Primitivas de formato PILA ==============
 
@@ -198,7 +223,6 @@ const COTIZANTE_LEN = 676;
 const PADDING_OPERADOR_LEN = 17;
 const LINEA_LEN = COTIZANTE_LEN + PADDING_OPERADOR_LEN; // 693
 
-const TARIFA_PENSION = 16;
 const TARIFA_SALUD = 12.5;
 const TARIFA_CCF = 4;
 const TARIFA_SENA = 2;
@@ -226,6 +250,7 @@ type Cotizante = {
   codDepto: string;
   codMuni: string;
   codEps: string;
+  /** No se usa en el plano (omisión de pensión). Se mantiene por debug. */
   codAfp: string;
   codCcf: string;
 };
@@ -289,7 +314,7 @@ function construirLinea(opts: {
   const ibcBase = Math.ceil((SMLV / 30) * DIAS);
   const horas = DIAS * 8;
   const exonera = empresa.exoneraLey1607 && ibcBase < 10 * SMLV ? 'S' : 'N';
-  const valorPension = Math.round(ibcBase * (TARIFA_PENSION / 100));
+  // PENSIÓN va totalmente en CERO (omisión).
   const valorSalud = exonera === 'S' ? 0 : Math.round(ibcBase * (TARIFA_SALUD / 100));
   const valorArl = Math.round(ibcBase * (TARIFA_ARL_NIVEL_I / 100));
   const valorCcf = Math.round(ibcBase * (TARIFA_CCF / 100));
@@ -315,26 +340,26 @@ function construirLinea(opts: {
   parts.push(' '); // RET
   for (let i = 0; i < 13; i++) parts.push(' '); // 17..29
   parts.push(padNum(0, 2));
-  parts.push(padAlpha(cotizante.codAfp, 6));
+  parts.push(blank(6)); // 31 · AFP — VACÍO (omisión de pensión)
   parts.push(blank(6));
   parts.push(padAlpha(cotizante.codEps, 6));
   parts.push(blank(6));
   parts.push(padAlpha(cotizante.codCcf, 6));
-  parts.push(padNum(DIAS, 2));
+  parts.push(padNum(0, 2)); // 36 · Días pensión = 0 (omisión)
   parts.push(padNum(DIAS, 2));
   parts.push(padNum(DIAS, 2));
   parts.push(padNum(DIAS, 2));
   parts.push(padMoney(SMLV, 9));
   parts.push('F');
+  parts.push(padMoney(0, 9)); // 42 · IBC pensión = 0 (omisión)
   parts.push(padMoney(ibcBase, 9));
   parts.push(padMoney(ibcBase, 9));
   parts.push(padMoney(ibcBase, 9));
-  parts.push(padMoney(ibcBase, 9));
-  parts.push(padTarifa(TARIFA_PENSION, 7));
-  parts.push(padMoney(valorPension, 9));
+  parts.push(padTarifa(0, 7)); // 46 · Tarifa pensión = 0
+  parts.push(padMoney(0, 9)); // 47 · Cotización pensión = 0
   parts.push(padMoney(0, 9));
   parts.push(padMoney(0, 9));
-  parts.push(padMoney(valorPension, 9));
+  parts.push(padMoney(0, 9)); // 50 · Total cotización pensión = 0
   parts.push(padMoney(0, 9));
   parts.push(padMoney(0, 9));
   parts.push(padMoney(0, 9));
@@ -441,6 +466,145 @@ async function consultarBduaRuaf(
   }
 }
 
+// ============== Envío de UN plano ==============
+
+type PlanoResponse = {
+  success?: boolean;
+  code?: number;
+  message?: string;
+  description?: string;
+  data?: {
+    validation_status?: string;
+    payroll_validations?: Array<{
+      payroll_code?: number;
+      payroll_number?: number;
+      number_errors_contributor?: number;
+      number_errors_company?: number;
+      number_warnings?: number;
+      detail_errors_contributor?: Array<{
+        description: string;
+        row: string;
+        identification?: string;
+      }>;
+      detail_errors_company?: Array<{ description: string; row: string }>;
+      detail_warnings?: Array<{ description: string; row: string }>;
+    }>;
+  };
+};
+
+async function enviarPlano(args: {
+  cfg: Config;
+  loginData: LoginData;
+  authToken: string;
+  empresa: EmpresaHost;
+  cotizante: Cotizante;
+  subtipos: readonly string[];
+  periodo: { anio: number; mes: number };
+  periodoSalud: { anio: number; mes: number };
+  fechaIngreso: Date;
+  raw: boolean;
+}): Promise<{ noPermitidos: Set<string>; parsed: PlanoResponse }> {
+  const {
+    cfg,
+    loginData,
+    authToken,
+    empresa,
+    cotizante,
+    subtipos,
+    periodo,
+    periodoSalud,
+    fechaIngreso,
+    raw,
+  } = args;
+  const tag = subtipos.join('-');
+  console.log(`\n────────  Plano ${tag}  ────────`);
+
+  const encabezado = construirEncabezado({
+    empresa,
+    sucursalCodigo: 'PRUEBA',
+    sucursalNombre: 'Validacion subtipos',
+    totalEmpleados: subtipos.length,
+    totalNomina: SMLV * subtipos.length,
+    periodoOtros: periodo,
+    periodoSalud,
+  });
+  const lineas = subtipos.map((s, idx) =>
+    construirLinea({
+      secuencia: idx + 1,
+      empresa,
+      cotizante,
+      subtipo: s,
+      fechaIngreso,
+    }),
+  );
+  const contenido = [encabezado, ...lineas].join('\r\n') + '\r\n';
+  const filename = `validacion-subtipos-${cotizante.numeroDocumento}-${tag}.txt`;
+  console.log(`   ✅ ${subtipos.length} líneas · ${contenido.length} bytes · ${filename}`);
+
+  if (raw) {
+    console.log('\n📄 Plano generado:');
+    console.log('---');
+    console.log(contenido);
+    console.log('---');
+  }
+
+  console.log('\n→ POST /payroll/validate');
+  const fd = new FormData();
+  fd.append(
+    'payroll_file',
+    new Blob([new Uint8Array(Buffer.from(contenido, 'utf-8'))], { type: 'text/plain' }),
+    filename,
+  );
+  fd.append(
+    'execution_params',
+    JSON.stringify({ is_UGPP: false, is_novelties_planillaN: false, file_type: 'I' }),
+  );
+
+  const t1 = Date.now();
+  const resp = await fetch(`${cfg.baseUrl}/payroll/validate`, {
+    method: 'POST',
+    headers: {
+      nit: cfg.masterNit,
+      token: loginData.token,
+      session_token: loginData.session_token,
+      auth_token: authToken,
+    },
+    body: fd,
+  });
+  const rawJson = await resp.text();
+  const dt = Date.now() - t1;
+  console.log(`   ← HTTP ${resp.status} · ${dt}ms · ${rawJson.length} bytes`);
+
+  let parsed: PlanoResponse;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    console.error('   ❌ Respuesta no-JSON:');
+    console.error(rawJson.slice(0, 500));
+    return { noPermitidos: new Set(), parsed: {} };
+  }
+
+  console.log('\n📦 Response:');
+  console.log(JSON.stringify(parsed, null, 2));
+
+  const noPermitidos = new Set<string>();
+  if (parsed.success && parsed.data) {
+    const first = parsed.data.payroll_validations?.[0];
+    if (first) {
+      const todos = [
+        ...(first.detail_errors_contributor ?? []),
+        ...(first.detail_errors_company ?? []),
+        ...(first.detail_warnings ?? []),
+      ];
+      for (const e of todos) {
+        const num = extraerSubtipoNoPermitido(e.description);
+        if (num) noPermitidos.add(num);
+      }
+    }
+  }
+  return { noPermitidos, parsed };
+}
+
 // ============== Comando ==============
 
 export async function pagosimpleValidarSubtiposCommand(options: {
@@ -459,9 +623,9 @@ export async function pagosimpleValidarSubtiposCommand(options: {
     process.exit(1);
   }
 
-  console.log('\n🧪 PagoSimple · validar subtipos\n');
+  console.log('\n🧪 PagoSimple · validar subtipos (3 planos)\n');
   console.log(`   Documento: ${args.tipo} ${args.doc}`);
-  console.log(`   Subtipos:  ${SUBTIPOS.join(' · ')}`);
+  console.log(`   Grupos:    ${GRUPOS_SUBTIPOS.map((g) => g.join('-')).join(' | ')}`);
 
   const cfgOrErr = loadConfig();
   if ('missing' in cfgOrErr) {
@@ -517,14 +681,13 @@ export async function pagosimpleValidarSubtiposCommand(options: {
   if (!codAfp) {
     const a = await resolverEntidadDefault('AFP');
     codAfp = a.codigo;
-    console.log(`     ↳ AFP default: ${a.nombre} (${codAfp})`);
+    console.log(`     ↳ AFP (debug, no se inserta): ${a.nombre} (${codAfp})`);
   }
   const c = await resolverEntidadDefault('CCF');
   codCcf = c.codigo;
   console.log(`     ↳ CCF default: ${c.nombre} (${codCcf})`);
 
-  // 4) Construcción del plano sintético
-  console.log('\n→ Construyendo plano E sintético (6 líneas)…');
+  // 4) Construcción de objetos compartidos
   const now = new Date();
   const periodo = { anio: now.getUTCFullYear(), mes: now.getUTCMonth() + 1 };
   const periodoSalud =
@@ -555,36 +718,7 @@ export async function pagosimpleValidarSubtiposCommand(options: {
     codCcf,
   };
 
-  const encabezado = construirEncabezado({
-    empresa: empresaHost,
-    sucursalCodigo: 'PRUEBA',
-    sucursalNombre: 'Validacion subtipos',
-    totalEmpleados: SUBTIPOS.length,
-    totalNomina: SMLV * SUBTIPOS.length,
-    periodoOtros: periodo,
-    periodoSalud,
-  });
-  const lineas = SUBTIPOS.map((s, idx) =>
-    construirLinea({
-      secuencia: idx + 1,
-      empresa: empresaHost,
-      cotizante,
-      subtipo: s,
-      fechaIngreso,
-    }),
-  );
-  const contenido = [encabezado, ...lineas].join('\r\n') + '\r\n';
-  const filename = `validacion-subtipos-${args.doc}.txt`;
-  console.log(`   ✅ ${SUBTIPOS.length} líneas · ${contenido.length} bytes · ${filename}`);
-
-  if (args.raw) {
-    console.log('\n📄 Plano generado:');
-    console.log('---');
-    console.log(contenido);
-    console.log('---');
-  }
-
-  // 5) Auth_token de la empresa
+  // 5) Auth_token de la empresa (1 sola vez para los 3 planos)
   console.log('\n→ GET /auth/{contribId}/NI/{nit}');
   const authToken = await getAuthToken(
     cfg,
@@ -598,111 +732,44 @@ export async function pagosimpleValidarSubtiposCommand(options: {
   });
   console.log(`   ✅ auth_token: ${authToken.slice(0, 16)}…`);
 
-  // 6) POST /payroll/validate
-  console.log('\n→ POST /payroll/validate (multipart, file_type=I, header E)');
-  const fd = new FormData();
-  fd.append(
-    'payroll_file',
-    new Blob([new Uint8Array(Buffer.from(contenido, 'utf-8'))], { type: 'text/plain' }),
-    filename,
-  );
-  fd.append(
-    'execution_params',
-    JSON.stringify({ is_UGPP: false, is_novelties_planillaN: false, file_type: 'I' }),
+  // 6) Enviar 3 planos en paralelo
+  const resultados = await Promise.all(
+    GRUPOS_SUBTIPOS.map((subtipos) =>
+      enviarPlano({
+        cfg,
+        loginData,
+        authToken,
+        empresa: empresaHost,
+        cotizante,
+        subtipos,
+        periodo,
+        periodoSalud,
+        fechaIngreso,
+        raw: args.raw,
+      }),
+    ),
   );
 
-  const t1 = Date.now();
-  const resp = await fetch(`${cfg.baseUrl}/payroll/validate`, {
-    method: 'POST',
-    headers: {
-      nit: cfg.masterNit,
-      token: loginData.token,
-      session_token: loginData.session_token,
-      auth_token: authToken,
-    },
-    body: fd,
-  });
-  const rawJson = await resp.text();
-  const dt = Date.now() - t1;
-  console.log(`   ← HTTP ${resp.status} · ${dt}ms · ${rawJson.length} bytes`);
-
-  let parsed: {
-    success?: boolean;
-    code?: number;
-    message?: string;
-    description?: string;
-    data?: {
-      validation_status?: string;
-      payroll_validations?: Array<{
-        payroll_code?: number;
-        payroll_number?: number;
-        number_errors_contributor?: number;
-        number_errors_company?: number;
-        number_warnings?: number;
-        detail_errors_contributor?: Array<{
-          description: string;
-          row: string;
-          identification?: string;
-        }>;
-        detail_errors_company?: Array<{ description: string; row: string }>;
-        detail_warnings?: Array<{ description: string; row: string }>;
-      }>;
-    };
-  };
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch {
-    console.error('\n❌ Respuesta no-JSON:');
-    console.error(rawJson.slice(0, 500));
-    await prisma.$disconnect();
-    process.exit(1);
+  // 7) Consolidación
+  const noPermitidosTotal = new Set<string>();
+  for (const r of resultados) {
+    for (const s of r.noPermitidos) noPermitidosTotal.add(s);
   }
 
-  console.log('\n📦 Response (parseado):');
-  console.log(JSON.stringify(parsed, null, 2));
+  console.log('\n════════  Análisis consolidado  ════════');
+  const tableRows = SUBTIPOS.map((s) => ({
+    subtipo: s,
+    estado: noPermitidosTotal.has(s) ? '❌ no permitido' : '✅ permitido',
+  }));
+  console.table(tableRows);
 
-  // 7) Análisis: subtipos válidos vs rechazados
-  if (parsed.success && parsed.data) {
-    const first = parsed.data.payroll_validations?.[0];
-    console.log('\n🔎 Análisis de subtipos:');
-    if (!first) {
-      console.log('   ⚠  PagoSimple no devolvió payroll_validations.');
-    } else {
-      const errs = first.detail_errors_contributor ?? [];
-      const erroresPorSubtipo: Record<string, string[]> = {};
-      for (const s of SUBTIPOS) erroresPorSubtipo[s] = [];
-      for (const e of errs) {
-        const row = Number(e.row);
-        if (!Number.isFinite(row) || row < 1 || row > SUBTIPOS.length) continue;
-        const subtipo = SUBTIPOS[row - 1];
-        if (subtipo) erroresPorSubtipo[subtipo]!.push(e.description);
-      }
-      const tableRows: Array<{ subtipo: string; estado: string; razon: string }> = [];
-      for (const s of SUBTIPOS) {
-        const errors = erroresPorSubtipo[s] ?? [];
-        tableRows.push({
-          subtipo: s,
-          estado: errors.length === 0 ? '✅ válido' : '❌ rechazado',
-          razon: errors[0] ?? '—',
-        });
-      }
-      console.table(tableRows);
-
-      const validos = tableRows.filter((r) => r.estado.startsWith('✅')).map((r) => r.subtipo);
-      console.log(
-        `\n   Subtipos válidos: ${validos.length > 0 ? validos.join(' · ') : '(ninguno)'}`,
-      );
-      console.log(`   Empresa host:     ${empresa.nombre}`);
-      console.log(`   Fuente entidades: ${fuente}`);
-
-      if (first.number_errors_company && first.number_errors_company > 0) {
-        console.log(`\n⚠  Plano con errores a nivel encabezado (${first.number_errors_company}):`);
-        for (const e of first.detail_errors_company ?? []) {
-          console.log(`   - ${e.description}`);
-        }
-      }
-    }
-  }
+  const permitidos = SUBTIPOS.filter((s) => !noPermitidosTotal.has(s));
+  console.log(
+    `\n   Subtipos permitidos: ${permitidos.length > 0 ? permitidos.join(' · ') : '(ninguno)'}`,
+  );
+  console.log(`   Empresa host:     ${empresa.nombre}`);
+  console.log(`   Fuente entidades: ${fuente}`);
+  console.log(`   Planos enviados:  ${GRUPOS_SUBTIPOS.length}`);
 
   await prisma.$disconnect();
 }

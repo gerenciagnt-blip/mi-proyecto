@@ -8,15 +8,18 @@
  * puede aceptar o rechazar dependiendo de los registros del cotizante
  * en BDUA/RUAF.
  *
- * Estrategia:
- *   1. Generamos un plano sintético TIPO E con N líneas (una por
- *      cada subtipo a probar) — mismo cotizante en todas, mismo
- *      tipoCotizante=01, subtipo varía.
- *   2. Lo enviamos a `POST /payroll/validate` de PagoSimple.
- *   3. Cada línea recibe su propia validación. Cuando la línea NO
- *      tiene errores específicos del subtipo, ese subtipo es VÁLIDO
- *      para esta persona.
- *   4. Devolvemos las dos listas: válidos y rechazados.
+ * Estrategia (3 planos en paralelo):
+ *   1. Enviamos TRES planos sintéticos por separado a `POST /payroll/validate`:
+ *        Plano A: subtipos 01-03-04-12
+ *        Plano B: subtipo 05
+ *        Plano C: subtipo 06
+ *      La separación evita que UGPP cruce inconsistencias entre subtipos
+ *      mutuamente excluyentes (ej: 05 vs 06).
+ *   2. En todos los planos los campos relacionados con AFP/pensión van
+ *      vacíos o en cero (omisión real de pensión).
+ *   3. Para cada plano buscamos los mensajes UGPP que indican subtipo
+ *      no permitido y marcamos el subtipo correspondiente.
+ *   4. Consolidamos: subtipos válidos = los que ningún plano rechazó.
  *
  * NO persistimos el plano ni la respuesta. Es totalmente ephemeral —
  * solo informativo para el usuario en el form de afiliación.
@@ -34,7 +37,6 @@ import {
 } from '@/lib/planos/format';
 import { ENCABEZADO_LEN, LINEA_LEN } from '@/lib/planos/generar';
 import { calcularDV } from '@/lib/nit';
-import { pagosimpleRequest } from './client';
 import { getFullAuthHeaders } from './auth';
 import { requirePagosimpleConfig } from './config';
 import { createLogger } from '@/lib/logger';
@@ -42,7 +44,18 @@ import type { PayrollValidateResponse, PayrollValidationDetailItem } from './typ
 
 const log = createLogger('pagosimple:validar-subtipos');
 
-/** Subtipos de cotizante (PILA) candidatos a probar para omisión de pensión. */
+/**
+ * Grupos de subtipos a validar — cada grupo se envía como plano separado.
+ * La separación es necesaria porque UGPP rechaza combinaciones de subtipos
+ * mutuamente excluyentes en el mismo plano (ej: 05 y 06).
+ */
+export const GRUPOS_OMISION_PENSION: readonly (readonly string[])[] = [
+  ['01', '03', '04', '12'],
+  ['05'],
+  ['06'],
+] as const;
+
+/** Subtipos de cotizante (PILA) candidatos a probar para omisión de pensión (flat). */
 export const SUBTIPOS_OMISION_PENSION: readonly string[] = [
   '01',
   '03',
@@ -87,7 +100,11 @@ export type CotizantePlanoSintetico = {
   codMuni: string;
   /** Códigos PILA de las administradoras a las que se "afilia" el
    *  cotizante en este plano sintético. Pueden venir de BDUA/RUAF o
-   *  de defaults del sistema. */
+   *  de defaults del sistema.
+   *
+   *  IMPORTANTE: el AFP NO se inserta en el plano (omisión de pensión —
+   *  este campo se mantiene en la API por compat / claridad pero se
+   *  ignora en la generación). */
   codEps: string;
   codAfp: string;
   codCcf: string;
@@ -97,7 +114,8 @@ export type ValidarSubtiposInput = {
   empresa: EmpresaPlanoSintetico;
   sucursal: SucursalPlanoSintetico;
   cotizante: CotizantePlanoSintetico;
-  /** Subtipos a probar — default = SUBTIPOS_OMISION_PENSION. */
+  /** Subtipos a probar — si viene, se usa como UN solo plano; si no,
+   *  se aplican los GRUPOS_OMISION_PENSION (3 planos). */
   subtipos?: readonly string[];
   /** Período YYYY-MM (default mes actual). */
   periodo?: { anio: number; mes: number };
@@ -105,30 +123,41 @@ export type ValidarSubtiposInput = {
   smlv?: number;
 };
 
-export type SubtipoValidationResult = {
-  subtipo: string;
-  /** `true` si esta línea del plano pasó sin errores → cotizante PUEDE
-   *  usar este subtipo. */
-  valido: boolean;
-  /** Si `valido=false`, mensajes de error que PagoSimple devolvió para
-   *  esta línea específica. */
-  errores: string[];
-};
-
 export type ValidarSubtiposResult =
   | {
       ok: true;
+      /** Subtipos PILA que el cotizante PUEDE usar (los que NO aparecen
+       *  en ningún mensaje UGPP de subtipo no permitido). */
       validos: string[];
-      rechazados: SubtipoValidationResult[];
-      detalle: SubtipoValidationResult[];
     }
   | { ok: false; error: string; code?: number };
 
+/**
+ * Regexes que detectan los mensajes UGPP que indican que un subtipo NO
+ * está permitido para el cotizante. Conocidos:
+ *
+ *  A) "El cotizante no puede hacer uso del subtipo de cotizante 12.
+ *      Puede dirigirse a los canales de atención dispuestos por la UGPP
+ *      o al correo contactenos@ugpp.gov.co."
+ *
+ *  B) "Para el uso del subtipo de cotizante 1 el afiliado debe estar
+ *      inscrito dentro del Reporte de Información de Personas Pensionadas..."
+ *
+ * Ambos extraen el número del subtipo en el grupo 1.
+ */
+const RE_SUBTIPO_NO_PERMITIDO_A = /no puede hacer uso del subtipo de cotizante\s+(\d+)/i;
+const RE_SUBTIPO_NO_PERMITIDO_B = /Para el uso del subtipo de cotizante\s+(\d+)/i;
+
+function extraerSubtipoNoPermitido(description: string): string | null {
+  const a = RE_SUBTIPO_NO_PERMITIDO_A.exec(description);
+  if (a && a[1]) return a[1].padStart(2, '0');
+  const b = RE_SUBTIPO_NO_PERMITIDO_B.exec(description);
+  if (b && b[1]) return b[1].padStart(2, '0');
+  return null;
+}
+
 // ============== Constantes del plano sintético ==============
 
-/** Tarifa pensión estándar 2024+ (16% empleador 12 + 4 cotizante; en
- *  PILA se reporta como 16%). Default razonable. */
-const TARIFA_PENSION = 16;
 /** Tarifa salud estándar (12.5%). */
 const TARIFA_SALUD = 12.5;
 /** Tarifa CCF estándar (4%). */
@@ -207,8 +236,9 @@ function construirLineaSintetica(opts: {
   // Exoneración Ley 1607 — aplica si la empresa exonera Y el IBC < 10 SMLV.
   const exonera = empresa.exoneraLey1607 && ibcBase < 10 * smlv ? 'S' : 'N';
 
-  // Valores por subsistema (cálculos básicos para que el plano cuadre).
-  const valorPension = Math.round(ibcBase * (TARIFA_PENSION / 100));
+  // Valores por subsistema. PENSIÓN va totalmente en CERO porque estamos
+  // probando OMISIÓN de pensión — la idea es ver qué subtipos acepta
+  // UGPP sin reportar AFP.
   const valorSalud = exonera === 'S' ? 0 : Math.round(ibcBase * (TARIFA_SALUD / 100));
   const valorArl = Math.round(ibcBase * (TARIFA_ARL_NIVEL_I / 100));
   const valorCcf = Math.round(ibcBase * (TARIFA_CCF / 100));
@@ -252,26 +282,26 @@ function construirLineaSintetica(opts: {
   parts.push(' '); // 28 · AVP
   parts.push(' '); // 29 · VCT
   parts.push(padNum(0, 2)); // 30
-  parts.push(padAlpha(cotizante.codAfp, 6)); // 31 · AFP
+  parts.push(blank(6)); // 31 · AFP — VACÍO para omisión de pensión
   parts.push(blank(6)); // 32
   parts.push(padAlpha(cotizante.codEps, 6)); // 33 · EPS
   parts.push(blank(6)); // 34
   parts.push(padAlpha(cotizante.codCcf, 6)); // 35 · CCF
-  parts.push(padNum(diasCotizados, 2)); // 36 · Días pensión
+  parts.push(padNum(0, 2)); // 36 · Días pensión = 0 (omisión)
   parts.push(padNum(diasCotizados, 2)); // 37 · Días salud
   parts.push(padNum(diasCotizados, 2)); // 38 · Días ARL
   parts.push(padNum(diasCotizados, 2)); // 39 · Días CCF
   parts.push(padMoney(salario, 9)); // 40 · Salario base
   parts.push('F'); // 41 · Salario integral (F = no integral)
-  parts.push(padMoney(ibcBase, 9)); // 42 · IBC pensión
+  parts.push(padMoney(0, 9)); // 42 · IBC pensión = 0 (omisión)
   parts.push(padMoney(ibcBase, 9)); // 43 · IBC salud
   parts.push(padMoney(ibcBase, 9)); // 44 · IBC ARL
   parts.push(padMoney(ibcBase, 9)); // 45 · IBC CCF
-  parts.push(padTarifa(TARIFA_PENSION, 7)); // 46
-  parts.push(padMoney(valorPension, 9)); // 47
+  parts.push(padTarifa(0, 7)); // 46 · Tarifa pensión = 0
+  parts.push(padMoney(0, 9)); // 47 · Cotización pensión = 0
   parts.push(padMoney(0, 9)); // 48
   parts.push(padMoney(0, 9)); // 49
-  parts.push(padMoney(valorPension, 9)); // 50 · Total cotización pensión
+  parts.push(padMoney(0, 9)); // 50 · Total cotización pensión = 0
   parts.push(padMoney(0, 9)); // 51 · FSP
   parts.push(padMoney(0, 9)); // 52 · Subsistencia
   parts.push(padMoney(0, 9)); // 53
@@ -371,35 +401,33 @@ export function generarPlanoValidacionSubtipos(input: ValidarSubtiposInput): {
 
   const contenido = [encabezado, ...lineas].join('\r\n') + '\r\n';
   const stamp = `${periodo.anio}${String(periodo.mes).padStart(2, '0')}`;
-  const filename = `validacion-subtipos-${input.cotizante.numeroDocumento}-${stamp}.txt`;
+  const subtipoTag = subtipos.join('-');
+  const filename = `validacion-subtipos-${input.cotizante.numeroDocumento}-${subtipoTag}-${stamp}.txt`;
 
   return { contenido, filename };
 }
 
 // ============== Llamada a PagoSimple + parse de respuesta ==============
 
+type PlanoEnvioResult =
+  | { ok: true; noPermitidos: Set<string> }
+  | { ok: false; error: string; code?: number };
+
 /**
- * Ejecuta la validación de los subtipos contra PagoSimple. Construye el
- * plano sintético, lo sube vía POST /payroll/validate (file_type=I), y
- * mapea la respuesta de errores → subtipos válidos / rechazados.
- *
- * Reglas de mapeo de errores → subtipo:
- *   - PagoSimple devuelve `detail_errors_contributor` con un campo
- *     `row` indicando la línea (1-based, sin contar encabezado).
- *   - Si `row=N` está en errores → subtipo de la línea N es rechazado.
- *   - Las líneas SIN errores son las que validaron correctamente.
- *   - Errores a nivel COMPANY (encabezado) hacen que el plano completo
- *     falle — ese es un fallo distinto; lo reportamos en `error`.
+ * Envía UN plano sintético (con uno o varios subtipos) a PagoSimple y
+ * extrae los subtipos no permitidos según los regex UGPP.
  */
-export async function validarSubtiposCotizanteEnPagosimple(
-  input: ValidarSubtiposInput,
-): Promise<ValidarSubtiposResult> {
-  const subtipos = input.subtipos ?? SUBTIPOS_OMISION_PENSION;
-  const cfg = requirePagosimpleConfig();
+async function enviarPlanoYExtraerNoPermitidos(args: {
+  input: ValidarSubtiposInput;
+  subtipos: readonly string[];
+  headers: Record<string, string>;
+  baseUrl: string;
+}): Promise<PlanoEnvioResult> {
+  const { input, subtipos, headers, baseUrl } = args;
 
   let plano: { contenido: string; filename: string };
   try {
-    plano = generarPlanoValidacionSubtipos(input);
+    plano = generarPlanoValidacionSubtipos({ ...input, subtipos });
   } catch (e) {
     return {
       ok: false,
@@ -407,20 +435,7 @@ export async function validarSubtiposCotizanteEnPagosimple(
     };
   }
 
-  // Auth con la empresa "host" — necesita pagosimpleContributorId válido.
-  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
-  try {
-    headers = await getFullAuthHeaders({
-      id: input.empresa.pagosimpleContributorId,
-      documentType: 'NI',
-      document: input.empresa.nit,
-    });
-  } catch (authErr) {
-    const msg = authErr instanceof Error ? authErr.message : String(authErr);
-    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
-  }
-
-  const url = `${cfg.baseUrl}/payroll/validate`;
+  const url = `${baseUrl}/payroll/validate`;
   const fd = new FormData();
   fd.append(
     'payroll_file',
@@ -471,7 +486,10 @@ export async function validarSubtiposCotizanteEnPagosimple(
     };
   }
   if (!json.success || !json.data) {
-    log.warn({ code: json.code, msg: json.message }, '/payroll/validate respondió success=false');
+    log.warn(
+      { code: json.code, msg: json.message, subtipos },
+      '/payroll/validate respondió success=false',
+    );
     return {
       ok: false,
       error: json.message ?? `PagoSimple respondió code=${json.code}`,
@@ -485,49 +503,94 @@ export async function validarSubtiposCotizanteEnPagosimple(
     return { ok: false, error: 'PagoSimple no devolvió payroll_validations.' };
   }
 
-  // Mapear errores por subtipo.
-  // Las filas en PILA — el operador puede usar `row` (1-based desde la
-  // primera línea cotizante = sec 1) o `identification` (que contiene
-  // el documento). Como TODAS las líneas tienen el mismo documento,
-  // discriminamos por `row` o por `initial_position`/`final_position`.
-  // La forma más robusta es por `row` cuando viene; si no, por orden.
-  const erroresPorSubtipo: Record<string, string[]> = {};
-  for (const s of subtipos) erroresPorSubtipo[s] = [];
-
+  // Buscamos en TODOS los errores los mensajes UGPP de subtipo no
+  // permitido. Cualquier otro error es ruido del plano sintético.
   const todosErrores: PayrollValidationDetailItem[] = [
     ...(first.detail_errors_contributor ?? []),
-    // Los errores company los reportamos aparte si los hay.
+    ...(first.detail_errors_company ?? []),
+    ...(first.detail_warnings ?? []),
   ];
 
+  const noPermitidos = new Set<string>();
   for (const err of todosErrores) {
-    const rowNum = Number(err.row);
-    if (!Number.isFinite(rowNum) || rowNum < 1 || rowNum > subtipos.length) {
-      continue; // No podemos mapearlo — lo ignoramos pero queda visible en company errors.
-    }
-    const subtipo = subtipos[rowNum - 1];
-    if (subtipo) {
-      erroresPorSubtipo[subtipo]!.push(err.description);
+    const num = extraerSubtipoNoPermitido(err.description);
+    if (num) noPermitidos.add(num);
+  }
+
+  return { ok: true, noPermitidos };
+}
+
+/**
+ * Ejecuta la validación de subtipos contra PagoSimple usando 3 planos
+ * separados (o 1 si el caller pasó `subtipos` explícitos).
+ *
+ *   - Si `input.subtipos` viene definido: se envía UN solo plano con
+ *     esos subtipos (modo legacy/testing).
+ *   - Si no viene: se envían los GRUPOS_OMISION_PENSION (3 planos) en
+ *     paralelo y se consolidan los resultados.
+ */
+export async function validarSubtiposCotizanteEnPagosimple(
+  input: ValidarSubtiposInput,
+): Promise<ValidarSubtiposResult> {
+  const cfg = requirePagosimpleConfig();
+
+  // Auth UNA sola vez — los 3 planos comparten el auth_token.
+  let headers: Awaited<ReturnType<typeof getFullAuthHeaders>>;
+  try {
+    headers = await getFullAuthHeaders({
+      id: input.empresa.pagosimpleContributorId,
+      documentType: 'NI',
+      document: input.empresa.nit,
+    });
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    return { ok: false, error: `Auth PagoSimple falló: ${msg}` };
+  }
+
+  // Determinar grupos de subtipos a enviar.
+  const grupos: readonly (readonly string[])[] = input.subtipos
+    ? [input.subtipos]
+    : GRUPOS_OMISION_PENSION;
+
+  // Enviar todos los grupos en paralelo (comparten auth).
+  const resultados = await Promise.all(
+    grupos.map((subtipos) =>
+      enviarPlanoYExtraerNoPermitidos({
+        input,
+        subtipos,
+        headers,
+        baseUrl: cfg.baseUrl,
+      }),
+    ),
+  );
+
+  // Si CUALQUIER plano falló de manera fatal (no solo subtipo rechazado),
+  // devolvemos el primer error — la validación parcial sería confusa.
+  for (const r of resultados) {
+    if (!r.ok) return { ok: false, error: r.error, code: r.code };
+  }
+
+  // Unión de subtipos no permitidos a través de los planos.
+  const subtiposNoPermitidos = new Set<string>();
+  for (const r of resultados) {
+    if (r.ok) {
+      for (const s of r.noPermitidos) subtiposNoPermitidos.add(s);
     }
   }
 
-  const erroresCompany = first.detail_errors_company ?? [];
-  if (erroresCompany.length > 0) {
-    log.warn(
-      { count: erroresCompany.length, sample: erroresCompany[0]?.description },
-      'Plano sintético tuvo errores a nivel encabezado',
-    );
-    return {
-      ok: false,
-      error: `El plano sintético tiene errores a nivel empresa que impiden validar los subtipos: ${erroresCompany[0]?.description ?? 'error sin descripción'}`,
-    };
-  }
+  // Lista total de subtipos consultados (todos los grupos aplanados).
+  const todosLosSubtipos = grupos.flatMap((g) => [...g]);
+  const validos = todosLosSubtipos.filter((s) => !subtiposNoPermitidos.has(s));
 
-  const detalle: SubtipoValidationResult[] = subtipos.map((subtipo) => {
-    const errores = erroresPorSubtipo[subtipo] ?? [];
-    return { subtipo, valido: errores.length === 0, errores };
-  });
-  const validos = detalle.filter((d) => d.valido).map((d) => d.subtipo);
-  const rechazados = detalle.filter((d) => !d.valido);
+  log.info(
+    {
+      gruposEnviados: grupos.length,
+      total: todosLosSubtipos.length,
+      validos: validos.length,
+      noPermitidos: Array.from(subtiposNoPermitidos),
+    },
+    'validación de subtipos completada',
+  );
 
-  return { ok: true, validos, rechazados, detalle };
+  return { ok: true, validos };
 }

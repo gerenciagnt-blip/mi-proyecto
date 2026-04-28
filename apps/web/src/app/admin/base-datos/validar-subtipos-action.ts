@@ -26,17 +26,16 @@ import { getUserScope } from '@/lib/sucursal-scope';
 import { consultarCotizanteBduaRuaf } from '@/lib/pagosimple/bdua-ruaf';
 import {
   validarSubtiposCotizanteEnPagosimple,
-  SUBTIPOS_OMISION_PENSION,
   type ValidarSubtiposResult,
 } from '@/lib/pagosimple/validar-subtipos';
 
 export type ValidarSubtiposActionResult =
   | {
       ok: true;
-      /** Lista de subtipos PILA válidos para esta persona (sin errores PagoSimple). */
+      /** Subtipos PILA válidos para este cotizante — son los que NO
+       *  aparecieron en ningún mensaje "no puede hacer uso del subtipo
+       *  de cotizante X" del response del operador. */
       validos: string[];
-      /** Detalle de subtipos rechazados con razón. */
-      rechazados: Array<{ subtipo: string; razon: string }>;
       /** Empresa que se usó como "host" del plano sintético. */
       empresaUsada: { id: string; nombre: string; nit: string };
       /** Indica si los datos SGSS vinieron de BDUA/RUAF o se usaron defaults. */
@@ -249,7 +248,7 @@ export async function validarSubtiposCotizanteAction(input: {
       codAfp,
       codCcf,
     },
-    subtipos: SUBTIPOS_OMISION_PENSION,
+    // Sin `subtipos` → usa GRUPOS_OMISION_PENSION (3 planos: 01-03-04-12, 05, 06).
   });
 
   if (!result.ok) {
@@ -259,10 +258,6 @@ export async function validarSubtiposCotizanteAction(input: {
   return {
     ok: true,
     validos: result.validos,
-    rechazados: result.rechazados.map((r) => ({
-      subtipo: r.subtipo,
-      razon: r.errores[0] ?? 'Sin descripción del operador',
-    })),
     empresaUsada: { id: empresa.id, nombre: empresa.nombre, nit: empresa.nit },
     fuenteEntidades,
     aviso,

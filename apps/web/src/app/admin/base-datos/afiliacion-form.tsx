@@ -769,7 +769,12 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
             </div>
           )}
 
-          {/* Sprint Soporte reorg fase 2 — Banner resultado validar subtipos. */}
+          {/* Sprint Soporte reorg fase 2 — Banner resultado validar subtipos.
+             Muestra ÚNICAMENTE los subtipos PILA permitidos para el cotizante.
+             Regla del operador: si en las inconsistencias aparece "no puede
+             hacer uso del subtipo de cotizante X", ese subtipo NO se muestra.
+             Cualquier subtipo no mencionado en ese mensaje es válido. Otros
+             errores del plano sintético (sucursal, IBC, etc.) se ignoran. */}
           {isCreate && subtiposResult && (
             <div className="mt-3">
               {subtiposResult.ok ? (
@@ -778,38 +783,18 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                     <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                     <div className="space-y-1">
                       <p className="font-medium">
-                        Subtipos válidos:{' '}
+                        Subtipos permitidos:{' '}
                         {subtiposResult.validos.length > 0 ? (
                           <span className="font-mono">{subtiposResult.validos.join(' · ')}</span>
                         ) : (
                           <span className="italic text-amber-700">
-                            ninguno (todos rechazados por el operador)
+                            ninguno aplica para este cotizante
                           </span>
                         )}
                       </p>
-                      {subtiposResult.rechazados.length > 0 && (
-                        <details className="text-[10px] text-slate-600">
-                          <summary className="cursor-pointer text-emerald-700">
-                            Ver rechazados ({subtiposResult.rechazados.length})
-                          </summary>
-                          <ul className="mt-1 space-y-0.5 pl-4">
-                            {subtiposResult.rechazados.map((r) => (
-                              <li key={r.subtipo}>
-                                <span className="font-mono">{r.subtipo}</span>: {r.razon}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
                       <p className="text-[10px] text-slate-500">
-                        Empresa host:{' '}
-                        <span className="font-medium">{subtiposResult.empresaUsada.nombre}</span> ·
-                        Entidades SGSS:{' '}
-                        <span className="font-medium">
-                          {subtiposResult.fuenteEntidades === 'BDUA'
-                            ? 'BDUA/RUAF'
-                            : 'default catálogo'}
-                        </span>
+                        Validado contra UGPP vía PagoSimple · Empresa host:{' '}
+                        <span className="font-medium">{subtiposResult.empresaUsada.nombre}</span>
                       </p>
                       {subtiposResult.aviso && (
                         <p className="text-[10px] italic text-amber-700">
