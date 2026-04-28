@@ -34,6 +34,9 @@ importers:
       '@pila/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sentry/node':
+        specifier: ^10.50.0
+        version: 10.50.0
       commander:
         specifier: ^13.0.0
         version: 13.1.0

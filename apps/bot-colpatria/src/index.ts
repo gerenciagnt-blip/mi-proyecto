@@ -7,6 +7,36 @@ import { procesarCommand } from './commands/procesar.js';
 import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
 import { loginAutoCommand } from './commands/login-auto.js';
 import { logoutAutoCommand } from './commands/logout-auto.js';
+import { captureError, flushSentry } from './lib/sentry.js';
+import { createLogger } from './lib/logger.js';
+
+const cliLog = createLogger('cli');
+
+/**
+ * Wrappea la ejecución de un comando con captura Sentry + flush.
+ *
+ * Por qué hace falta:
+ *   - El bot corre en GH Actions runners que se apagan apenas el proceso
+ *     termina. Sin `flushSentry`, los eventos pendientes (capturados al
+ *     final del run) no llegan a sentry.io.
+ *   - Una excepción no manejada arriba en el callstack saltea el catch
+ *     normal del comando — este wrapper la atrapa como red de seguridad.
+ *
+ * El callback retorna un exit code; si tira, capturamos y exit 1.
+ */
+async function runWithSentry(name: string, fn: () => Promise<number>): Promise<never> {
+  let code = 1;
+  try {
+    code = await fn();
+  } catch (err) {
+    cliLog.fatal({ err, comando: name }, 'comando falló con excepción no manejada');
+    await captureError(err, { scope: 'bot-cli', comando: name });
+    code = 1;
+  } finally {
+    await flushSentry();
+  }
+  process.exit(code);
+}
 
 const program = new Command();
 
@@ -32,8 +62,7 @@ program
   .option('--screenshot <path>', 'Guarda screenshot del estado final', './test-login.png')
   .option('--keep-open', 'Mantiene el browser abierto al terminar (para inspeccionar)')
   .action(async (options: { empresaId: string; screenshot?: string; keepOpen?: boolean }) => {
-    const code = await testLoginCommand(options);
-    process.exit(code);
+    await runWithSentry('test-login', () => testLoginCommand(options));
   });
 
 /**
@@ -73,8 +102,7 @@ program
       screenshot?: string;
       keepOpen?: boolean;
     }) => {
-      const code = await testIngresoCommand(options);
-      process.exit(code);
+      await runWithSentry('test-ingreso', () => testIngresoCommand(options));
     },
   );
 
@@ -90,8 +118,9 @@ program
   .option('--empresa-id <id>', 'Procesa solo jobs de esta empresa (debug)')
   .action(async (options: { limite?: string; empresaId?: string }) => {
     const limite = parseInt(options.limite ?? '20', 10) || 20;
-    const code = await procesarCommand({ limite, empresaId: options.empresaId });
-    process.exit(code);
+    await runWithSentry('procesar', () =>
+      procesarCommand({ limite, empresaId: options.empresaId }),
+    );
   });
 
 /**
@@ -111,8 +140,7 @@ program
   .option('--dry-run', 'Solo lista qué borraría, sin tocar nada')
   .action(async (options: { dias?: string; dryRun?: boolean }) => {
     const dias = parseInt(options.dias ?? '3', 10) || 3;
-    const code = await limpiarPdfsCommand({ dias, dryRun: options.dryRun });
-    process.exit(code);
+    await runWithSentry('limpiar-pdfs', () => limpiarPdfsCommand({ dias, dryRun: options.dryRun }));
   });
 
 /**
@@ -125,8 +153,7 @@ program
   .command('login-auto')
   .description('Login automático de TODAS las empresas Colpatria activas (cron Lun–Sáb 7 AM)')
   .action(async () => {
-    const code = await loginAutoCommand();
-    process.exit(code);
+    await runWithSentry('login-auto', () => loginAutoCommand());
   });
 
 /**
@@ -138,8 +165,7 @@ program
   .command('logout-auto')
   .description('Cierre automático de sesiones cacheadas Colpatria (cron Lun–Sáb 9 PM)')
   .action(async () => {
-    const code = await logoutAutoCommand();
-    process.exit(code);
+    await runWithSentry('logout-auto', () => logoutAutoCommand());
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args
