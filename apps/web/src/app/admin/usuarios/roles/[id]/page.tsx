@@ -7,11 +7,7 @@ import { EditRolCustomForm } from './edit-form';
 export const metadata = { title: 'Editar rol — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-export default async function EditRolCustomPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function EditRolCustomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const rol = await prisma.rolCustom.findUnique({
@@ -22,10 +18,11 @@ export default async function EditRolCustomPage({
 
   const granted = rol.permisos.map((p) => `${p.modulo}::${p.accion}`);
 
-  // El tipo basedOn es Role (ADMIN/ALIADO_OWNER/ALIADO_USER) pero en custom
-  // solo usamos los dos últimos. Si llegara uno inválido, default a ALIADO_USER.
-  const basedOn: 'ALIADO_OWNER' | 'ALIADO_USER' =
-    rol.basedOn === 'ALIADO_OWNER' ? 'ALIADO_OWNER' : 'ALIADO_USER';
+  // Los roles base válidos son SOPORTE + los dos aliados. ADMIN no se
+  // personaliza (siempre tiene todo). Si la BD trae un valor fuera de
+  // este set (legacy o ADMIN), default conservador a ALIADO_USER.
+  const basedOn: 'SOPORTE' | 'ALIADO_OWNER' | 'ALIADO_USER' =
+    rol.basedOn === 'SOPORTE' || rol.basedOn === 'ALIADO_OWNER' ? rol.basedOn : 'ALIADO_USER';
 
   return (
     <div className="max-w-4xl space-y-6">

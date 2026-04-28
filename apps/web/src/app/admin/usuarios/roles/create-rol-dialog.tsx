@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState, useEffect, useRef } from 'react';
 import { Plus, Save } from 'lucide-react';
+import type { Role } from '@pila/db';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,13 @@ import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { ACCIONES, agruparModulosPorRol } from '@/lib/permisos';
 import { createRolCustomAction, type ActionState } from './actions';
+
+type BasedOnRole = Exclude<Role, 'ADMIN'>;
+const BASED_ON_OPTIONS: { value: BasedOnRole; label: string }[] = [
+  { value: 'SOPORTE', label: 'Soporte' },
+  { value: 'ALIADO_OWNER', label: 'Dueño Aliado' },
+  { value: 'ALIADO_USER', label: 'Usuario Aliado' },
+];
 
 const selectClass =
   'mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm text-brand-text-primary';
@@ -38,10 +46,11 @@ export function CreateRolCustomDialog() {
 
 function CreateRolForm({ onSuccess }: { onSuccess: () => void }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createRolCustomAction, {});
-  // Sprint Soporte reorg fase 2 — filtramos los módulos según el rol
-  // base seleccionado (Dueño Aliado vs Usuario Aliado) para que la
-  // matriz no muestre permisos que no aplican al perfil base elegido.
-  const [basedOn, setBasedOn] = useState<'ALIADO_OWNER' | 'ALIADO_USER'>('ALIADO_USER');
+  // La matriz de permisos se filtra por el rol base seleccionado para
+  // que solo aparezcan módulos que aplican al perfil. Soporte mostrará
+  // módulos staff (Bitácora, Bot Colpatria, Soporte/*); aliados mostrarán
+  // los suyos.
+  const [basedOn, setBasedOn] = useState<BasedOnRole>('ALIADO_USER');
   const grupos = useMemo(() => agruparModulosPorRol(basedOn), [basedOn]);
   const ref = useRef<HTMLFormElement>(null);
 
@@ -77,11 +86,14 @@ function CreateRolForm({ onSuccess }: { onSuccess: () => void }) {
               name="basedOn"
               required
               value={basedOn}
-              onChange={(e) => setBasedOn(e.target.value as 'ALIADO_OWNER' | 'ALIADO_USER')}
+              onChange={(e) => setBasedOn(e.target.value as BasedOnRole)}
               className={selectClass}
             >
-              <option value="ALIADO_OWNER">Dueño Aliado</option>
-              <option value="ALIADO_USER">Usuario Aliado</option>
+              {BASED_ON_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>

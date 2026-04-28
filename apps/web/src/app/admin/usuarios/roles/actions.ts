@@ -46,6 +46,8 @@ export async function savePermisosAction(
 
 // ============ Roles personalizados (tabla RolCustom) ============
 
+// ADMIN no se personaliza (siempre tiene todo). Los roles base válidos
+// para un RolCustom son SOPORTE (variaciones de staff) + los dos aliados.
 const RolCustomSchema = z.object({
   nombre: z.string().trim().min(1, 'Nombre requerido').max(100),
   descripcion: z
@@ -54,7 +56,7 @@ const RolCustomSchema = z.object({
     .max(300)
     .optional()
     .transform((v) => (v === '' ? undefined : v)),
-  basedOn: z.enum(['ALIADO_OWNER', 'ALIADO_USER']),
+  basedOn: z.enum(['SOPORTE', 'ALIADO_OWNER', 'ALIADO_USER']),
 });
 
 export async function createRolCustomAction(

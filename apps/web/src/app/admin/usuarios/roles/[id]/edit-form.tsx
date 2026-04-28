@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState } from 'react';
 import { Save, Trash2 } from 'lucide-react';
+import type { Role } from '@pila/db';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,12 +13,19 @@ import { updateRolCustomAction, deleteRolCustomAction, type ActionState } from '
 const selectClass =
   'mt-1 h-10 w-full rounded-xl border border-brand-border bg-brand-surface px-3 text-sm text-brand-text-primary';
 
+type BasedOnRole = Exclude<Role, 'ADMIN'>;
+const BASED_ON_OPTIONS: { value: BasedOnRole; label: string }[] = [
+  { value: 'SOPORTE', label: 'Soporte' },
+  { value: 'ALIADO_OWNER', label: 'Dueño Aliado' },
+  { value: 'ALIADO_USER', label: 'Usuario Aliado' },
+];
+
 type Props = {
   rolId: string;
   initial: {
     nombre: string;
     descripcion: string;
-    basedOn: 'ALIADO_OWNER' | 'ALIADO_USER';
+    basedOn: BasedOnRole;
     granted: string[]; // ['modulo::accion']
   };
 };
@@ -26,10 +34,10 @@ export function EditRolCustomForm({ rolId, initial }: Props) {
   const bound = updateRolCustomAction.bind(null, rolId);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
   const grantedSet = useMemo(() => new Set(initial.granted), [initial.granted]);
-  // Sprint Soporte reorg fase 2 — la matriz se filtra por el rol base
-  // seleccionado. Si el usuario cambia "Basado en", la matriz se
-  // recalcula al instante para mostrar solo los módulos aplicables.
-  const [basedOn, setBasedOn] = useState<'ALIADO_OWNER' | 'ALIADO_USER'>(initial.basedOn);
+  // La matriz se filtra por el rol base seleccionado. Si el usuario
+  // cambia "Basado en", la matriz se recalcula al instante para mostrar
+  // solo los módulos aplicables al rol elegido (staff vs aliado).
+  const [basedOn, setBasedOn] = useState<BasedOnRole>(initial.basedOn);
   const grupos = useMemo(() => agruparModulosPorRol(basedOn), [basedOn]);
 
   const keyFor = (m: string, a: string) => `${m}::${a}`;
@@ -66,11 +74,14 @@ export function EditRolCustomForm({ rolId, initial }: Props) {
                 id="basedOn"
                 name="basedOn"
                 value={basedOn}
-                onChange={(e) => setBasedOn(e.target.value as 'ALIADO_OWNER' | 'ALIADO_USER')}
+                onChange={(e) => setBasedOn(e.target.value as BasedOnRole)}
                 className={selectClass}
               >
-                <option value="ALIADO_OWNER">Dueño Aliado</option>
-                <option value="ALIADO_USER">Usuario Aliado</option>
+                {BASED_ON_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

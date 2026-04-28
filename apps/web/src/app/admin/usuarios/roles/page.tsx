@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Shield, UserCog, UserCheck, Layers } from 'lucide-react';
+import { Shield, LifeBuoy, UserCog, UserCheck, Layers } from 'lucide-react';
 import { prisma } from '@pila/db';
 import type { Role } from '@pila/db';
 import { UsuariosTabs } from '../usuarios-tabs';
@@ -20,6 +20,14 @@ const ROLES_SISTEMA = [
     editable: false,
   },
   {
+    key: 'SOPORTE' as const,
+    label: 'Soporte',
+    desc: 'Staff con permisos configurables: cartera, soporte, jurídico, bitácora, etc.',
+    icon: LifeBuoy,
+    accent: 'from-brand-blue to-brand-turquoise',
+    editable: true,
+  },
+  {
     key: 'ALIADO_OWNER' as const,
     label: 'Dueño Aliado',
     desc: 'Dueño de un aliado. Ve todas las empresas de su sucursal.',
@@ -38,6 +46,7 @@ const ROLES_SISTEMA = [
 ];
 
 const BASE_LABELS: Record<string, string> = {
+  SOPORTE: 'Soporte',
   ALIADO_OWNER: 'Dueño Aliado',
   ALIADO_USER: 'Usuario Aliado',
 };
@@ -78,7 +87,7 @@ export default async function RolesPage() {
       <UsuariosTabs />
 
       {/* Stat cards — roles de sistema */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {ROLES_SISTEMA.map((r) => {
           const Icon = r.icon;
           return (
@@ -116,8 +125,9 @@ export default async function RolesPage() {
               Roles personalizados
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Crea variaciones con permisos específicos (p. ej. &ldquo;Asesor Sr&rdquo;,
-              &ldquo;Supervisor&rdquo;). Se basan en <strong>Dueño Aliado</strong> o{' '}
+              Crea variaciones con permisos específicos (p. ej. &ldquo;Soporte Sr&rdquo;,
+              &ldquo;Asesor Sr&rdquo;, &ldquo;Supervisor&rdquo;). Se basan en{' '}
+              <strong>Soporte</strong>, <strong>Dueño Aliado</strong> o{' '}
               <strong>Usuario Aliado</strong>.
             </p>
           </div>
@@ -147,9 +157,7 @@ export default async function RolesPage() {
                 <tr key={r.id}>
                   <td className="px-4 py-3">
                     <p className="font-medium">{r.nombre}</p>
-                    {r.descripcion && (
-                      <p className="text-[11px] text-slate-500">{r.descripcion}</p>
-                    )}
+                    {r.descripcion && <p className="text-[11px] text-slate-500">{r.descripcion}</p>}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-500">
                     {BASE_LABELS[r.basedOn] ?? r.basedOn}
@@ -191,8 +199,7 @@ export default async function RolesPage() {
 
       {/* Permisos matrix por rol de sistema editable */}
       {ROLES_SISTEMA.filter(
-        (r): r is typeof r & { key: Exclude<Role, 'ADMIN'> } =>
-          r.editable && r.key !== 'ADMIN',
+        (r): r is typeof r & { key: Exclude<Role, 'ADMIN'> } => r.editable && r.key !== 'ADMIN',
       ).map((r) => (
         <section key={r.key} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <header className="mb-4">
@@ -201,19 +208,15 @@ export default async function RolesPage() {
             </h2>
             <p className="mt-1 text-xs text-slate-500">{r.desc}</p>
           </header>
-          <PermisosForm
-            role={r.key}
-            roleLabel={r.label}
-            granted={grantedByRole.get(r.key) ?? []}
-          />
+          <PermisosForm role={r.key} roleLabel={r.label} granted={grantedByRole.get(r.key) ?? []} />
         </section>
       ))}
 
       <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <p className="text-xs text-amber-800">
-          <strong>Nota:</strong> ADMIN tiene todos los permisos implícitamente. La enforcement
-          real (ocultar items del menú y proteger páginas) se aplica cuando construyamos las
-          pantallas de los aliados.
+          <strong>Nota:</strong> ADMIN tiene todos los permisos implícitamente. La enforcement real
+          (ocultar items del menú y proteger páginas) se aplica cuando construyamos las pantallas de
+          los aliados.
         </p>
       </section>
     </div>
