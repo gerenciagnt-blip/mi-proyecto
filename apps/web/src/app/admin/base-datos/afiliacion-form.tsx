@@ -486,13 +486,18 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
               <Label htmlFor="tipoDocumento">
                 Tipo doc. <Req />
               </Label>
+              {/* Sprint Soporte reorg fase 2 — bloqueado en edit/view por
+                 seguridad: cambiar la identificación de un cotizante ya
+                 creado equivale a cambiarle la identidad. Si hay error en
+                 el documento, se debe crear un cotizante nuevo. Solo
+                 editable en CREATE. */}
               <select
                 id="tipoDocumento"
                 name="tipoDocumento"
                 required
                 value={tipoDocumento}
                 onChange={(e) => setTipoDocumento(e.target.value)}
-                disabled={readOnly}
+                disabled={!isCreate}
                 className={selectClass}
               >
                 <option value="CC">CC</option>
@@ -514,7 +519,7 @@ export function AfiliacionForm(props: AfiliacionFormProps) {
                   required
                   value={numeroDocumento}
                   onChange={(e) => setNumeroDocumento(e.target.value)}
-                  disabled={readOnly}
+                  disabled={!isCreate}
                   className="flex-1"
                 />
                 {isCreate && (
