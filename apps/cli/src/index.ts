@@ -11,6 +11,7 @@ import { seedTestDataCommand } from './commands/seed-test-data.js';
 import { cobrosGenerarCommand, cobrosBloquearMorososCommand } from './commands/cobros-run.js';
 import { pagosimplePingCommand } from './commands/pagosimple-ping.js';
 import { pagosimpleTestAllCommand } from './commands/pagosimple-test-all.js';
+import { pagosimpleValidarSubtiposCommand } from './commands/pagosimple-validar-subtipos.js';
 import { pagosimpleSyncPlanillasCommand } from './commands/pagosimple-sync-planillas.js';
 import { divipolaSeedCommand } from './commands/divipola-seed.js';
 import { entidadesPilaSeedCommand } from './commands/entidades-pila-seed.js';
@@ -140,6 +141,18 @@ program
   )
   .action(async () => {
     await pagosimpleTestAllCommand();
+  });
+
+program
+  .command('pagosimple:validar-subtipos')
+  .description(
+    'Valida subtipos PILA aceptados para un cotizante (omisión pensión). Imprime response crudo + plano.',
+  )
+  .option('--doc <numero>', 'Número de documento del cotizante (obligatorio)')
+  .option('--tipo <tipo>', 'Tipo doc (CC|CE|TI|RC|PAS|NIP) — default CC', 'CC')
+  .option('--raw', 'Imprime el plano sintético en texto plano además del JSON')
+  .action(async (options: { doc?: string; tipo?: string; raw?: boolean }) => {
+    await pagosimpleValidarSubtiposCommand(options);
   });
 
 program
