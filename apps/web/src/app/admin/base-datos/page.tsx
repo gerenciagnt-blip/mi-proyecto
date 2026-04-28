@@ -5,6 +5,14 @@ import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
 import { getUserScope, scopeWhereOpt, scopeWhereViaCotizante } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
+import {
+  getTiposCotizanteCached,
+  getDepartamentosCached,
+  getEntidadesSgssCached,
+  getActividadesEconomicasCached,
+  getPlanesSgssCached,
+  getSmlvCached,
+} from '@/lib/catalogos-cache';
 import { NuevaAfiliacionButton } from './afiliacion-dialog';
 import { AfiliacionesTable, type AfiliacionRow } from './afiliaciones-table';
 
@@ -129,31 +137,13 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
         actividadesPermitidas: { select: { actividadEconomicaId: true } },
       },
     }),
-    prisma.tipoCotizante.findMany({
-      where: { active: true },
-      orderBy: { codigo: 'asc' },
-      include: {
-        subtipos: {
-          where: { active: true },
-          orderBy: { codigo: 'asc' },
-          select: { id: true, codigo: true, nombre: true },
-        },
-      },
-    }),
-    prisma.departamento.findMany({
-      orderBy: { nombre: 'asc' },
-      include: {
-        municipios: {
-          orderBy: { nombre: 'asc' },
-          select: { id: true, nombre: true },
-        },
-      },
-    }),
-    prisma.entidadSgss.findMany({
-      where: { active: true },
-      orderBy: [{ tipo: 'asc' }, { codigo: 'asc' }],
-      select: { id: true, tipo: true, codigo: true, nombre: true, codigoMinSalud: true },
-    }),
+    // Catálogos puros (independientes del usuario/scope) — cacheados con
+    // unstable_cache. TTL de 12-24h, invalidación manual desde
+    // /admin/catalogos/* tras editar.
+    getTiposCotizanteCached(),
+    getDepartamentosCached(),
+    getEntidadesSgssCached(),
+    // Catálogos scopeados (dependen de sucursal del usuario) — sin cache.
     prisma.cuentaCobro.findMany({
       where: { active: true, ...cuentaCobroScope },
       orderBy: [{ sucursal: { codigo: 'asc' } }, { codigo: 'asc' }],
@@ -169,26 +159,9 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
       orderBy: { codigo: 'asc' },
       select: { id: true, codigo: true, nombre: true, precio: true },
     }),
-    prisma.smlvConfig.findUnique({ where: { id: 'singleton' } }),
-    prisma.actividadEconomica.findMany({
-      where: { active: true },
-      orderBy: { codigoCiiu: 'asc' },
-      select: { id: true, codigoCiiu: true, descripcion: true },
-    }),
-    prisma.planSgss.findMany({
-      where: { active: true },
-      orderBy: { codigo: 'asc' },
-      select: {
-        id: true,
-        codigo: true,
-        nombre: true,
-        incluyeEps: true,
-        incluyeAfp: true,
-        incluyeArl: true,
-        incluyeCcf: true,
-        regimen: true,
-      },
-    }),
+    getSmlvCached(),
+    getActividadesEconomicasCached(),
+    getPlanesSgssCached(),
   ]);
 
   const empresaOpts = empresas.map((e) => ({
