@@ -7,6 +7,7 @@ import { procesarCommand } from './commands/procesar.js';
 import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
 import { loginAutoCommand } from './commands/login-auto.js';
 import { logoutAutoCommand } from './commands/logout-auto.js';
+import { watchdogCommand } from './commands/watchdog.js';
 import { captureError, flushSentry } from './lib/sentry.js';
 import { createLogger } from './lib/logger.js';
 
@@ -166,6 +167,25 @@ program
   .description('Cierre automático de sesiones cacheadas Colpatria (cron Lun–Sáb 9 PM)')
   .action(async () => {
     await runWithSentry('logout-auto', () => logoutAutoCommand());
+  });
+
+/**
+ * Watchdog standalone — revivir zombies + reciclar RETRYABLE + detectar
+ * fallos masivos. Por defecto ya corre al inicio de cada `procesar`,
+ * pero este comando es útil para debug manual o para correr más
+ * frecuente que `procesar` desde un cron dedicado.
+ */
+program
+  .command('watchdog')
+  .description('Auto-corrección de cola de jobs (zombies, RETRYABLE, alerta fallos masivos)')
+  .option('--dry-run', 'Solo cuenta candidatos, no escribe en BD')
+  .option('--max-intentos <n>', 'Cap de intentos antes de marcar FAILED (default 5)', (v) =>
+    v ? parseInt(v, 10) : undefined,
+  )
+  .action(async (options: { dryRun?: boolean; maxIntentos?: number }) => {
+    await runWithSentry('watchdog', () =>
+      watchdogCommand({ dryRun: options.dryRun, maxIntentos: options.maxIntentos }),
+    );
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args

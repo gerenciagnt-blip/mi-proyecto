@@ -12,6 +12,7 @@ import {
 } from '../lib/payload-form.js';
 import { guardarPdfComprobante } from '../lib/storage.js';
 import { createLogger } from '../lib/logger.js';
+import { runWatchdog } from '../lib/watchdog.js';
 
 const log = createLogger('procesar');
 
@@ -43,6 +44,23 @@ export async function procesarCommand(options: {
 }): Promise<number> {
   const inicio = Date.now();
   log.info({ limite: options.limite, empresaId: options.empresaId }, 'iniciando procesar');
+
+  // 0. Watchdog preventivo: revivir zombies + reciclar RETRYABLE +
+  //    detectar tasa anormal de fallos. Es barato (3 queries) y se
+  //    ejecuta antes de tomar jobs nuevos para que los zombies y
+  //    RETRYABLE listos vuelvan a la cola PENDING que el SELECT de
+  //    abajo va a leer.
+  try {
+    const wd = await runWatchdog();
+    if (wd.zombies > 0 || wd.reciclados > 0 || wd.agotados > 0) {
+      console.log(
+        `🐕 Watchdog: ${wd.zombies} zombie(s) · ${wd.reciclados} reciclado(s) · ${wd.agotados} agotado(s)`,
+      );
+    }
+  } catch (err) {
+    // No bloquear el procesar si el watchdog falla — solo loguear.
+    log.error({ err: err instanceof Error ? err.message : err }, 'watchdog falló (no bloqueante)');
+  }
 
   // 1. Tomar jobs PENDING. Usamos `transaction` con FOR UPDATE SKIP
   //    LOCKED para evitar que dos workers tomen los mismos jobs si hay
