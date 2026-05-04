@@ -19,6 +19,7 @@ import { formatCOP, fullName } from '@/lib/format';
 import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
 import { PagosimpleCell } from './pagosimple-cell';
+import { DetallePlanillaButton } from './detalle-button';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
 export const metadata = { title: 'Planos PILA — Sistema PILA' };
@@ -441,6 +442,7 @@ async function TabConsolidado({
   type Grupo = {
     key: string;
     tipo: 'E' | 'I';
+    aportanteId: string;
     aportanteLabel: string;
     aportanteSub: string;
     periodoAporteAnio: number;
@@ -465,6 +467,7 @@ async function TabConsolidado({
 
     let key: string;
     let tipo: 'E' | 'I';
+    let aportanteId: string;
     let aportanteLabel: string;
     let aportanteSub: string;
 
@@ -475,6 +478,7 @@ async function TabConsolidado({
       }
       key = `E|${af.empresa.id}|${paAnio}-${paMes}`;
       tipo = 'E';
+      aportanteId = af.empresa.id;
       aportanteLabel = af.empresa.nombre;
       aportanteSub = af.empresa.nit ? `NIT ${af.empresa.nit}` : '';
     } else if (af.modalidad === 'INDEPENDIENTE') {
@@ -485,6 +489,7 @@ async function TabConsolidado({
       }
       key = `I|${cot.id}|${paAnio}-${paMes}`;
       tipo = 'I';
+      aportanteId = cot.id;
       aportanteLabel = fullName(cot);
       aportanteSub = `${cot.tipoDocumento} ${cot.numeroDocumento}`;
     } else {
@@ -497,6 +502,7 @@ async function TabConsolidado({
       g = {
         key,
         tipo,
+        aportanteId,
         aportanteLabel,
         aportanteSub,
         periodoAporteAnio: paAnio,
@@ -567,6 +573,7 @@ async function TabConsolidado({
                 <th className="px-4 py-2 text-right">Cotizantes</th>
                 <th className="px-4 py-2 text-right">Comprobantes</th>
                 <th className="px-4 py-2 text-right">Total</th>
+                <th className="px-4 py-2 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -589,6 +596,18 @@ async function TabConsolidado({
                   <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
                     {formatCOP(g.total)}
                   </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <DetallePlanillaButton
+                      kind="grupo"
+                      periodoId={periodoId}
+                      tipo={g.tipo}
+                      aportanteId={g.aportanteId}
+                      periodoAporteAnio={g.periodoAporteAnio}
+                      periodoAporteMes={g.periodoAporteMes}
+                      tituloAportante={g.aportanteLabel}
+                      tituloPeriodoAporte={mesLabel(g.periodoAporteAnio, g.periodoAporteMes)}
+                    />
+                  </td>
                 </tr>
               ))}
               <tr className="bg-slate-50 font-medium">
@@ -601,6 +620,7 @@ async function TabConsolidado({
                 <td className="px-4 py-2.5 text-right font-mono text-base font-bold text-brand-blue-dark">
                   {formatCOP(totalGeneral)}
                 </td>
+                <td className="px-4 py-2.5"></td>
               </tr>
             </tbody>
           </table>
@@ -843,6 +863,12 @@ async function PlanillasTable({
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-2">
+                      <DetallePlanillaButton
+                        kind="planilla"
+                        planillaId={p.id}
+                        tituloAportante={aportanteLabel}
+                        tituloPeriodoAporte={mesLabel(p.periodoAporteAnio, p.periodoAporteMes)}
+                      />
                       {psEnabled && estado === 'CONSOLIDADO' && (
                         <PagosimpleCell
                           planillaId={p.id}
