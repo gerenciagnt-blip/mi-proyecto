@@ -102,15 +102,10 @@ function Hero() {
         aria-hidden
       />
 
-      <div className="mx-auto max-w-7xl px-6 pb-24 pt-16 sm:pt-24 lg:px-12 lg:pb-32 lg:pt-32">
+      <div className="mx-auto max-w-7xl px-6 pb-16 pt-12 sm:pt-16 lg:px-12 lg:pb-20 lg:pt-24">
         <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="lg:col-span-6">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/20 bg-brand-blue/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-brand-blue-dark">
-              <Sparkles className="h-3 w-3" />
-              Operador autorizado en Colombia
-            </span>
-
-            <h1 className="mt-6 font-heading text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
+            <h1 className="font-heading text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
               Tu seguridad social{' '}
               <span className="bg-gradient-to-r from-brand-blue to-brand-turquoise bg-clip-text text-transparent">
                 a un click.
@@ -277,7 +272,7 @@ function ParaQuien() {
   return (
     <section
       id="para-quien"
-      className="border-t border-slate-100 bg-slate-50/60 px-6 py-24 lg:px-12 lg:py-32"
+      className="border-t border-slate-100 bg-slate-50/60 px-6 py-16 lg:px-12 lg:py-20"
     >
       <div className="mx-auto max-w-7xl">
         <SectionHeading
@@ -406,7 +401,7 @@ function Servicios() {
   ];
 
   return (
-    <section id="servicios" className="px-6 py-24 lg:px-12 lg:py-32">
+    <section id="servicios" className="px-6 py-16 lg:px-12 lg:py-20">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Servicios"
@@ -459,7 +454,7 @@ function ComoFunciona() {
   return (
     <section
       id="como-funciona"
-      className="border-t border-slate-100 bg-slate-50/60 px-6 py-24 lg:px-12 lg:py-32"
+      className="border-t border-slate-100 bg-slate-50/60 px-6 py-16 lg:px-12 lg:py-20"
     >
       <div className="mx-auto max-w-7xl">
         <SectionHeading
@@ -529,7 +524,7 @@ function Numeros() {
     { value: '24/7', label: 'Disponibilidad de la plataforma' },
   ];
   return (
-    <section className="relative overflow-hidden px-6 py-24 lg:px-12">
+    <section className="relative overflow-hidden px-6 py-16 lg:px-12 lg:py-20">
       <div
         className="absolute inset-0 -z-10 bg-gradient-to-br from-brand-blue/95 via-brand-blue-dark to-brand-blue-dark"
         aria-hidden
@@ -595,7 +590,7 @@ function Faq() {
   ];
 
   return (
-    <section id="faq" className="px-6 py-24 lg:px-12 lg:py-32">
+    <section id="faq" className="px-6 py-16 lg:px-12 lg:py-20">
       <div className="mx-auto max-w-4xl">
         <SectionHeading
           eyebrow="Preguntas frecuentes"
@@ -631,7 +626,7 @@ function CtaFinal() {
   return (
     <section
       id="contacto"
-      className="border-t border-slate-100 bg-slate-50/60 px-6 py-24 lg:px-12 lg:py-32"
+      className="border-t border-slate-100 bg-slate-50/60 px-6 py-16 lg:px-12 lg:py-20"
     >
       <div className="mx-auto max-w-5xl">
         <div className="relative overflow-hidden rounded-3xl bg-brand-gradient p-10 shadow-card-float sm:p-16">
@@ -670,7 +665,7 @@ function CtaFinal() {
             <div className="mt-10 grid gap-4 border-t border-white/20 pt-8 text-sm text-white/85 sm:grid-cols-3">
               <ContactoItem icon={Mail} label="gerencia.gnt@gmail.com" />
               <ContactoItem icon={Phone} label="+57 (1) 000 0000" />
-              <ContactoItem icon={MapPin} label="Bogotá D.C., Colombia" />
+              <ContactoItem icon={MapPin} label="Pereira, Colombia" />
             </div>
           </div>
         </div>
@@ -743,8 +738,10 @@ function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-4 border-t border-slate-100 pt-8 text-xs text-slate-500 sm:flex-row sm:items-center">
-          <p>© {year} Sistema PILA. Todos los derechos reservados.</p>
-          <p>Bogotá D.C. · Colombia</p>
+          <p>
+            © {year} Sistema PILA · Grupo de Negocios Temporales SAS. Todos los derechos reservados.
+          </p>
+          <p>Pereira · Colombia</p>
         </div>
       </div>
     </footer>
