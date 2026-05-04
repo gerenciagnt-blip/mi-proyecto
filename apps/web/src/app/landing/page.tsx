@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   Wallet,
   Scale,
+  HeartPulse,
   Upload,
   Cog,
   CreditCard,
@@ -392,7 +393,7 @@ function Servicios() {
       tone: 'blue' as const,
       title: 'Planillas PILA',
       description:
-        'Genera, valida y paga planillas tipo E (empleados) e I (independientes) desde un solo lugar. Integración directa con PagoSimple para pago vía PSE.',
+        'Genera, valida y paga planillas tipo E (empleados) e I (independientes) desde un solo lugar. Integración directa con el operador autorizado para pago vía PSE.',
     },
     {
       icon: ShieldCheck,
@@ -400,6 +401,13 @@ function Servicios() {
       title: 'Afiliación automática a ARL',
       description:
         'Afiliamos a tus cotizantes a la ARL de forma automática, sin que tu equipo tenga que entrar a portales externos. 1.500+ afiliaciones al mes con captura de comprobante oficial.',
+    },
+    {
+      icon: HeartPulse,
+      tone: 'rose' as const,
+      title: 'Radicación y gestión de incapacidades',
+      description:
+        'Radica incapacidades y sigue el caso completo: radicación, revisión, aprobación y pago. Bitácora unificada con tu equipo y escalamiento automático al área jurídica cuando es necesario.',
     },
     {
       icon: Wallet,
@@ -413,7 +421,7 @@ function Servicios() {
       tone: 'indigo' as const,
       title: 'Soporte jurídico',
       description:
-        'Cuando una incapacidad se complica, nuestro equipo legal toma el caso. Documentos confidenciales protegidos por permisos granulares.',
+        'Cuando una incapacidad se complica, nuestro equipo legal toma el caso. Documentos confidenciales (derecho de petición, tutela, desacato, resolución) protegidos por permisos granulares.',
     },
   ];
 
@@ -426,7 +434,9 @@ function Servicios() {
           description="Sin saltar entre 5 portales distintos ni perseguir a los operadores. Centralizado y automatizado."
         />
 
-        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* 5 servicios — grid 3 cols en lg+: 3 arriba, 2 abajo. La fila
+            inferior queda alineada a la izquierda (patrón estándar). */}
+        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
             <ServicioCard key={item.title} {...item} />
           ))}
@@ -443,7 +453,7 @@ function ServicioCard({
   description,
 }: {
   icon: typeof FileSpreadsheet;
-  tone: 'blue' | 'turquoise' | 'green' | 'indigo';
+  tone: 'blue' | 'turquoise' | 'green' | 'indigo' | 'rose';
   title: string;
   description: string;
 }) {
@@ -452,6 +462,7 @@ function ServicioCard({
     turquoise: 'bg-brand-turquoise/10 text-brand-turquoise',
     green: 'bg-brand-green/10 text-brand-green',
     indigo: 'bg-indigo-100 text-indigo-700',
+    rose: 'bg-rose-100 text-rose-700',
   }[tone];
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-brand-blue/30 hover:shadow-card-float">
