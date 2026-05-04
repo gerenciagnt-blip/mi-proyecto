@@ -639,10 +639,10 @@ function MockPagoConfirmado() {
 // ─────────────────────────────────────────────────────────────
 function Numeros() {
   const stats = [
-    { value: '1.500+', label: 'Afiliaciones mensuales automatizadas' },
+    { value: '+20.000', label: 'Cotizantes activos en la plataforma' },
+    { value: '+150', label: 'Empresas del sector confían en nosotros' },
+    { value: '+1.500', label: 'Afiliaciones mensuales automatizadas' },
     { value: '100%', label: 'Conformidad con la Resolución 2388/2016' },
-    { value: '<5 min', label: 'Para generar y validar una planilla' },
-    { value: '24/7', label: 'Disponibilidad de la plataforma' },
   ];
   return (
     // Banda compacta: el título queda a la izquierda y los 4 stats a la
