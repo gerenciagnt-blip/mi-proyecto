@@ -9,7 +9,6 @@ import {
   Building2,
   User,
   FileSpreadsheet,
-  Bot,
   Wallet,
   Scale,
   Upload,
@@ -119,8 +118,9 @@ function Hero() {
             </h1>
 
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl">
-              Plataforma integral de PILA, ARL y cartera. Operamos por ti, automatizamos las
-              afiliaciones y te damos visibilidad en tiempo real. Para empresas e independientes.
+              Plataforma integral de PILA, ARL y cartera. Afiliamos cotizantes automáticamente,
+              operamos por ti y te damos visibilidad en tiempo real. Hecho para empresas del sector
+              de la seguridad social e independientes.
             </p>
 
             <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -197,7 +197,7 @@ function DashboardMockup() {
           </p>
           <ul className="mt-3 space-y-2.5">
             <MockRow tone="emerald" label="PLA-001284 pagada" sub="Acme S.A.S · hace 2 min" />
-            <MockRow tone="amber" label="Validando 14 cotizantes" sub="Bot Colpatria · en curso" />
+            <MockRow tone="amber" label="Afiliando 14 cotizantes" sub="ARL · en curso" />
             <MockRow tone="blue" label="Nuevo aliado registrado" sub="Bogotá D.C. · hace 1 h" />
           </ul>
         </div>
@@ -205,13 +205,13 @@ function DashboardMockup() {
 
       <div className="absolute -right-6 -top-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-card-float lg:block">
         <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-          Sesión Colpatria
+          Afiliación ARL
         </p>
         <div className="mt-2 flex items-center gap-2">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
-          <span className="text-xs font-semibold text-slate-900">Activa</span>
+          <span className="text-xs font-semibold text-slate-900">Procesando</span>
         </div>
-        <p className="mt-1 text-[10px] text-slate-500">Próximo cierre 9 PM</p>
+        <p className="mt-1 text-[10px] text-slate-500">14 cotizantes en cola</p>
       </div>
 
       <div className="absolute -bottom-6 -left-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-card-float lg:block">
@@ -282,23 +282,23 @@ function ParaQuien() {
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Para quién"
-          title="Hecho para empresas e independientes."
-          description="No importa si tienes un equipo de 200 personas o cotizas tú mismo — adaptamos el flujo a tu realidad."
+          title="Hecho para empresas del sector de la seguridad social e independientes."
+          description="Plataforma para asesores, operadores y empresas del sector que gestionan seguridad social — y para independientes que cotizan por su cuenta."
         />
 
         <div className="mt-16 grid gap-6 lg:grid-cols-2 lg:gap-8">
           <AudienciaCard
             icon={Building2}
-            tag="Empresas"
-            title="Para tu nómina y operación"
-            description="Gestiona a todos tus colaboradores desde un solo panel. Genera planillas masivas, automatiza afiliaciones a ARL y delega operación con tu sucursal aliada."
+            tag="Empresas del sector"
+            title="Para tu operación de seguridad social"
+            description="Plataforma multi-aliado para asesores, operadores PILA y empresas del sector. Centraliza tus sucursales, automatiza la afiliación de cotizantes a ARL y entrega visibilidad ejecutiva por aliado."
             features={[
-              'Planillas tipo E (empleados) generadas automáticamente',
-              'Bot Colpatria afilia hasta 100+ empleados al mes sin tocar el portal',
-              'Cartera con seguimiento de cobros y reportes ejecutivos',
-              'Soporte jurídico cuando una incapacidad se complica',
+              'Planillas tipo E e I generadas y validadas automáticamente',
+              'Afiliación automática de cotizantes a ARL — 1.500+ al mes sin entrar a portales',
+              'Cartera unificada con bitácora de gestiones y reportes por sucursal',
+              'Soporte jurídico cuando una incapacidad escala al área legal',
             ]}
-            ctaLabel="Soluciones para empresas"
+            ctaLabel="Soluciones para empresas del sector"
           />
           <AudienciaCard
             icon={User}
@@ -383,11 +383,11 @@ function Servicios() {
         'Genera, valida y paga planillas tipo E (empleados) e I (independientes) desde un solo lugar. Integración directa con PagoSimple para pago vía PSE.',
     },
     {
-      icon: Bot,
+      icon: ShieldCheck,
       tone: 'turquoise' as const,
-      title: 'Bot ARL Colpatria',
+      title: 'Afiliación automática a ARL',
       description:
-        'Automatización de afiliaciones individuales en el portal AXA Colpatria. 1500+ afiliaciones al mes sin intervención manual, con captura de PDF como evidencia.',
+        'Afiliamos a tus cotizantes a la ARL de forma automática, sin que tu equipo tenga que entrar a portales externos. 1.500+ afiliaciones al mes con captura de comprobante oficial.',
     },
     {
       icon: Wallet,
@@ -479,7 +479,7 @@ function ComoFunciona() {
             num="02"
             icon={Cog}
             title="Generamos por ti"
-            description="Calculamos liquidaciones, agrupamos por empresa o independiente, y consolidamos las planillas. El bot afilia a Colpatria en paralelo."
+            description="Calculamos liquidaciones, agrupamos por empresa o independiente, y consolidamos las planillas. Las afiliaciones a ARL corren en paralelo de forma automática."
           />
           <PasoCard
             num="03"
@@ -574,7 +574,7 @@ function Faq() {
     },
     {
       q: '¿Trabajan con todas las EPS y ARL?',
-      a: 'Sí. PILA es un estándar nacional, así que aplica para todas las EPS, AFP, ARL y CCF activas en Colombia. La automatización de afiliaciones por bot está actualmente disponible para Colpatria ARL; otras ARL están en roadmap.',
+      a: 'Sí. PILA es un estándar nacional, así que aplica para todas las EPS, AFP, ARL y CCF activas en Colombia. La afiliación automática de cotizantes está disponible actualmente para una ARL; el resto están en roadmap.',
     },
     {
       q: '¿Cómo se factura el servicio?',
@@ -716,7 +716,7 @@ function Footer() {
               title="Servicios"
               links={[
                 { label: 'Planillas PILA', href: '#servicios' },
-                { label: 'Bot ARL', href: '#servicios' },
+                { label: 'Afiliación a ARL', href: '#servicios' },
                 { label: 'Cartera', href: '#servicios' },
                 { label: 'Jurídico', href: '#servicios' },
               ]}
