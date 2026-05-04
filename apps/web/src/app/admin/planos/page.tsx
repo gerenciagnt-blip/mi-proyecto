@@ -20,13 +20,29 @@ import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
 import { PagosimpleCell } from './pagosimple-cell';
 import { DetallePlanillaButton } from './detalle-button';
+import { PeriodoSelector, type PeriodoOption } from './periodo-selector';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
 export const metadata = { title: 'Planos PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 type Tab = 'consolidado' | 'guardado' | 'validacion' | 'pagadas';
-type SP = { tab?: string; sucursalId?: string };
+type SP = { tab?: string; sucursalId?: string; periodo?: string };
+
+/** `YYYY-MM` → { anio, mes } o null si formato inválido. */
+function parsePeriodoParam(value: string | undefined): { anio: number; mes: number } | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{1,2})$/.exec(value.trim());
+  if (!m) return null;
+  const anio = Number(m[1]);
+  const mes = Number(m[2]);
+  if (mes < 1 || mes > 12) return null;
+  return { anio, mes };
+}
+
+function formatPeriodoValue(anio: number, mes: number): string {
+  return `${anio}-${String(mes).padStart(2, '0')}`;
+}
 
 const MESES = [
   'Enero',
@@ -72,26 +88,78 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
       : 'consolidado';
   const sucursalFilter = sp.sucursalId?.trim() || '';
 
-  // Período vigente = mes en curso
+  // Resolver período a visualizar:
+  //   - Si viene `?periodo=YYYY-MM` → ese (modo histórico).
+  //   - Si no → mes en curso (default).
+  // Si el período pedido no existe en BD, mostramos alert.
   const now = new Date();
-  const anio = now.getFullYear();
-  const mes = now.getMonth() + 1;
-  const periodo = await prisma.periodoContable.findUnique({
-    where: { anio_mes: { anio, mes } },
-  });
+  const currentMonth = { anio: now.getFullYear(), mes: now.getMonth() + 1 };
+  const requestedPeriodo = parsePeriodoParam(sp.periodo);
+  const periodoCoords = requestedPeriodo ?? currentMonth;
+  const esHistorico =
+    requestedPeriodo !== null &&
+    formatPeriodoValue(requestedPeriodo.anio, requestedPeriodo.mes) !==
+      formatPeriodoValue(currentMonth.anio, currentMonth.mes);
+
+  // Lista de períodos disponibles para el selector (últimos 12 más recientes,
+  // priorizando los que tienen actividad — planillas o comprobantes).
+  const [periodo, periodosCrudos] = await Promise.all([
+    prisma.periodoContable.findUnique({
+      where: { anio_mes: { anio: periodoCoords.anio, mes: periodoCoords.mes } },
+    }),
+    prisma.periodoContable.findMany({
+      orderBy: [{ anio: 'desc' }, { mes: 'desc' }],
+      take: 12,
+      select: { anio: true, mes: true, estado: true },
+    }),
+  ]);
+
+  // Garantizar que el mes en curso aparezca como opción aunque aún no
+  // exista en BD (al inicio del mes el operador todavía no lo abrió).
+  const currentMonthValue = formatPeriodoValue(currentMonth.anio, currentMonth.mes);
+  const periodos: PeriodoOption[] = (() => {
+    const list: PeriodoOption[] = periodosCrudos.map((p) => ({
+      value: formatPeriodoValue(p.anio, p.mes),
+      anio: p.anio,
+      mes: p.mes,
+      estado: p.estado === 'CERRADO' ? 'CERRADO' : 'ABIERTO',
+    }));
+    if (!list.some((p) => p.value === currentMonthValue)) {
+      list.unshift({
+        value: currentMonthValue,
+        anio: currentMonth.anio,
+        mes: currentMonth.mes,
+        estado: 'ABIERTO',
+      });
+    }
+    return list;
+  })();
+  const actualValue = formatPeriodoValue(periodoCoords.anio, periodoCoords.mes);
 
   if (!periodo) {
     return (
       <div className="space-y-6">
         <Header tab={tab} />
+        <PeriodoSelector
+          periodos={periodos}
+          actualValue={actualValue}
+          currentMonthValue={currentMonthValue}
+        />
         <Alert variant="warning">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            No hay período contable del mes en curso. Ve a{' '}
-            <Link href="/admin/transacciones" className="underline">
-              Transacción
-            </Link>{' '}
-            para inicializarlo.
+            No existe período contable para {actualValue}.{' '}
+            {esHistorico
+              ? 'Ese mes nunca se abrió en el sistema. Selecciona otro período.'
+              : 'Ve a '}
+            {!esHistorico && (
+              <>
+                <Link href="/admin/transacciones" className="underline">
+                  Transacción
+                </Link>{' '}
+                para inicializarlo.
+              </>
+            )}
           </span>
         </Alert>
       </div>
@@ -189,11 +257,31 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
     }),
   ]);
 
-  const qs = sucursalFilter ? `&sucursalId=${encodeURIComponent(sucursalFilter)}` : '';
+  // Preserva sucursalId + periodo en los links de tabs para mantener el
+  // contexto histórico al navegar entre Consolidado/Guardado/etc.
+  const qsParts: string[] = [];
+  if (sucursalFilter) qsParts.push(`sucursalId=${encodeURIComponent(sucursalFilter)}`);
+  if (esHistorico) qsParts.push(`periodo=${actualValue}`);
+  const qs = qsParts.length > 0 ? `&${qsParts.join('&')}` : '';
 
   return (
     <div className="space-y-6">
       <Header tab={tab} />
+
+      {/* Selector de período + banner si es histórico */}
+      <div className="flex flex-wrap items-center gap-3">
+        <PeriodoSelector
+          periodos={periodos}
+          actualValue={actualValue}
+          currentMonthValue={currentMonthValue}
+        />
+        {esHistorico && (
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Vista histórica · período cerrado o anterior
+          </span>
+        )}
+      </div>
 
       {/* Tabs */}
       <div className="border-b border-slate-200">
