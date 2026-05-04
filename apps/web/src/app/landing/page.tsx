@@ -645,7 +645,11 @@ function Numeros() {
     { value: '24/7', label: 'Disponibilidad de la plataforma' },
   ];
   return (
-    <section className="relative overflow-hidden px-6 py-16 lg:px-12 lg:py-20">
+    // Banda compacta: el título queda a la izquierda y los 4 stats a la
+    // derecha en una sola fila visual (lg+), reduciendo la altura de la
+    // sección oscura y eliminando el "espacio vacío" entre Cómo Funciona
+    // y FAQ. En mobile el grid de stats baja debajo del título.
+    <section className="relative overflow-hidden px-6 py-12 lg:px-12 lg:py-14">
       <div
         className="absolute inset-0 -z-10 bg-gradient-to-br from-brand-blue/95 via-brand-blue-dark to-brand-blue-dark"
         aria-hidden
@@ -654,23 +658,23 @@ function Numeros() {
         className="absolute -right-20 -top-20 -z-10 h-[400px] w-[400px] rounded-full bg-brand-turquoise/20 blur-3xl"
         aria-hidden
       />
-      <div className="mx-auto max-w-7xl">
-        <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
+      <div className="mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-12 lg:gap-12">
+        <div className="lg:col-span-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
             En números
           </span>
-          <h2 className="mt-4 font-heading text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+          <h2 className="mt-3 font-heading text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
             La operación que respalda tu día a día.
           </h2>
         </div>
 
-        <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-12">
+        <div className="grid grid-cols-2 gap-6 sm:gap-8 lg:col-span-8 lg:grid-cols-4 lg:gap-6">
           {stats.map((s) => (
-            <div key={s.label}>
-              <p className="font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
+            <div key={s.label} className="border-l-2 border-white/20 pl-3 lg:pl-4">
+              <p className="font-heading text-3xl font-bold leading-none tracking-tight text-white sm:text-4xl">
                 {s.value}
               </p>
-              <p className="mt-2 text-sm text-white/70">{s.label}</p>
+              <p className="mt-1.5 text-xs leading-snug text-white/70 sm:text-sm">{s.label}</p>
             </div>
           ))}
         </div>
