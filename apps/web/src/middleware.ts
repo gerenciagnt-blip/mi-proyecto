@@ -67,11 +67,16 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
 
-  // Rutas públicas: login, callbacks de NextAuth y endpoints de monitoreo.
+  // Rutas públicas: login, callbacks de NextAuth, endpoints de monitoreo
+  // y la landing pública (cualquier sub-ruta bajo /landing).
   // El health check es público a propósito — no expone información sensible
   // y debe ser accesible para uptime monitors, Kubernetes probes, etc.
   const isPublic =
-    pathname === '/login' || pathname.startsWith('/api/auth') || pathname === '/api/health';
+    pathname === '/login' ||
+    pathname.startsWith('/api/auth') ||
+    pathname === '/api/health' ||
+    pathname === '/landing' ||
+    pathname.startsWith('/landing/');
 
   // Generamos el nonce y la CSP para CADA request — son baratos.
   // El nonce se inyecta en el request header `x-nonce` para que los
