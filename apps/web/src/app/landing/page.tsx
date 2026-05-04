@@ -20,7 +20,11 @@ import {
   MapPin,
   Plus,
   Minus,
+  MessageCircle,
 } from 'lucide-react';
+import { waUrl, WA_MENSAJES } from './_components/whatsapp';
+import { WhatsappFloat } from './_components/whatsapp-float';
+import { SolicitarDemoForm } from './_components/solicitar-demo-form';
 
 export default function LandingPage() {
   return (
@@ -36,6 +40,7 @@ export default function LandingPage() {
         <CtaFinal />
       </main>
       <Footer />
+      <WhatsappFloat />
     </>
   );
 }
@@ -132,10 +137,13 @@ function Hero() {
                 <ArrowRight className="h-4 w-4" />
               </a>
               <a
-                href="#contacto"
+                href={waUrl(WA_MENSAJES.contactoComercial)}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex h-12 items-center gap-2 rounded-full border border-slate-300 bg-white px-6 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
-                Contactar comercial
+                <MessageCircle className="h-4 w-4 text-[#25D366]" />
+                Contactar por WhatsApp
               </a>
             </div>
 
@@ -723,10 +731,21 @@ function Faq() {
         <SectionHeading
           eyebrow="Preguntas frecuentes"
           title="Respuestas claras."
-          description="Si tu pregunta no está acá, escríbenos directamente — respondemos en menos de un día hábil."
+          description="Si tu pregunta no está acá, escríbenos por WhatsApp — respondemos en menos de un día hábil."
           centered
         />
-        <div className="mt-12 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
+        <div className="mt-6 flex justify-center">
+          <a
+            href={waUrl(WA_MENSAJES.preguntaFaq)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-11 items-center gap-2 rounded-full bg-[#25D366] px-5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1ebe5d] hover:shadow-lg"
+          >
+            <MessageCircle className="h-4 w-4" />
+            Hacer mi pregunta por WhatsApp
+          </a>
+        </div>
+        <div className="mt-10 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
           {items.map((it, i) => (
             <details key={i} className="group">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left transition hover:bg-slate-50">
@@ -766,34 +785,49 @@ function CtaFinal() {
             className="absolute -bottom-24 -left-24 h-80 w-80 rounded-full bg-white/10 blur-3xl"
             aria-hidden
           />
-          <div className="relative">
-            <h2 className="max-w-3xl font-heading text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-              ¿Listo para que operemos tu seguridad social?
-            </h2>
-            <p className="mt-5 max-w-2xl text-base text-white/85 sm:text-lg">
-              Solicita una demo guiada con un asesor o escríbenos directamente. Sin compromiso.
-            </p>
+          <div className="relative grid gap-10 lg:grid-cols-12 lg:gap-12">
+            {/* Texto + datos */}
+            <div className="lg:col-span-5">
+              <h2 className="font-heading text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
+                ¿Listo para que operemos tu seguridad social?
+              </h2>
+              <p className="mt-5 text-base text-white/85 sm:text-lg">
+                Déjanos tus datos y un asesor te contacta en menos de un día hábil. O hablemos
+                directamente por WhatsApp si prefieres.
+              </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              <a
-                href="mailto:gerencia.gnt@gmail.com?subject=Solicitud%20de%20demo%20Sistema%20PILA"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-brand-blue-dark shadow-lg transition hover:bg-slate-50"
-              >
-                Solicitar demo
-                <ArrowRight className="h-4 w-4" />
-              </a>
-              <a
-                href="mailto:gerencia.gnt@gmail.com?subject=Contacto%20comercial%20Sistema%20PILA"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-white/40 bg-transparent px-6 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Contactar comercial
-              </a>
+              <div className="mt-8">
+                <a
+                  href={waUrl(WA_MENSAJES.contactoComercial)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 items-center gap-2 rounded-full border border-white/40 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                >
+                  <MessageCircle className="h-4 w-4 text-[#25D366]" />
+                  Contactar por WhatsApp
+                </a>
+              </div>
+
+              <div className="mt-10 grid gap-3 border-t border-white/20 pt-8 text-sm text-white/85">
+                <ContactoItem icon={Mail} label="gerencia.gnt@gmail.com" />
+                <ContactoItem icon={Phone} label="+57 (1) 000 0000" />
+                <ContactoItem icon={MapPin} label="Pereira, Colombia" />
+              </div>
             </div>
 
-            <div className="mt-10 grid gap-4 border-t border-white/20 pt-8 text-sm text-white/85 sm:grid-cols-3">
-              <ContactoItem icon={Mail} label="gerencia.gnt@gmail.com" />
-              <ContactoItem icon={Phone} label="+57 (1) 000 0000" />
-              <ContactoItem icon={MapPin} label="Pereira, Colombia" />
+            {/* Form de demo */}
+            <div className="lg:col-span-7">
+              <div className="rounded-2xl border border-white/20 bg-white/5 p-6 backdrop-blur sm:p-8">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">
+                  Solicitar demo
+                </p>
+                <h3 className="mt-1 font-heading text-xl font-bold text-white sm:text-2xl">
+                  Cuéntanos sobre tu operación.
+                </h3>
+                <div className="mt-5">
+                  <SolicitarDemoForm />
+                </div>
+              </div>
             </div>
           </div>
         </div>
