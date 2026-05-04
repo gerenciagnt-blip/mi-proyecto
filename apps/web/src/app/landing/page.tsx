@@ -689,27 +689,31 @@ function Faq() {
   const items: { q: string; a: string }[] = [
     {
       q: '¿Qué es exactamente Sistema PILA?',
-      a: 'Somos una plataforma SaaS que opera la Planilla Integrada de Liquidación de Aportes (PILA) por ti. Calculamos, validamos y pagamos tus aportes a EPS, AFP, ARL y caja de compensación; además automatizamos afiliaciones a ARL Colpatria y manejamos la cartera con tus aportantes.',
+      a: 'Somos una plataforma SaaS para empresas del sector de la seguridad social y para independientes. Calculamos, validamos y pagamos los aportes a EPS, AFP, ARL y CCF a través de un operador autorizado por el Ministerio de Salud; automatizamos la afiliación de cotizantes a ARL y centralizamos cartera, gestiones e incapacidades en un solo panel.',
     },
     {
-      q: '¿Trabajan con todas las EPS y ARL?',
-      a: 'Sí. PILA es un estándar nacional, así que aplica para todas las EPS, AFP, ARL y CCF activas en Colombia. La afiliación automática de cotizantes está disponible actualmente para una ARL; el resto están en roadmap.',
+      q: '¿Necesito tener mi propio operador PILA para usar la plataforma?',
+      a: 'No. Operamos como aliados de un operador autorizado, así que no necesitas resolución propia ni convenio directo con el operador. Te conectas a la plataforma, cargas tu base de cotizantes, y el sistema gestiona el flujo PILA por ti.',
+    },
+    {
+      q: '¿Trabajan con todas las EPS, AFP, ARL y cajas de compensación?',
+      a: 'Sí. PILA es un estándar nacional regulado por la Resolución 2388 de 2016, así que la generación, validación y pago de planillas aplica para todas las EPS, AFP, ARL y CCF activas en Colombia. La afiliación automatizada de cotizantes está disponible actualmente para una ARL principal; ampliar a más ARL está en nuestro roadmap.',
     },
     {
       q: '¿Cómo se factura el servicio?',
-      a: 'Trabajamos con dos modelos: para empresas, una tarifa mensual por cotizante activo; para independientes, una comisión transparente sobre el aporte. Sin cargos ocultos, sin contratos de permanencia.',
-    },
-    {
-      q: '¿Mi información es segura?',
-      a: 'Sí. La plataforma corre sobre infraestructura cifrada, las credenciales de portales externos se guardan con AES-256-GCM, y todas las acciones quedan registradas en bitácora. Cumplimos con la Ley 1581 de 2012 (Habeas Data).',
+      a: 'Trabajamos con dos modelos: para empresas del sector, tarifa mensual por cotizante activo o por sucursal según el volumen y los módulos contratados; para independientes, una comisión transparente sobre el aporte mensual. Sin cargos ocultos, sin contratos de permanencia.',
     },
     {
       q: '¿Cuánto demora la implementación?',
-      a: 'Para independientes, minutos: registras tu información, validamos y empiezas a cotizar el siguiente periodo. Para empresas, depende del tamaño — una empresa típica de 50 empleados se onboarda en 24-48 horas con acompañamiento.',
+      a: 'Para independientes son minutos: registras tu documento, validamos contra BDUA/RUAF y empiezas a cotizar en el siguiente período. Para empresas del sector con base ya consolidada en Excel, el onboarding típico está entre 48 y 72 horas con acompañamiento. Migraciones de bases más grandes (varios miles de cotizantes) las coordinamos por sprints con tu equipo operativo.',
     },
     {
-      q: '¿Tienen soporte jurídico?',
-      a: 'Sí. Si una incapacidad o trámite se complica, el caso pasa automáticamente a nuestro flujo jurídico interno con trazabilidad completa, gestión documental confidencial y permisos granulares para el área legal.',
+      q: '¿Mi información es segura?',
+      a: 'Sí. La plataforma corre sobre infraestructura cifrada en tránsito y en reposo. Las credenciales de portales externos se guardan con AES-256-GCM y todas las acciones del sistema quedan registradas en bitácora con trazabilidad por usuario y por sucursal. Cumplimos con la Ley 1581 de 2012 (Habeas Data) y los lineamientos de la Resolución 2388 de 2016.',
+    },
+    {
+      q: '¿Tienen soporte jurídico cuando una incapacidad o trámite se complica?',
+      a: 'Sí. Cuando un caso escala (cuestionamiento de la EPS, derecho de petición, tutela, desacato), pasa automáticamente a nuestro flujo jurídico interno con bitácora completa, gestión documental confidencial por tipo (derecho de petición, tutela, desacato, resolución, otros) y permisos granulares solo para el área legal.',
     },
   ];
 
