@@ -649,16 +649,15 @@ function Numeros() {
     // derecha en una sola fila visual (lg+), reduciendo la altura de la
     // sección oscura y eliminando el "espacio vacío" entre Cómo Funciona
     // y FAQ. En mobile el grid de stats baja debajo del título.
-    <section className="relative overflow-hidden px-6 py-12 lg:px-12 lg:py-14">
+    <section className="relative overflow-hidden bg-gradient-to-br from-brand-blue via-brand-blue-dark to-brand-blue-dark px-6 py-12 lg:px-12 lg:py-14">
+      {/* Blob decorativo turquoise — `pointer-events-none` para no bloquear
+          interacción y sin z-index negativo (que se salía del stacking
+          context de la sección y dejaba el fondo blanco). */}
       <div
-        className="absolute inset-0 -z-10 bg-gradient-to-br from-brand-blue/95 via-brand-blue-dark to-brand-blue-dark"
+        className="pointer-events-none absolute -right-20 -top-20 h-[400px] w-[400px] rounded-full bg-brand-turquoise/20 blur-3xl"
         aria-hidden
       />
-      <div
-        className="absolute -right-20 -top-20 -z-10 h-[400px] w-[400px] rounded-full bg-brand-turquoise/20 blur-3xl"
-        aria-hidden
-      />
-      <div className="mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-12 lg:gap-12">
+      <div className="relative mx-auto grid max-w-7xl items-center gap-8 lg:grid-cols-12 lg:gap-12">
         <div className="lg:col-span-4">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
             En números
