@@ -1,13 +1,16 @@
+/**
+ * Sección "Sesiones" del módulo Bot Colpatria — estado de inicio de
+ * sesión por empresa + botones para disparar login/logout auto.
+ *
+ * Server Component. Sin searchParams propios.
+ */
+
 import Link from 'next/link';
-import { KeyRound, CheckCircle2, AlertCircle, Clock, Building2, ChevronRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Clock, Building2, ChevronRight } from 'lucide-react';
 import { prisma } from '@pila/db';
-import { requireRole } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { DispararLoginButton, DispararLogoutButton } from './disparar-button';
-
-export const metadata = { title: 'Sesiones Colpatria — Sistema PILA' };
-export const dynamic = 'force-dynamic';
 
 type EstadoSesion = 'ACTIVA' | 'EXPIRADA' | 'SIN_SESION' | 'INCOMPLETA';
 
@@ -65,12 +68,7 @@ function fmtRelativo(d: Date | null, ahora: Date): string {
   return futuro ? `en ${dias}d` : `hace ${dias}d`;
 }
 
-export default async function ColpatriaSesionesPage() {
-  await requireRole('ADMIN', 'SOPORTE');
-
-  // Trae todas las empresas con Colpatria activo + su sesión cacheada.
-  // Empresas sin sesión salen igual (no tienen FK rota — la relación es 1:1
-  // opcional desde el lado de Empresa).
+export async function SesionesSection() {
   const empresas = await prisma.empresa.findMany({
     where: { active: true, colpatriaActivo: true },
     orderBy: { nombre: 'asc' },
@@ -143,23 +141,16 @@ export default async function ColpatriaSesionesPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
-            <KeyRound className="h-6 w-6 text-brand-blue" />
-            Sesiones Colpatria
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Estado de inicio/cierre de sesión por empresa. El cron levanta sesión Lun–Sáb 7 AM y la
-            cierra 9 PM. Si una empresa quedó inactiva fuera de horario, podés disparar el login
-            manualmente.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          El cron levanta sesión Lun–Sáb 7 AM y la cierra 9 PM. Si una empresa quedó inactiva fuera
+          de horario, podés disparar el login manualmente.
+        </p>
         <div className="flex flex-wrap items-start gap-2">
           <DispararLogoutButton />
           <DispararLoginButton />
         </div>
-      </header>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

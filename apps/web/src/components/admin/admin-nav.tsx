@@ -27,7 +27,6 @@ import {
   Activity,
   Bot,
   Scale,
-  KeyRound,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -82,12 +81,6 @@ const NAV: NavItem[] = [
         label: 'Bot Colpatria',
         href: '/admin/configuracion/colpatria-jobs',
         icon: Bot,
-        roles: STAFF,
-      },
-      {
-        label: 'Sesiones Colpatria',
-        href: '/admin/configuracion/colpatria-sesiones',
-        icon: KeyRound,
         roles: STAFF,
       },
       {
