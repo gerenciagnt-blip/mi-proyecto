@@ -105,7 +105,12 @@ function Hero() {
       <div className="mx-auto max-w-7xl px-6 pb-16 pt-12 sm:pt-16 lg:px-12 lg:pb-20 lg:pt-24">
         <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="lg:col-span-6">
-            <h1 className="font-heading text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/20 bg-brand-blue/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-brand-blue-dark">
+              <Sparkles className="h-3 w-3" />
+              Aliado de operador autorizado en Colombia
+            </span>
+
+            <h1 className="mt-6 font-heading text-5xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl lg:text-7xl">
               Tu seguridad social{' '}
               <span className="bg-gradient-to-r from-brand-blue to-brand-turquoise bg-clip-text text-transparent">
                 a un click.
@@ -161,8 +166,12 @@ function MiniFeature({ icon: Icon, label }: { icon: typeof Sparkles; label: stri
 
 function DashboardMockup() {
   return (
-    <div className="relative">
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card-float">
+    // Perspectiva 3D pura CSS — sin Three.js / Spline. Da profundidad
+    // tipo Stripe/Linear con costo cero (es una transformación nativa
+    // del browser). Solo se aplica en lg+ porque en mobile el rotateY
+    // genera espacio horizontal que rompe el layout.
+    <div className="relative lg:[perspective:1500px]" style={{ transformStyle: 'preserve-3d' }}>
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card-float transition-transform duration-700 ease-out lg:[transform:rotateY(-6deg)_rotateX(3deg)] lg:hover:[transform:rotateY(-2deg)_rotateX(1deg)]">
         <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
           <div className="flex gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
@@ -469,18 +478,21 @@ function ComoFunciona() {
             icon={Upload}
             title="Subes o registras"
             description="Importas tu base de cotizantes desde Excel o registras independientes uno a uno. Validamos los datos contra DIVIPOLA y SGSS al instante."
+            visual={<MockTablaCotizantes />}
           />
           <PasoCard
             num="02"
             icon={Cog}
             title="Generamos por ti"
             description="Calculamos liquidaciones, agrupamos por empresa o independiente, y consolidamos las planillas. Las afiliaciones a ARL corren en paralelo de forma automática."
+            visual={<MockProgresoGenerar />}
           />
           <PasoCard
             num="03"
             icon={CreditCard}
             title="Pagas y listo"
             description="Validas la planilla en PagoSimple y pagas vía PSE con tu banco. Recibes comprobante oficial y trazabilidad completa."
+            visual={<MockPagoConfirmado />}
           />
         </div>
       </div>
@@ -493,14 +505,16 @@ function PasoCard({
   icon: Icon,
   title,
   description,
+  visual,
 }: {
   num: string;
   icon: typeof Upload;
   title: string;
   description: string;
+  visual: React.ReactNode;
 }) {
   return (
-    <div className="relative rounded-2xl border border-slate-200 bg-white p-8">
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-8">
       <span className="absolute right-6 top-6 font-heading text-5xl font-bold text-slate-100">
         {num}
       </span>
@@ -509,6 +523,113 @@ function PasoCard({
       </div>
       <h3 className="mt-6 font-heading text-xl font-bold tracking-tight text-slate-900">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">{description}</p>
+      <div className="mt-6">{visual}</div>
+    </div>
+  );
+}
+
+/**
+ * Mini-mockup paso 1 — tabla de cotizantes con rows que aparecen
+ * de a poco. Animación CSS pura con `animate-fade-in` (ya definido
+ * en tailwind.config) + delay escalonado vía inline style.
+ */
+function MockTablaCotizantes() {
+  const rows = [
+    { doc: 'CC 1.234.567', name: 'A. Ramírez', tag: 'OK' },
+    { doc: 'CC 9.876.543', name: 'M. Pérez', tag: 'OK' },
+    { doc: 'CC 5.555.111', name: 'J. Torres', tag: 'OK' },
+  ];
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+      <div className="mb-2 flex items-center justify-between text-[9px] font-medium uppercase tracking-wider text-slate-400">
+        <span>Cotizantes cargados</span>
+        <span className="font-mono text-[10px] text-emerald-600">✓ {rows.length}/3</span>
+      </div>
+      <ul className="space-y-1.5">
+        {rows.map((r, i) => (
+          <li
+            key={r.doc}
+            className="flex animate-fade-in items-center gap-2 rounded-md bg-white px-2.5 py-1.5 text-[10px] shadow-sm"
+            style={{ animationDelay: `${i * 120}ms`, animationFillMode: 'both' }}
+          >
+            <span className="font-mono text-slate-400">{r.doc}</span>
+            <span className="font-medium text-slate-700">{r.name}</span>
+            <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+              {r.tag}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Mini-mockup paso 2 — progress bar de generación con porcentaje
+ * "vivo" (animación CSS keyframe con width). Da sensación de
+ * proceso en curso.
+ */
+function MockProgresoGenerar() {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+      <div className="mb-1.5 flex items-center justify-between text-[9px] font-medium uppercase tracking-wider text-slate-400">
+        <span>Generando planillas</span>
+        <span className="font-mono text-[10px] text-brand-blue">78%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+        <div className="h-full rounded-full bg-brand-gradient-h" style={{ width: '78%' }} />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[9px]">
+        <MockMini label="Tipo E" value="42" tone="blue" />
+        <MockMini label="Tipo I" value="18" tone="turquoise" />
+        <MockMini label="ARL" value="60" tone="green" />
+      </div>
+    </div>
+  );
+}
+
+function MockMini({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'blue' | 'turquoise' | 'green';
+}) {
+  const cls = {
+    blue: 'bg-brand-blue/5 text-brand-blue-dark',
+    turquoise: 'bg-brand-turquoise/10 text-brand-blue-dark',
+    green: 'bg-brand-green/5 text-brand-green-dark',
+  }[tone];
+  return (
+    <div className={`rounded-md px-2 py-1.5 ${cls}`}>
+      <p className="text-[8px] font-medium uppercase tracking-wider opacity-70">{label}</p>
+      <p className="mt-0.5 font-mono text-xs font-bold">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Mini-mockup paso 3 — confirmación de pago con check verde y datos
+ * de la transacción. Cierre del flujo.
+ */
+function MockPagoConfirmado() {
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <CheckCircle2 className="h-4 w-4" />
+        </span>
+        <div className="flex-1">
+          <p className="text-[10px] font-bold text-emerald-800">Pago confirmado</p>
+          <p className="font-mono text-[9px] text-emerald-700">PLA-001284 · vía PSE</p>
+        </div>
+      </div>
+      <div className="mt-2.5 flex items-center justify-between rounded-md bg-white px-2.5 py-1.5">
+        <span className="text-[9px] font-medium text-slate-500">Total pagado</span>
+        <span className="font-mono text-[11px] font-bold text-slate-900">$ 1.245.300</span>
+      </div>
     </div>
   );
 }
