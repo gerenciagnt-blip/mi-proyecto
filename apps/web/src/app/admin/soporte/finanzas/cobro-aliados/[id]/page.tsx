@@ -17,6 +17,7 @@ import { requireStaff } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { MarcarPagadoForm } from './marcar-pagado-form';
+import { ReconciliarEfipayButton } from './reconciliar-efipay-button';
 
 const EFIPAY_TONE: Record<EfipayEstado, string> = {
   PENDIENTE: 'bg-amber-50 text-amber-700 ring-amber-200',
@@ -275,6 +276,7 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
                       <th className="px-5 py-1.5 text-right">Sobrecosto</th>
                       <th className="px-5 py-1.5 text-right">Cobrado</th>
                       <th className="px-5 py-1.5">Payment ID / motivo</th>
+                      <th className="px-5 py-1.5">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -329,6 +331,15 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
                               <ExternalLink className="h-3 w-3" />
                               checkout
                             </a>
+                          )}
+                        </td>
+                        <td className="px-5 py-1.5">
+                          {trx.estado === 'PENDIENTE' && cobro.estado !== 'PAGADO' && (
+                            <ReconciliarEfipayButton
+                              transaccionId={trx.id}
+                              consecutivoCobro={cobro.consecutivo}
+                              efipayPaymentId={trx.efipayPaymentId}
+                            />
                           )}
                         </td>
                       </tr>
