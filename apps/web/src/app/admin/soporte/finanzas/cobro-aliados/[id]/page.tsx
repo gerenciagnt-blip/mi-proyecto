@@ -17,6 +17,7 @@ import { requireStaff } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { MarcarPagadoForm } from './marcar-pagado-form';
+import { AnularCobroButton } from './anular-cobro-button';
 
 const EFIPAY_TONE: Record<EfipayEstado, string> = {
   PENDIENTE: 'bg-amber-50 text-amber-700 ring-amber-200',
@@ -376,6 +377,21 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
           ) : (
             <section className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center text-xs text-slate-500">
               Cobro anulado. Sin acciones disponibles.
+            </section>
+          )}
+
+          {/* Anular: solo aparece para cobros que aún no están pagados ni
+              anulados (PENDIENTE/VENCIDO). Va separado del form de pago para
+              evitar clicks accidentales. */}
+          {(cobro.estado === 'PENDIENTE' || cobro.estado === 'VENCIDO') && (
+            <section className="rounded-xl border border-rose-200 bg-rose-50/40 p-4">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-rose-800">
+                Zona crítica
+              </h3>
+              <p className="mt-1 mb-2 text-[11px] text-rose-700">
+                Anular es definitivo. Úsalo cuando el cobro no aplica (ej: error de generación).
+              </p>
+              <AnularCobroButton cobroId={cobro.id} />
             </section>
           )}
         </aside>
