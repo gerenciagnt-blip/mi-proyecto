@@ -37,8 +37,12 @@ const DEPARTAMENTOS: DepartamentoActivo[] = [
   { id: 'cal', nombre: 'Caldas', ciudad: 'Manizales' },
   { id: 'qui', nombre: 'Quindío', ciudad: 'Armenia' },
   { id: 'vac', nombre: 'Valle del Cauca', ciudad: 'Cali' },
+  { id: 'cau', nombre: 'Cauca', ciudad: 'Popayán' },
   { id: 'ant', nombre: 'Antioquia', ciudad: 'Medellín' },
   { id: 'dc', nombre: 'Bogotá D.C.', ciudad: 'Bogotá' },
+  { id: 'cun', nombre: 'Cundinamarca', ciudad: 'Bogotá' },
+  { id: 'san', nombre: 'Santander', ciudad: 'Bucaramanga' },
+  { id: 'nsa', nombre: 'Norte de Santander', ciudad: 'Cúcuta' },
 ];
 
 const ACTIVE_IDS = new Set(DEPARTAMENTOS.map((d) => d.id));
