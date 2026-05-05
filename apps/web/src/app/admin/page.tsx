@@ -431,7 +431,14 @@ async function AliadoHome({ sp }: { sp: SP }) {
       select: { codigo: true, nombre: true, bloqueadaPorMora: true },
     }),
     prisma.cobroAliado.findMany({
-      where: { sucursalId, estado: { in: ['PENDIENTE', 'VENCIDO'] } },
+      where: {
+        sucursalId,
+        estado: { in: ['PENDIENTE', 'VENCIDO'] },
+        // Cobros de $0 (períodos sin movimientos) no van al banner del
+        // aliado — no es un adeudo real, solo un cierre administrativo
+        // que staff resuelve desde Soporte/Finanzas.
+        totalCobro: { gt: 0 },
+      },
       orderBy: { fechaLimite: 'asc' },
       include: {
         periodo: { select: { anio: true, mes: true } },

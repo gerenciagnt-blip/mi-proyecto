@@ -251,11 +251,12 @@ export async function generarCobroAliado(opts: GenerarCobroOptions): Promise<Gen
     });
   }
 
-  if (conceptos.length === 0) {
-    return { ok: false, error: 'No hay conceptos cobrables en este período' };
-  }
-
   // 7. Totales
+  // NOTA: si conceptos.length === 0, NO rechazamos — el sistema debe
+  // continuar y dejar registro del período aunque no haya movimientos
+  // cobrables. El cobro queda en $0, estado PENDIENTE, y el operador lo
+  // cierra manualmente con "Marcar como pagado" (sin requerir medio
+  // de pago ni referencia, ya que no hay nada que cobrar).
   const cantAfiliaciones = conceptos.filter((c) => c.tipo === 'AFILIACION_PROCESADA').length;
   const cantMensualidades = conceptos.filter((c) => c.tipo === 'MENSUALIDAD').length;
   const valorAfiliaciones = conceptos
@@ -265,6 +266,7 @@ export async function generarCobroAliado(opts: GenerarCobroOptions): Promise<Gen
     .filter((c) => c.tipo === 'MENSUALIDAD')
     .reduce((s, c) => s + c.subtotal, 0);
   const totalCobro = valorAfiliaciones + valorMensualidades;
+  const esVacio = conceptos.length === 0;
   const fechaLimite = calcularFechaLimite(periodo.anio, periodo.mes);
 
   // 8. Persistir en transacción
@@ -302,24 +304,33 @@ export async function generarCobroAliado(opts: GenerarCobroOptions): Promise<Gen
             totalCobro: new Prisma.Decimal(totalCobro),
             estado: 'PENDIENTE',
             createdById: autorUserId,
+            // Si el cobro queda en $0, dejamos una observación clara para
+            // que el operador entienda por qué y simplemente lo cierre.
+            observaciones: esVacio
+              ? 'Período sin movimientos cobrables. Cobro generado en $0 — marca como pagado para cerrar el período.'
+              : null,
           },
           select: { id: true },
         });
         targetId = created.id;
       }
 
-      await tx.cobroAliadoConcepto.createMany({
-        data: conceptos.map((c) => ({
-          cobroId: targetId,
-          tipo: c.tipo,
-          descripcion: c.descripcion,
-          referenciaId: c.referenciaId,
-          regimen: c.regimen,
-          cantidad: c.cantidad,
-          valorUnit: new Prisma.Decimal(c.valorUnit),
-          subtotal: new Prisma.Decimal(c.subtotal),
-        })),
-      });
+      // createMany falla con data vacío en algunos drivers — saltarlo si
+      // no hay conceptos (cobro vacío).
+      if (conceptos.length > 0) {
+        await tx.cobroAliadoConcepto.createMany({
+          data: conceptos.map((c) => ({
+            cobroId: targetId,
+            tipo: c.tipo,
+            descripcion: c.descripcion,
+            referenciaId: c.referenciaId,
+            regimen: c.regimen,
+            cantidad: c.cantidad,
+            valorUnit: new Prisma.Decimal(c.valorUnit),
+            subtotal: new Prisma.Decimal(c.subtotal),
+          })),
+        });
+      }
 
       return targetId;
     });
@@ -395,8 +406,11 @@ export async function generarCobrosDelPeriodo(
  * Marca cobros vencidos y bloquea las sucursales morosas. Se corre vía cron
  * diario a partir del día 16 de cada mes.
  *
- * Criterio: CobroAliado con estado=PENDIENTE y fechaLimite < now
+ * Criterio: CobroAliado con estado=PENDIENTE, totalCobro > 0 y fechaLimite < now
  *   → cambiar estado a VENCIDO, fechaBloqueo=now, sucursal.bloqueadaPorMora=true.
+ *
+ * Cobros de $0 (período sin movimientos) NO bloquean — solo quedan PENDIENTE
+ * hasta que el operador los cierre manualmente.
  */
 export async function bloquearCobrosVencidos(ahora = new Date()): Promise<{
   vencidos: number;
@@ -406,6 +420,7 @@ export async function bloquearCobrosVencidos(ahora = new Date()): Promise<{
     where: {
       estado: 'PENDIENTE',
       fechaLimite: { lt: ahora },
+      totalCobro: { gt: 0 }, // ignorar cobros de $0 — no son adeudo real
     },
     select: { id: true, sucursalId: true },
   });

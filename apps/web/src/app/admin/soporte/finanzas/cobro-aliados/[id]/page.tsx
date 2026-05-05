@@ -347,15 +347,20 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
               <header className="border-b border-emerald-200/60 px-5 py-3">
                 <h2 className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800">
                   <CheckCircle2 className="h-4 w-4" />
-                  Registrar pago
+                  {Number(cobro.totalCobro) === 0 ? 'Cerrar período' : 'Registrar pago'}
                 </h2>
                 <p className="mt-0.5 text-[11px] text-emerald-700">
-                  Al marcar pagado, se desbloquea automáticamente la sucursal si no tiene otros
-                  cobros vencidos.
+                  {Number(cobro.totalCobro) === 0
+                    ? 'Cobro sin movimientos — solo confírmalo para cerrar el período.'
+                    : 'Al marcar pagado, se desbloquea automáticamente la sucursal si no tiene otros cobros vencidos.'}
                 </p>
               </header>
               <div className="px-5 py-4">
-                <MarcarPagadoForm cobroId={cobro.id} mediosPago={mediosPago} />
+                <MarcarPagadoForm
+                  cobroId={cobro.id}
+                  mediosPago={mediosPago}
+                  totalCobro={Number(cobro.totalCobro)}
+                />
               </div>
             </section>
           ) : cobro.estado === 'PAGADO' ? (
