@@ -90,9 +90,10 @@ function Nav() {
           </Link>
           <a
             href="#contacto"
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:shadow-brand-lg"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-gradient px-3 py-2 text-xs font-semibold text-white shadow-brand transition hover:shadow-brand-lg sm:px-4 sm:text-sm"
           >
-            Solicitar demo
+            <span className="hidden sm:inline">Solicitar demo</span>
+            <span className="sm:hidden">Demo</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </a>
         </div>
@@ -137,10 +138,10 @@ function Hero() {
               de la seguridad social e independientes.
             </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-3">
+            <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <a
                 href="#contacto"
-                className="inline-flex h-12 items-center gap-2 rounded-full bg-brand-gradient px-6 text-sm font-semibold text-white shadow-brand transition hover:shadow-brand-lg"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-brand-gradient px-6 text-sm font-semibold text-white shadow-brand transition hover:shadow-brand-lg"
               >
                 Solicitar demo
                 <ArrowRight className="h-4 w-4" />
@@ -149,7 +150,7 @@ function Hero() {
                 href={waUrl(WA_MENSAJES.contactoComercial)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-slate-300 bg-white px-6 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-6 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
                 <MessageCircle className="h-4 w-4 text-[#25D366]" />
                 Contactar por WhatsApp
@@ -815,7 +816,7 @@ function CtaFinal() {
   return (
     <section
       id="contacto"
-      className="border-t border-slate-100 bg-slate-50/60 px-6 py-16 lg:px-12 lg:py-20"
+      className="border-t border-slate-100 bg-slate-50/60 px-6 pb-28 pt-16 lg:px-12 lg:pb-20 lg:pt-20"
     >
       <div className="mx-auto max-w-5xl">
         <div className="relative overflow-hidden rounded-3xl bg-brand-gradient p-10 shadow-card-float sm:p-16">
