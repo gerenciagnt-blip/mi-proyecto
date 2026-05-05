@@ -4,7 +4,10 @@ import { useState, useTransition } from 'react';
 import { AlertTriangle, DollarSign, X, ChevronRight, CreditCard, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
-import { calcularDesglosePagoEfipayNumber, SOBRECOSTO_PORCENTAJE } from '@/lib/efipay/comision';
+import {
+  calcularDesglosePagoEfipayNumber,
+  SOBRECOSTO_PORCENTAJE,
+} from '@/lib/efipay/comision-utils';
 import { iniciarPagoEfipayAction } from '@/lib/efipay/server';
 
 /**
