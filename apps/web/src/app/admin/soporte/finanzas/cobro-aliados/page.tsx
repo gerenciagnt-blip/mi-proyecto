@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, DollarSign, AlertCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, DollarSign, AlertCircle, AlertTriangle, Download } from 'lucide-react';
 import type { CobroAliadoEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
@@ -113,14 +113,17 @@ export default async function CobroAliadosPage({ searchParams }: { searchParams:
         </Link>
       </div>
 
-      <header>
-        <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
-          <DollarSign className="h-6 w-6 text-brand-blue" />
-          Cobro Aliados
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Cobros mensuales a los aliados por afiliaciones procesadas y mensualidades facturadas.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+            <DollarSign className="h-6 w-6 text-brand-blue" />
+            Cobro Aliados
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Cobros mensuales a los aliados por afiliaciones procesadas y mensualidades facturadas.
+          </p>
+        </div>
+        <DescargarExcelMenu periodos={periodos} periodoSeleccionado={periodoFilter} />
       </header>
 
       {/* Stats */}
@@ -308,5 +311,62 @@ export default async function CobroAliadosPage({ searchParams }: { searchParams:
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Botón "Descargar Excel" — usa GET puro a /api/cobro-aliados/excel para
+ * disparar la descarga del navegador (Content-Disposition: attachment).
+ *
+ * Si hay un período seleccionado en el filtro, descarga ese; si no,
+ * muestra dropdown con los últimos 12 períodos para elegir.
+ */
+function DescargarExcelMenu({
+  periodos,
+  periodoSeleccionado,
+}: {
+  periodos: Array<{ id: string; anio: number; mes: number }>;
+  periodoSeleccionado: string;
+}) {
+  // Si hay período seleccionado en filtro: link directo a su Excel.
+  const seleccionado = periodos.find((p) => p.id === periodoSeleccionado);
+  if (seleccionado) {
+    return (
+      <a
+        href={`/api/cobro-aliados/excel?anio=${seleccionado.anio}&mes=${seleccionado.mes}`}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100"
+        title={`Descargar Excel · ${mesLabel(seleccionado.anio, seleccionado.mes)}`}
+      >
+        <Download className="h-3.5 w-3.5" />
+        Descargar Excel · {mesLabel(seleccionado.anio, seleccionado.mes)}
+      </a>
+    );
+  }
+  // Sin período: dropdown con form GET para elegir período antes de descargar
+  return (
+    <details className="relative">
+      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100">
+        <Download className="h-3.5 w-3.5" />
+        Descargar Excel ▾
+      </summary>
+      <div className="absolute right-0 z-10 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+        <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Seleccionar período
+        </p>
+        <ul className="space-y-0.5">
+          {periodos.map((p) => (
+            <li key={p.id}>
+              <a
+                href={`/api/cobro-aliados/excel?anio=${p.anio}&mes=${p.mes}`}
+                className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-100"
+              >
+                <Download className="h-3 w-3 text-slate-400" />
+                {mesLabel(p.anio, p.mes)}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </details>
   );
 }
