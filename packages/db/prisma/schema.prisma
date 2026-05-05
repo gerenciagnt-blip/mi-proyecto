@@ -292,6 +292,9 @@ model User {
   movimientosDetDocsUser  MovimientoDetalleDocumento[] @relation("MovDetDocUser")
   notificaciones          Notificacion[]               @relation("NotificacionDestino")
   auditLogsComoActor      AuditLog[]                   @relation("AuditActor")
+  pqrsRespondidas         Pqrs[]                       @relation("PqrsRespondidoBy")
+  pqrsGestiones           PqrsGestion[]                @relation("PqrsGestionUser")
+  pqrsDocsUser            PqrsDocumento[]              @relation("PqrsDocUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -2605,4 +2608,142 @@ model ColpatriaAfiliacionJob {
   @@index([afiliacionId])
   @@index([empresaId, status])
   @@map("colpatria_afiliacion_jobs")
+}
+
+// =============================================================================
+// PQRS — Peticiones, Quejas, Reclamos, Sugerencias y Felicitaciones
+// =============================================================================
+// Se reciben desde la landing pública (sin autenticación) y se gestionan en
+// el módulo /admin/soporte/juridico → tab "PQRS". Plazos legales aplicados:
+//   - PETICION (información)    → 10 días hábiles  (Ley 1755 de 2015)
+//   - QUEJA / RECLAMO            → 15 días hábiles  (Ley 1755 / Ley 1480)
+//   - SUGERENCIA / FELICITACION  → sin plazo legal (informativo, 30 días)
+//
+// El consecutivo PQRS-000001 se genera con secuencia SQL `pqrs_consecutivo_seq`
+// (mismo patrón que Incapacidad). Migración de creación de la secuencia se
+// genera junto con esta tabla.
+
+enum PqrsTipo {
+  PETICION // información, copias, consulta
+  QUEJA // manifestación de inconformidad
+  RECLAMO // exigencia de derecho
+  SUGERENCIA // propuesta de mejora
+  FELICITACION // reconocimiento positivo
+}
+
+enum PqrsEstado {
+  RECIBIDA // default — recién creada por el solicitante
+  EN_TRAMITE // staff la tomó y está trabajando en ella
+  RESPONDIDA // staff envió respuesta formal
+  CERRADA // ciclo terminado satisfactoriamente
+  RECHAZADA // no procede / fuera de competencia
+}
+
+/// Quién subió un documento adjunto a una PQRS.
+///   SOLICITANTE — adjunto cargado por el ciudadano al crear la PQRS desde la landing.
+///   ADMIN       — adjunto cargado por staff al gestionar/responder.
+enum PqrsDocOrigen {
+  SOLICITANTE
+  ADMIN
+}
+
+model Pqrs {
+  id          String     @id @default(cuid())
+  consecutivo String     @unique // PQRS-000001
+  tipo        PqrsTipo
+  estado      PqrsEstado @default(RECIBIDA)
+
+  // Datos del solicitante (capturados en el form público — sin auth)
+  tipoDocumento     String // CC | CE | NIT | PAS | TI | RC | NIP
+  numeroDocumento   String
+  nombres           String
+  apellidos         String?
+  email             String
+  telefono          String
+  empresaNombre     String? // opcional — solo cuando representa empresa
+
+  asunto      String  @db.VarChar(200)
+  descripcion String  @db.Text
+
+  // Metadata técnica para auditoría / detección de spam
+  ipAddress String?
+  userAgent String?
+
+  // Plazos
+  fechaLimite   DateTime // calculada al crear según tipo (10/15/30 días hábiles)
+  recibidaEn    DateTime @default(now())
+  respondidaEn  DateTime?
+  cerradaEn     DateTime?
+
+  // Respuesta formal del staff
+  respuesta       String? @db.Text
+  respondidoById  String?
+  respondidoBy    User?   @relation("PqrsRespondidoBy", fields: [respondidoById], references: [id], onDelete: SetNull)
+
+  // Notificaciones — tracking de cuándo se enviaron (por ahora solo log,
+  // cuando se integre Resend/Twilio se llenan estos campos al envío real)
+  notificadoEmailEn    DateTime?
+  notificadoWhatsappEn DateTime?
+
+  // Vínculo opcional a una incapacidad existente (cuando la PQRS sea sobre
+  // un caso ya radicado). Útil para que el área legal cruce información.
+  relatedIncapacidadId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gestiones  PqrsGestion[]
+  documentos PqrsDocumento[]
+
+  @@index([estado])
+  @@index([tipo])
+  @@index([numeroDocumento])
+  @@index([recibidaEn])
+  @@index([fechaLimite])
+  @@map("pqrs")
+}
+
+/// Bitácora de gestiones sobre una PQRS — cada cambio de estado, nota
+/// interna, asignación o respuesta queda como evento inmutable.
+model PqrsGestion {
+  id          String      @id @default(cuid())
+  pqrsId      String
+  descripcion String      @db.Text
+  nuevoEstado PqrsEstado? // null cuando es solo nota interna
+  userId      String?
+  userName    String? // denormalizado para preservar nombre incluso si el user se elimina
+  createdAt   DateTime    @default(now())
+
+  pqrs Pqrs  @relation(fields: [pqrsId], references: [id], onDelete: Cascade)
+  user User? @relation("PqrsGestionUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([pqrsId, createdAt])
+  @@map("pqrs_gestiones")
+}
+
+/// Documentos adjuntos a una PQRS. Pueden ser cargados por el solicitante
+/// al crear la PQRS o por el staff al responder/gestionar.
+/// Almacenamiento idéntico al patrón de IncapacidadDocumento — relativo a
+/// UPLOADS_DIR. Retención: 120 días en disco, después se marca eliminado.
+model PqrsDocumento {
+  id                    String        @id @default(cuid())
+  pqrsId                String
+  archivoPath           String
+  archivoHash           String
+  archivoMime           String
+  archivoSize           Int
+  archivoNombreOriginal String
+  origen                PqrsDocOrigen
+  eliminado             Boolean       @default(false)
+  eliminadoEn           DateTime?
+  userId                String? // null cuando origen=SOLICITANTE (no hay sesión)
+  createdAt             DateTime      @default(now())
+
+  pqrs Pqrs  @relation(fields: [pqrsId], references: [id], onDelete: Cascade)
+  user User? @relation("PqrsDocUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([pqrsId])
+  @@index([origen])
+  @@index([eliminado])
+  @@map("pqrs_documentos")
 }
