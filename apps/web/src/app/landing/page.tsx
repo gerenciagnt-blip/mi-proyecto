@@ -27,6 +27,7 @@ import { waUrl, WA_MENSAJES } from './_components/whatsapp';
 import { WhatsappFloat } from './_components/whatsapp-float';
 import { SolicitarDemoForm } from './_components/solicitar-demo-form';
 import { ColombiaMap } from './_components/colombia-map';
+import { MobileMenu } from './_components/mobile-menu';
 
 export default function LandingPage() {
   return (
@@ -67,6 +68,7 @@ function Nav() {
             className="h-9 w-auto sm:h-10"
           />
         </Link>
+        {/* Links inline — solo desktop (md+) */}
         <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
           <a href="#servicios" className="transition hover:text-slate-900">
             Servicios
@@ -81,22 +83,28 @@ function Nav() {
             Contacto
           </a>
         </nav>
-        <div className="flex items-center gap-2">
+
+        {/* CTAs derecha — desktop muestra Ingresar + Solicitar demo
+            inline. Mobile/tablet (<md) muestra solo el botón
+            hamburguesa que despliega todo en un menú overlay. */}
+        <div className="hidden items-center gap-2 md:flex">
           <Link
             href="/login"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-slate-700 transition hover:text-slate-900 sm:inline-flex"
+            className="rounded-full px-4 py-2 text-sm font-medium text-slate-700 transition hover:text-slate-900"
           >
             Ingresar
           </Link>
           <a
             href="#contacto"
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand-gradient px-3 py-2 text-xs font-semibold text-white shadow-brand transition hover:shadow-brand-lg sm:px-4 sm:text-sm"
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-brand transition hover:shadow-brand-lg"
           >
-            <span className="hidden sm:inline">Solicitar demo</span>
-            <span className="sm:hidden">Demo</span>
+            Solicitar demo
             <ArrowRight className="h-3.5 w-3.5" />
           </a>
         </div>
+
+        {/* Hamburguesa — solo mobile/tablet pequeño */}
+        <MobileMenu />
       </div>
     </header>
   );
