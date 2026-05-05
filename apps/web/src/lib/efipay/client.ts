@@ -116,9 +116,27 @@ export async function crearPagoEfipay(input: CrearPagoInput): Promise<CrearPagoR
   }
 
   if (!res.ok) {
-    log.warn({ statusCode: res.status, body: json }, 'Efipay rechazó el request');
+    // 422 (validación) y 400 son errores DEL BODY que enviamos. Loggeamos
+    // el body enviado (sin office/credenciales) + el response completo de
+    // Efipay para que el dev pueda corregir el payload sin adivinar.
+    log.warn(
+      {
+        statusCode: res.status,
+        responseBody: json,
+        sentPayment: body.payment,
+        sentReferences: body.advanced_options.references,
+        sentResultUrls: body.advanced_options.result_urls,
+      },
+      'Efipay rechazó el request',
+    );
     const errorMsg = extraerMensajeError(json) ?? `HTTP ${res.status}`;
-    return { ok: false, error: errorMsg, statusCode: res.status };
+    // En dev incluimos el body de error en el mensaje para que sea visible
+    // en la UI sin tener que mirar logs del server.
+    const dev = process.env.NODE_ENV !== 'production';
+    const errorWithDetail = dev
+      ? `${errorMsg} · respuesta cruda: ${JSON.stringify(json).slice(0, 500)}`
+      : errorMsg;
+    return { ok: false, error: errorWithDetail, statusCode: res.status };
   }
 
   const parsed = EfipayGeneratePaymentResponseSchema.safeParse(json);
@@ -163,18 +181,23 @@ function construirBodyGeneratePayment(cfg: EfipayConfig, input: CrearPagoInput) 
     advanced_options: {
       references: referencias,
       result_urls: {
+        // Result URLs las visita el NAVEGADOR del aliado → en dev local
+        // pueden apuntar a localhost (no necesitan ser públicas).
         approved: `${cfg.returnUrlBase}/pago/efipay/exito`,
         rejected: `${cfg.returnUrlBase}/pago/efipay/rechazado`,
         pending: `${cfg.returnUrlBase}/pago/efipay/pendiente`,
-        // Nota: la URL del webhook típicamente se configura en el dashboard
-        // de Efipay — igual la mandamos por si la API la respeta.
-        webhook: `${cfg.returnUrlBase}/api/efipay/webhook`,
+        // Webhook URL la llama el SERVIDOR de Efipay → debe ser pública
+        // (en dev: ngrok). Por eso vive en su propia env var EFIPAY_WEBHOOK_URL.
+        // Nota: la doc de Efipay dice que la URL del webhook típicamente se
+        // configura en el dashboard — la mandamos también por si la API la
+        // respeta.
+        webhook: cfg.webhookUrl,
       },
-      payment_methods: {
-        credit: true,
-        pse: true,
-        cash: true,
-      },
+      // OMITIDO: payment_methods. La doc de Efipay devolvió 422 indicando
+      // que "credit/pse/cash" deben ser ARRAYS de gateways, no booleanos.
+      // Sin la doc exacta de qué gateways soporta cada comercio, lo más
+      // seguro es no enviar el campo — Efipay usa el default del comercio
+      // (todos los métodos configurados en el dashboard).
     },
   };
 }

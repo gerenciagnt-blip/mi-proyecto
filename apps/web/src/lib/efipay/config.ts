@@ -5,18 +5,32 @@
  * Variables esperadas en `.env`:
  *
  *   EFIPAY_BASE_URL       URL base de la API (default https://sag.efipay.co
- *                          — confirmado por probing 2026-05-05; el host
- *                          api.efipay.co que aparecía implícito en otras
- *                          docs NO existe).
+ *                         — confirmado por probing 2026-05-05; el host
+ *                         api.efipay.co NO existe aunque algunas docs lo
+ *                         sugieran).
  *   EFIPAY_ACCESS_TOKEN   Bearer token para crear pagos (sandbox o prod)
  *   EFIPAY_WEBHOOK_TOKEN  Token de webhooks (para verificar firma HMAC-SHA256)
  *   EFIPAY_OFFICE_ID      ID de la oficina/sucursal en el dashboard Efipay
- *   EFIPAY_RETURN_URL_BASE URL pública base de NUESTRO sitio para redirección
- *                         y webhook. Ej:
- *                           - dev:    https://abc123.ngrok-free.app
- *                           - prod:   https://app.sistema-pila.co
- *                         Sin trailing slash. Si no está, se usa
- *                         NEXTAUTH_URL como fallback.
+ *
+ *   EFIPAY_RETURN_URL_BASE URL base donde el NAVEGADOR del aliado vuelve
+ *                          después de pagar (result_urls.approved/rejected/
+ *                          pending). El navegador es el del usuario, así que
+ *                          en dev local puede ser http://localhost:3000.
+ *                          En prod: https://app.sistema-pila.co.
+ *                          Sin trailing slash.
+ *
+ *   EFIPAY_WEBHOOK_URL    URL completa que Efipay (su servidor) llama para
+ *                          notificar el resultado. SIEMPRE debe ser pública
+ *                          — Efipay no puede llegar a localhost. En dev
+ *                          usar ngrok/cloudflared. En prod: la misma del
+ *                          RETURN_URL_BASE + /api/efipay/webhook.
+ *                          Si no está seteada, se construye desde
+ *                          RETURN_URL_BASE (asume que es pública).
+ *
+ * NOTA OPERATIVA: separar las dos URLs permite probar localmente sin
+ * túnel — el redirect del navegador funciona contra localhost mientras
+ * el webhook se desactiva (o apunta a ngrok solo cuando se quiere probar
+ * end-to-end con confirmación automática del cobro).
  */
 
 export type EfipayConfig = {
@@ -25,6 +39,8 @@ export type EfipayConfig = {
   webhookToken: string;
   officeId: string;
   returnUrlBase: string;
+  /** URL absoluta del webhook que enviamos a Efipay (puede diferir de returnUrlBase). */
+  webhookUrl: string;
 };
 
 /**
@@ -36,13 +52,22 @@ export function getEfipayConfig(): EfipayConfig {
   const accessToken = process.env.EFIPAY_ACCESS_TOKEN ?? '';
   const webhookToken = process.env.EFIPAY_WEBHOOK_TOKEN ?? '';
   const officeId = process.env.EFIPAY_OFFICE_ID ?? '';
+
   const returnUrlBase = (
     process.env.EFIPAY_RETURN_URL_BASE ??
     process.env.NEXTAUTH_URL ??
     'http://localhost:3000'
   ).replace(/\/+$/, '');
 
-  return { baseUrl, accessToken, webhookToken, officeId, returnUrlBase };
+  // Webhook URL: si EFIPAY_WEBHOOK_URL está seteada, se usa tal cual.
+  // Si no, se deriva de RETURN_URL_BASE. Permite que en dev local el
+  // navegador use localhost y el webhook ngrok sin tener que cambiar
+  // el RETURN_URL_BASE cada vez.
+  const webhookUrl = (
+    process.env.EFIPAY_WEBHOOK_URL ?? `${returnUrlBase}/api/efipay/webhook`
+  ).replace(/\/+$/, '');
+
+  return { baseUrl, accessToken, webhookToken, officeId, returnUrlBase, webhookUrl };
 }
 
 /**
