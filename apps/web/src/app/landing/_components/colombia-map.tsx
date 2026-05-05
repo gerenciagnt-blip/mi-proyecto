@@ -92,15 +92,19 @@ export function ColombiaMap() {
 
   return (
     <div className="relative">
-      {/* Mapa */}
-      <div
-        ref={containerRef}
-        className="relative mx-auto aspect-[613/694] max-w-md"
-        // dangerouslySetInnerHTML es seguro acá: el contenido viene de
-        // /public/ (controlado por nosotros), no de input de usuario.
-        dangerouslySetInnerHTML={svgContent ? { __html: svgContent } : undefined}
-      >
-        {!svgContent && (
+      {/* Mapa — render condicional: skeleton mientras carga, SVG inline cuando ya está */}
+      <div className="relative mx-auto aspect-[613/694] max-w-md">
+        {svgContent ? (
+          <div
+            ref={containerRef}
+            className="h-full w-full"
+            // dangerouslySetInnerHTML es seguro acá: el contenido viene
+            // de /public/ (controlado por nosotros), no de input de
+            // usuario. Y NO se mezcla con children — eso causaba el
+            // error "Can only set one of children or props.dangerouslySetInnerHTML".
+            dangerouslySetInnerHTML={{ __html: svgContent }}
+          />
+        ) : (
           <div className="flex h-full items-center justify-center text-xs text-slate-400">
             Cargando mapa…
           </div>
