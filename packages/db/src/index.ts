@@ -50,35 +50,100 @@ function buildLogLevels() {
 }
 
 /**
- * Crea el cliente con un middleware `$extends({ query: ... })` que mide
- * la duración de cada operación y llama al probe global si está seteado.
+ * Detección de errores transitorios de conectividad — típicos de Neon
+ * (free tier) que suspende el compute después de unos minutos de
+ * inactividad. La PRIMERA query después del despertar suele fallar con
+ * "Can't reach database server" mientras el endpoint se levanta.
+ *
+ * Reintentamos SOLO esos errores. Errores de validación, constraints,
+ * permisos, etc. se propagan de inmediato.
+ *
+ * Las transacciones (`$transaction`) NO entran al middleware $allOperations
+ * de Prisma — ahí no hay riesgo de duplicación si reintentamos a ciegas.
+ * Aún así, el middleware solo reintenta cuando el error es de conectividad
+ * (no de constraint/lógica), por lo que es seguro: el query no llegó al
+ * servidor en el primer intento.
+ */
+const RETRY_PATTERNS = [
+  "can't reach database server",
+  'connection refused',
+  'connection timeout',
+  'timed out fetching a new connection',
+  'server has closed the connection',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'enotfound',
+];
+
+const RETRY_DELAYS_MS = [400, 1200];
+
+function esErrorTransitorio(err: unknown): boolean {
+  const msg = String(err instanceof Error ? err.message : err).toLowerCase();
+  return RETRY_PATTERNS.some((p) => msg.includes(p));
+}
+
+/**
+ * Crea el cliente con DOS middlewares encadenados via `$extends`:
+ *
+ *   1. `pila-cold-start-retry` — reintenta queries individuales que
+ *      fallan con error de conectividad transitorio (cold-start de
+ *      Neon, network blip). Backoff 400ms + 1200ms, max 3 intentos.
+ *      Sin pino aquí (este package no depende del logger del web app)
+ *      — usa console.warn que basta para diagnosticar en dev.
+ *
+ *   2. `pila-query-probe` — mide la duración de cada operación y llama
+ *      al probe global si está seteado.
  *
  * Usamos `$extends` (Prisma 5+) en lugar de `$on('query', ...)` porque
  * éste último no es interceptable de forma confiable cuando OpenTelemetry
  * (Sentry node) está envolviendo el cliente — los eventos se consumen
  * en una capa interna y nunca llegan al listener del usuario.
- *
- * El probe es opt-in: si `globalThis.__pilaQueryProbe` no está seteado,
- * el middleware solo agrega un negligible overhead (Date.now() x2) por
- * operación.
  */
 function crearClienteExtendido() {
   const base = new PrismaClient({ log: buildLogLevels() });
-  return base.$extends({
-    name: 'pila-query-probe',
-    query: {
-      $allOperations: async ({ model, operation, args, query }) => {
-        const probe = (globalThis as unknown as { __pilaQueryProbe?: QueryProbe }).__pilaQueryProbe;
-        if (!probe) return query(args);
-        const start = Date.now();
-        try {
-          return await query(args);
-        } finally {
-          probe({ model, operation, durationMs: Date.now() - start });
-        }
+  return base
+    .$extends({
+      name: 'pila-cold-start-retry',
+      query: {
+        $allOperations: async ({ model, operation, args, query }) => {
+          let lastErr: unknown;
+          for (let intento = 0; intento <= RETRY_DELAYS_MS.length; intento++) {
+            try {
+              return await query(args);
+            } catch (err) {
+              lastErr = err;
+              if (!esErrorTransitorio(err) || intento === RETRY_DELAYS_MS.length) {
+                throw err;
+              }
+              const wait = RETRY_DELAYS_MS[intento]!;
+              // eslint-disable-next-line no-console
+              console.warn(
+                `[prisma] cold-start transitorio (${model ?? 'raw'}.${operation}) — reintento en ${wait}ms`,
+              );
+              await new Promise((r) => setTimeout(r, wait));
+            }
+          }
+          throw lastErr;
+        },
       },
-    },
-  });
+    })
+    .$extends({
+      name: 'pila-query-probe',
+      query: {
+        $allOperations: async ({ model, operation, args, query }) => {
+          const probe = (globalThis as unknown as { __pilaQueryProbe?: QueryProbe })
+            .__pilaQueryProbe;
+          if (!probe) return query(args);
+          const start = Date.now();
+          try {
+            return await query(args);
+          } finally {
+            probe({ model, operation, durationMs: Date.now() - start });
+          }
+        },
+      },
+    });
 }
 
 export const prisma = globalForPrisma.prisma ?? crearClienteExtendido();
