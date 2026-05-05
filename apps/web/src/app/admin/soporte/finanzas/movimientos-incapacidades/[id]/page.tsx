@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { NuevoDetalleForm } from './detalle-form';
 import { ConciliarButton } from './conciliar-button';
+import { ActualizarDetalleButton } from './actualizar-detalle-button';
 
 export const metadata = { title: 'Detalle movimiento — Finanzas' };
 export const dynamic = 'force-dynamic';
@@ -55,20 +56,27 @@ export default async function MovimientoDetailPage({
   await requireStaff();
   const { id } = await params;
 
-  const mov = await prisma.movimientoIncapacidad.findUnique({
-    where: { id },
-    include: {
-      empresa: { select: { nombre: true, nit: true } },
-      detalles: {
-        orderBy: { createdAt: 'desc' },
-        include: {
-          sucursal: { select: { codigo: true, nombre: true } },
-          incapacidad: { select: { consecutivo: true } },
-          pagadoConEmpresa: { select: { nombre: true } },
+  const [mov, empresas] = await Promise.all([
+    prisma.movimientoIncapacidad.findUnique({
+      where: { id },
+      include: {
+        empresa: { select: { nombre: true, nit: true } },
+        detalles: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            sucursal: { select: { codigo: true, nombre: true } },
+            incapacidad: { select: { consecutivo: true } },
+            pagadoConEmpresa: { select: { nombre: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.empresa.findMany({
+      where: { active: true },
+      orderBy: { nombre: 'asc' },
+      select: { id: true, nombre: true },
+    }),
+  ]);
   if (!mov) notFound();
 
   const sumaDetalles = mov.detalles.reduce((s, d) => s + Number(d.subtotal), 0);
@@ -182,6 +190,7 @@ export default async function MovimientoDetailPage({
                       <th className="px-4 py-2 text-right">Ret.</th>
                       <th className="px-4 py-2 text-right">Total</th>
                       <th className="px-4 py-2">Estado</th>
+                      <th className="px-4 py-2"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -237,6 +246,22 @@ export default async function MovimientoDetailPage({
                           >
                             {DET_ESTADO_LABEL[d.estado]}
                           </span>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {mov.estado !== 'ANULADO' && (
+                            <ActualizarDetalleButton
+                              detalle={{
+                                id: d.id,
+                                estado: d.estado,
+                                fechaPago: d.fechaPago,
+                                pagadoConEmpresaId: d.pagadoConEmpresaId,
+                                observaciones: d.observaciones,
+                                nombreCompleto: d.nombreCompleto,
+                                numeroDocumento: d.numeroDocumento,
+                              }}
+                              empresas={empresas}
+                            />
+                          )}
                         </td>
                       </tr>
                     ))}
