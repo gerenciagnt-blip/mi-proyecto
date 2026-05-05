@@ -53,11 +53,18 @@ function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 lg:px-12">
-        <Link href="/landing" className="flex items-center gap-2">
-          <Image src="/logo.svg" alt="Sistema PILA" width={32} height={32} priority />
-          <span className="font-heading text-lg font-bold tracking-tight text-slate-900">
-            Sistema PILA
-          </span>
+        <Link href="/landing" className="flex items-center" aria-label="Sistema PILA">
+          {/* Logo horizontal del SVG ya incluye el wordmark — usamos
+              dimensiones proporcionales al ratio 1509.4:352.87 (~4.28:1).
+              Altura 36px en mobile, 40px en desktop para presencia. */}
+          <Image
+            src="/logo-horizontal.svg"
+            alt="Sistema PILA"
+            width={172}
+            height={40}
+            priority
+            className="h-9 w-auto sm:h-10"
+          />
         </Link>
         <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
           <a href="#servicios" className="transition hover:text-slate-900">
@@ -866,11 +873,14 @@ function Footer() {
       <div className="mx-auto max-w-7xl">
         <div className="grid gap-12 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <Link href="/landing" className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="Sistema PILA" width={32} height={32} />
-              <span className="font-heading text-lg font-bold tracking-tight text-slate-900">
-                Sistema PILA
-              </span>
+            <Link href="/landing" className="flex items-center" aria-label="Sistema PILA">
+              <Image
+                src="/logo-horizontal.svg"
+                alt="Sistema PILA"
+                width={184}
+                height={43}
+                className="h-10 w-auto"
+              />
             </Link>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-600">
               Operador autorizado de PILA, ARL y cartera en Colombia. Plataforma integral para
