@@ -29,6 +29,7 @@ import { SolicitarDemoForm } from './_components/solicitar-demo-form';
 import { ColombiaMap } from './_components/colombia-map';
 import { MobileMenu } from './_components/mobile-menu';
 import { LegalLinks } from './_components/legal-modal';
+import { PqrsLink } from './_components/pqrs-modal';
 
 export default function LandingPage() {
   return (
@@ -947,12 +948,9 @@ function Footer() {
               <LegalLinks />
               <ul className="mt-2.5 space-y-2.5">
                 <li>
-                  <a
-                    href="#contacto"
-                    className="text-sm text-slate-700 transition hover:text-slate-900"
-                  >
-                    PQRS
-                  </a>
+                  <PqrsLink className="text-left text-sm text-slate-700 transition hover:text-slate-900">
+                    PQRS · Radicar
+                  </PqrsLink>
                 </li>
               </ul>
             </div>
