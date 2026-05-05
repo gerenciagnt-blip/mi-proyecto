@@ -28,6 +28,7 @@ import { WhatsappFloat } from './_components/whatsapp-float';
 import { SolicitarDemoForm } from './_components/solicitar-demo-form';
 import { ColombiaMap } from './_components/colombia-map';
 import { MobileMenu } from './_components/mobile-menu';
+import { LegalLinks } from './_components/legal-modal';
 
 export default function LandingPage() {
   return (
@@ -941,15 +942,20 @@ function Footer() {
                 { label: 'Ingresar al sistema', href: '/login' },
               ]}
             />
-            <FooterColumn
-              title="Legal"
-              links={[
-                { label: 'Términos de uso', href: '#' },
-                { label: 'Política de privacidad', href: '#' },
-                { label: 'Habeas Data', href: '#' },
-                { label: 'PQRS', href: '#contacto' },
-              ]}
-            />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Legal</p>
+              <LegalLinks />
+              <ul className="mt-2.5 space-y-2.5">
+                <li>
+                  <a
+                    href="#contacto"
+                    className="text-sm text-slate-700 transition hover:text-slate-900"
+                  >
+                    PQRS
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 
