@@ -11,12 +11,14 @@
  *
  * El comprobante es imprimible (botón "Imprimir / Descargar PDF" usa el
  * diálogo de impresión nativo del navegador → permite "Guardar como PDF").
- * El CSS @media print oculta los botones y deja solo el comprobante.
+ * El CSS @media print compacta el layout para que quepa en UNA sola hoja
+ * A4 — paddings reducidos, gaps mínimos, oculta banner verde y botones.
  */
 
 import Link from 'next/link';
 import { CheckCircle2, ArrowRight, Building2, FileText } from 'lucide-react';
 import { formatCOP } from '@/lib/format';
+import { PilaLogo } from '@/components/brand/pila-logo';
 import { ImprimirComprobanteButton } from '../_components/imprimir-comprobante-button';
 import {
   buscarTransaccionEfipay,
@@ -60,22 +62,32 @@ export default async function PagoEfipayExitoPage({
   const trx = await buscarTransaccionEfipay(sp);
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10 print:bg-white print:py-0">
-      {/* Estilos solo para impresión */}
+    <div className="min-h-screen bg-slate-50 px-4 py-10 print:min-h-0 print:bg-white print:px-0 print:py-0">
+      {/* Estilos solo para impresión — fuerzan que el comprobante quepa
+          en UNA sola hoja A4: márgenes pequeños, paddings compactos,
+          page-break-inside avoid, oculta elementos no esenciales. */}
       <style>{`
         @media print {
-          @page { margin: 1.5cm; }
+          @page { size: A4; margin: 0.8cm; }
+          html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
           .no-print { display: none !important; }
           .print-card {
             box-shadow: none !important;
             border: 1px solid #e2e8f0 !important;
+            border-radius: 0 !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
-          body { background: white !important; }
+          .print-tight-header { padding: 0.6cm 0.8cm !important; }
+          .print-tight-body { padding: 0.5cm 0.8cm !important; }
+          .print-tight-footer { padding: 0.3cm 0.8cm !important; }
+          .print-section { margin-bottom: 0.4cm !important; }
+          .print-table td { padding-top: 0.12cm !important; padding-bottom: 0.12cm !important; }
         }
       `}</style>
 
-      <div className="mx-auto max-w-2xl space-y-6">
-        {/* Banner de éxito (oculto en impresión, el comprobante ya tiene su propio header) */}
+      <div className="mx-auto max-w-2xl space-y-6 print:max-w-none print:space-y-0">
+        {/* Banner de éxito (no se imprime) */}
         <div className="no-print flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
           <div>
@@ -92,51 +104,53 @@ export default async function PagoEfipayExitoPage({
           id="comprobante"
           className="print-card overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card-float"
         >
-          {/* Header del comprobante */}
-          <header className="flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-br from-brand-blue/5 to-emerald-50 px-8 py-6">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                Sistema PILA
-              </p>
-              <h1 className="mt-1 font-heading text-2xl font-bold tracking-tight text-slate-900">
-                Comprobante de pago
-              </h1>
-              <p className="mt-1 text-xs text-slate-500">Pasarela Efipay · Servicio plataforma</p>
+          {/* Header del comprobante con logo */}
+          <header className="print-tight-header flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-br from-brand-blue/5 to-emerald-50 px-8 py-6">
+            <div className="flex items-start gap-4">
+              <PilaLogo imgClassName="w-32 h-auto" className="!justify-start" />
+              <div className="border-l border-slate-200 pl-4">
+                <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900">
+                  Comprobante de pago
+                </h1>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Servicio plataforma · Pasarela Efipay
+                </p>
+              </div>
             </div>
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 APROBADO
               </span>
               {trx && (
-                <p className="mt-2 font-mono text-xs text-slate-600">
-                  Consec.: <strong>{trx.referencia}</strong>
+                <p className="mt-2 font-mono text-[11px] text-slate-600">
+                  N° comprobante: <strong className="text-slate-900">{trx.referencia}</strong>
                 </p>
               )}
             </div>
           </header>
 
           {/* Cuerpo */}
-          <div className="px-8 py-6">
+          <div className="print-tight-body px-8 py-6">
             {trx ? (
               <>
                 {/* Bloque "ALIADO" */}
-                <section className="mb-6">
+                <section className="print-section mb-5">
                   <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                     <Building2 className="h-3 w-3" />
                     Aliado
                   </h2>
-                  <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
+                  <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <dt className="text-xs text-slate-500">Sucursal</dt>
+                      <dt className="text-[11px] text-slate-500">Sucursal</dt>
                       <dd className="font-medium text-slate-900">{trx.cobro.sucursal.nombre}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-slate-500">Código</dt>
+                      <dt className="text-[11px] text-slate-500">Código</dt>
                       <dd className="font-mono text-slate-700">{trx.cobro.sucursal.codigo}</dd>
                     </div>
                     <div className="col-span-2">
-                      <dt className="text-xs text-slate-500">Período facturado</dt>
+                      <dt className="text-[11px] text-slate-500">Período facturado</dt>
                       <dd className="text-slate-700">
                         {MESES[trx.cobro.periodo.mes - 1]} {trx.cobro.periodo.anio}
                       </dd>
@@ -145,34 +159,34 @@ export default async function PagoEfipayExitoPage({
                 </section>
 
                 {/* Bloque "DETALLE" */}
-                <section className="mb-6">
+                <section className="print-section mb-5">
                   <h2 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                     <FileText className="h-3 w-3" />
                     Detalle del pago
                   </h2>
-                  <table className="mt-3 w-full text-sm">
+                  <table className="print-table mt-2 w-full text-sm">
                     <tbody className="divide-y divide-slate-100">
                       <tr>
-                        <td className="py-2 text-slate-600">Monto del cobro</td>
-                        <td className="py-2 text-right font-mono text-slate-900">
+                        <td className="py-1.5 text-slate-600">Monto del cobro</td>
+                        <td className="py-1.5 text-right font-mono text-slate-900">
                           {formatCOP(Number(trx.montoBase))}
                         </td>
                       </tr>
                       <tr>
-                        <td className="py-2 text-slate-600">
+                        <td className="py-1.5 text-slate-600">
                           Costo pasarela{' '}
                           <span className="text-xs text-slate-400">
                             ({((Number(trx.sobrecosto) / Number(trx.montoBase)) * 100).toFixed(2)}
                             %)
                           </span>
                         </td>
-                        <td className="py-2 text-right font-mono text-slate-700">
+                        <td className="py-1.5 text-right font-mono text-slate-700">
                           + {formatCOP(Number(trx.sobrecosto))}
                         </td>
                       </tr>
                       <tr className="border-t-2 border-slate-300">
-                        <td className="pt-3 text-sm font-bold text-slate-900">Total pagado</td>
-                        <td className="pt-3 text-right font-mono text-lg font-bold text-brand-blue-dark">
+                        <td className="pt-2 text-sm font-bold text-slate-900">Total pagado</td>
+                        <td className="pt-2 text-right font-mono text-lg font-bold text-brand-blue-dark">
                           {formatCOP(Number(trx.montoCobrado))}
                         </td>
                       </tr>
@@ -181,26 +195,27 @@ export default async function PagoEfipayExitoPage({
                 </section>
 
                 {/* Bloque "TRANSACCIÓN" */}
-                <section>
+                <section className="print-section">
                   <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                     Datos de la transacción
                   </h2>
-                  <dl className="mt-2 space-y-1.5 text-xs">
+                  <dl className="mt-2 space-y-1 text-xs">
                     <Row label="Fecha del pago">
                       {formatFechaLarga(trx.aprobadaEn ?? trx.iniciadaEn)}
                     </Row>
                     {trx.efipayPaymentId && (
-                      <Row label="ID Efipay">
+                      <Row label="N° transacción pasarela">
                         <span className="break-all font-mono">{trx.efipayPaymentId}</span>
                       </Row>
                     )}
-                    <Row label="Referencia interna">
-                      <span className="font-mono">{trx.referencia}</span>
-                    </Row>
                     <Row label="Estado">
                       <span className="font-semibold text-emerald-700">{trx.estado}</span>
                     </Row>
                   </dl>
+                  <p className="mt-2 text-[10px] italic text-slate-400">
+                    El N° de transacción pasarela es el identificador único asignado por Efipay y
+                    sirve para reclamaciones directas con la pasarela.
+                  </p>
                 </section>
               </>
             ) : (
@@ -218,10 +233,10 @@ export default async function PagoEfipayExitoPage({
           </div>
 
           {/* Footer del comprobante */}
-          <footer className="border-t border-slate-100 bg-slate-50 px-8 py-3">
+          <footer className="print-tight-footer border-t border-slate-100 bg-slate-50 px-8 py-3">
             <p className="text-[10px] text-slate-500">
               Este comprobante es generado automáticamente al confirmarse el pago. Conserva una
-              copia para tu contabilidad. Para soporte:{' '}
+              copia para tu contabilidad. Soporte:{' '}
               <span className="font-medium text-slate-700">soporte@sistema-pila.co</span>
             </p>
           </footer>
