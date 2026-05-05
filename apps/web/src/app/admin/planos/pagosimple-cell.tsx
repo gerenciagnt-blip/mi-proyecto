@@ -20,6 +20,7 @@ import {
   Loader2,
   RefreshCw,
   CloudUpload,
+  ListChecks,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -27,11 +28,13 @@ import {
   validarPlanillaPagosimpleAction,
   obtenerPagoPsePagosimpleAction,
 } from './pagosimple-action';
+import { InconsistenciasDialog } from './inconsistencias-dialog';
 
 type EstadoValidacion = string | null; // 'PENDIENTE' | 'OK' | 'WARNING' | 'ERROR' | ...
 
 export type PagosimpleCellProps = {
   planillaId: string;
+  consecutivo: string;
   pagosimpleNumero: string | null;
   pagosimpleEstadoValidacion: EstadoValidacion;
   pagosimplePaymentUrl: string | null;
@@ -41,6 +44,7 @@ export function PagosimpleCell(props: PagosimpleCellProps) {
   const [pending, startTransition] = useTransition();
   const [flash, setFlash] = useState<string | null>(null);
   const [flashKind, setFlashKind] = useState<'ok' | 'err'>('ok');
+  const [inconsOpen, setInconsOpen] = useState(false);
 
   // Estado local (se actualiza tras cada action) para feedback inmediato
   // sin tener que esperar al revalidate del router.
@@ -144,6 +148,16 @@ export function PagosimpleCell(props: PagosimpleCellProps) {
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => setInconsOpen(true)}
+              title="Ver detalle de errores y warnings"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              <span>Ver detalles</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleValidar}
               disabled={pending}
               title="Reintentar validación"
@@ -158,6 +172,13 @@ export function PagosimpleCell(props: PagosimpleCellProps) {
           </>
         )}
       </div>
+
+      <InconsistenciasDialog
+        planillaId={props.planillaId}
+        consecutivo={props.consecutivo}
+        open={inconsOpen}
+        onClose={() => setInconsOpen(false)}
+      />
 
       {flash && (
         <div

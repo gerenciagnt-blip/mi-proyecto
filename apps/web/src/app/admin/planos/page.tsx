@@ -960,6 +960,7 @@ async function PlanillasTable({
                       {psEnabled && estado === 'CONSOLIDADO' && (
                         <PagosimpleCell
                           planillaId={p.id}
+                          consecutivo={p.consecutivo}
                           pagosimpleNumero={p.pagosimpleNumero}
                           pagosimpleEstadoValidacion={p.pagosimpleEstadoValidacion}
                           pagosimplePaymentUrl={p.pagosimplePaymentUrl}
