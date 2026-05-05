@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Loader2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
@@ -32,11 +32,14 @@ export function GenerarManualButton({
     {},
   );
 
-  // Si la action terminó OK, refrescar y cerrar
-  if (state.ok && open) {
-    router.refresh();
-    setOpen(false);
-  }
+  // Side-effect tras success: refrescar y cerrar dialog. Va en useEffect
+  // (no inline en render) para no llamar setState durante renderizado.
+  useEffect(() => {
+    if (state.ok && open) {
+      router.refresh();
+      setOpen(false);
+    }
+  }, [state.ok, open, router]);
 
   return (
     <>
