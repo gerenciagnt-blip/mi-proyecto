@@ -883,9 +883,9 @@ function Footer() {
               />
             </Link>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-600">
-              Operador autorizado de PILA, ARL y cartera en Colombia. Plataforma integral para
-              empresas e independientes que necesitan simplicidad y trazabilidad en su seguridad
-              social.
+              Aliado de operador autorizado en Colombia. Plataforma integral de PILA, afiliación
+              automática a ARL, incapacidades, cartera y soporte jurídico — hecha para empresas del
+              sector de la seguridad social e independientes que buscan simplicidad y trazabilidad.
             </p>
           </div>
 
