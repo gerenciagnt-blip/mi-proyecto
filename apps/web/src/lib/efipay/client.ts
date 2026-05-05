@@ -77,9 +77,10 @@ export async function crearPagoEfipay(input: CrearPagoInput): Promise<CrearPagoR
 
   const body = construirBodyGeneratePayment(cfg, input);
 
+  const url = `${cfg.baseUrl}/api/v1/payment/generate-payment`;
   let res: Response;
   try {
-    res = await fetch(`${cfg.baseUrl}/api/v1/payment/generate-payment`, {
+    res = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${cfg.accessToken}`,
@@ -90,9 +91,15 @@ export async function crearPagoEfipay(input: CrearPagoInput): Promise<CrearPagoR
       signal: AbortSignal.timeout(20_000),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log.error({ err: msg }, 'Efipay generate-payment falló a nivel red');
-    return { ok: false, error: `Error de red al contactar Efipay: ${msg}` };
+    // Undici/fetch envuelve el error real en `cause` ({ code: 'ENOTFOUND', ... }
+    // para DNS, 'ECONNREFUSED' para conexión, 'CERT_*' para TLS). Loggeamos
+    // todo el árbol para que el operador identifique el problema rápido.
+    const detalle = serializarErrorFetch(err);
+    log.error({ url, ...detalle }, 'Efipay generate-payment falló a nivel red');
+    return {
+      ok: false,
+      error: `Error de red al contactar Efipay (${detalle.code ?? detalle.message}). Verifica EFIPAY_BASE_URL en .env.`,
+    };
   }
 
   let json: unknown;
@@ -169,6 +176,32 @@ function construirBodyGeneratePayment(cfg: EfipayConfig, input: CrearPagoInput) 
         cash: true,
       },
     },
+  };
+}
+
+/**
+ * Serializa un error de fetch para logueo: pino normalmente solo muestra
+ * `message` y oculta el `cause` que tiene el detalle real (ENOTFOUND,
+ * ECONNREFUSED, CERT_*, etc.). Esto extrae el árbol completo.
+ */
+function serializarErrorFetch(err: unknown): { message: string; code?: string; cause?: string } {
+  if (!(err instanceof Error)) {
+    return { message: String(err) };
+  }
+  // El cause de undici es un Error con propiedades adicionales (code, errno).
+  const cause = (err as { cause?: unknown }).cause;
+  let causeStr: string | undefined;
+  let code: string | undefined;
+  if (cause instanceof Error) {
+    code = (cause as { code?: string }).code;
+    causeStr = `${cause.name}: ${cause.message}${code ? ` (${code})` : ''}`;
+  } else if (cause !== undefined && cause !== null) {
+    causeStr = String(cause);
+  }
+  return {
+    message: err.message,
+    ...(code ? { code } : {}),
+    ...(causeStr ? { cause: causeStr } : {}),
   };
 }
 

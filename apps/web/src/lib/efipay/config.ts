@@ -4,7 +4,10 @@
  *
  * Variables esperadas en `.env`:
  *
- *   EFIPAY_BASE_URL       URL base de la API (default https://api.efipay.co)
+ *   EFIPAY_BASE_URL       URL base de la API (default https://sag.efipay.co
+ *                          — confirmado por probing 2026-05-05; el host
+ *                          api.efipay.co que aparecía implícito en otras
+ *                          docs NO existe).
  *   EFIPAY_ACCESS_TOKEN   Bearer token para crear pagos (sandbox o prod)
  *   EFIPAY_WEBHOOK_TOKEN  Token de webhooks (para verificar firma HMAC-SHA256)
  *   EFIPAY_OFFICE_ID      ID de la oficina/sucursal en el dashboard Efipay
@@ -29,7 +32,7 @@ export type EfipayConfig = {
  * que el operador vea el error claro al iniciar pago, no al deploy.
  */
 export function getEfipayConfig(): EfipayConfig {
-  const baseUrl = (process.env.EFIPAY_BASE_URL ?? 'https://api.efipay.co').replace(/\/+$/, '');
+  const baseUrl = (process.env.EFIPAY_BASE_URL ?? 'https://sag.efipay.co').replace(/\/+$/, '');
   const accessToken = process.env.EFIPAY_ACCESS_TOKEN ?? '';
   const webhookToken = process.env.EFIPAY_WEBHOOK_TOKEN ?? '';
   const officeId = process.env.EFIPAY_OFFICE_ID ?? '';
