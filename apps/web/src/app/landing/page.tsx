@@ -26,6 +26,7 @@ import {
 import { waUrl, WA_MENSAJES } from './_components/whatsapp';
 import { WhatsappFloat } from './_components/whatsapp-float';
 import { SolicitarDemoForm } from './_components/solicitar-demo-form';
+import { ColombiaMap } from './_components/colombia-map';
 
 export default function LandingPage() {
   return (
@@ -745,39 +746,62 @@ function Faq() {
 
   return (
     <section id="faq" className="px-6 py-16 lg:px-12 lg:py-20">
-      <div className="mx-auto max-w-4xl">
-        <SectionHeading
-          eyebrow="Preguntas frecuentes"
-          title="Respuestas claras."
-          description="Si tu pregunta no está acá, escríbenos por WhatsApp — respondemos en menos de un día hábil."
-          centered
-        />
-        <div className="mt-6 flex justify-center">
-          <a
-            href={waUrl(WA_MENSAJES.preguntaFaq)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-11 items-center gap-2 rounded-full bg-[#25D366] px-5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1ebe5d] hover:shadow-lg"
-          >
-            <MessageCircle className="h-4 w-4" />
-            Hacer mi pregunta por WhatsApp
-          </a>
-        </div>
-        <div className="mt-10 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-          {items.map((it, i) => (
-            <details key={i} className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left transition hover:bg-slate-50">
-                <span className="font-heading text-base font-semibold text-slate-900 sm:text-lg">
-                  {it.q}
-                </span>
-                <Plus className="h-5 w-5 shrink-0 text-slate-400 transition group-open:hidden" />
-                <Minus className="hidden h-5 w-5 shrink-0 text-slate-400 transition group-open:block" />
-              </summary>
-              <div className="px-6 pb-5 text-sm leading-relaxed text-slate-600 sm:text-base">
-                {it.a}
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
+          {/* Columna izquierda: FAQ */}
+          <div className="lg:col-span-7">
+            <SectionHeading
+              eyebrow="Preguntas frecuentes"
+              title="Respuestas claras."
+              description="Si tu pregunta no está acá, escríbenos por WhatsApp — respondemos en menos de un día hábil."
+            />
+            <div className="mt-6">
+              <a
+                href={waUrl(WA_MENSAJES.preguntaFaq)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-[#25D366] px-5 text-sm font-semibold text-white shadow-md transition hover:bg-[#1ebe5d] hover:shadow-lg"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Hacer mi pregunta por WhatsApp
+              </a>
+            </div>
+            <div className="mt-10 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
+              {items.map((it, i) => (
+                <details key={i} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left transition hover:bg-slate-50">
+                    <span className="font-heading text-base font-semibold text-slate-900 sm:text-lg">
+                      {it.q}
+                    </span>
+                    <Plus className="h-5 w-5 shrink-0 text-slate-400 transition group-open:hidden" />
+                    <Minus className="hidden h-5 w-5 shrink-0 text-slate-400 transition group-open:block" />
+                  </summary>
+                  <div className="px-6 pb-5 text-sm leading-relaxed text-slate-600 sm:text-base">
+                    {it.a}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+
+          {/* Columna derecha: Mapa de presencia */}
+          <aside className="lg:col-span-5">
+            <div className="lg:sticky lg:top-24">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-blue/20 bg-brand-blue/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-brand-blue-dark">
+                Presencia nacional
+              </span>
+              <h3 className="mt-3 font-heading text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                Operamos en 6 departamentos.
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Sede principal en Pereira (Risaralda) con presencia activa en el Eje Cafetero, Valle
+                del Cauca, Antioquia y Bogotá D.C.
+              </p>
+              <div className="mt-6">
+                <ColombiaMap />
               </div>
-            </details>
-          ))}
+            </div>
+          </aside>
         </div>
       </div>
     </section>
