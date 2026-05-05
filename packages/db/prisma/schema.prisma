@@ -295,6 +295,7 @@ model User {
   pqrsRespondidas         Pqrs[]                       @relation("PqrsRespondidoBy")
   pqrsGestiones           PqrsGestion[]                @relation("PqrsGestionUser")
   pqrsDocsUser            PqrsDocumento[]              @relation("PqrsDocUser")
+  efipayTrxIniciadas      EfipayTransaccion[]          @relation("EfipayTrxIniciadaPor")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -2049,8 +2050,12 @@ model CobroAliado {
   medioPago MedioPago?      @relation(fields: [medioPagoId], references: [id], onDelete: SetNull)
   createdBy User?           @relation("CobroAliadoCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  conceptos  CobroAliadoConcepto[]
-  documentos CobroAliadoDocumento[]
+  conceptos             CobroAliadoConcepto[]
+  documentos            CobroAliadoDocumento[]
+  // Sprint Efipay — historial de intentos de pago via pasarela. Un cobro
+  // puede tener varios intentos (rechazo → reintento). El último APROBADA
+  // es el que cuenta como pago efectivo.
+  efipayTransacciones   EfipayTransaccion[]
 
   // Un solo cobro por sucursal + periodo — evita duplicados al re-generar.
   @@unique([sucursalId, periodoId])
@@ -2746,4 +2751,88 @@ model PqrsDocumento {
   @@index([origen])
   @@index([eliminado])
   @@map("pqrs_documentos")
+}
+
+// =========================================================================
+// SECTION: PASARELA EFIPAY — pagos de aliados
+// =========================================================================
+//
+// Sprint Efipay (2026-05): Integración con la pasarela Efipay para que el
+// aliado pague su `CobroAliado` mensual desde el portal sin gestión
+// manual de staff.
+//
+// Flujo:
+//   1. Aliado pulsa "Pagar con Efipay" sobre un CobroAliado PENDIENTE/VENCIDO
+//   2. Server action calcula sobrecosto (1% sobre totalCobro), llama
+//      `POST https://<base>/api/v1/payment/generate-payment` con el
+//      consecutivo del cobro como referencia.
+//   3. Persiste `EfipayTransaccion` con estado PENDIENTE y la URL de
+//      checkout que devolvió Efipay.
+//   4. Aliado se redirige al checkout de Efipay → completa el pago.
+//   5. Efipay invoca `POST /api/efipay/webhook` con el resultado. El handler
+//      verifica firma HMAC-SHA256, busca la trx por payment_id, actualiza
+//      su estado y, si es APROBADA, marca el `CobroAliado` como PAGADO.
+//
+// Una sucursal puede tener varios intentos por cobro (rechazo + reintento).
+// El último APROBADA es el que cuenta.
+
+/// Estados de una transacción Efipay desde nuestra perspectiva.
+///   PENDIENTE  — creada, esperando que el aliado pague o recibir webhook
+///   APROBADA   — Efipay confirmó el pago (webhook con status approved)
+///   RECHAZADA  — la pasarela rechazó (tarjeta declinada, PSE cancelado, etc.)
+///   EXPIRADA   — pasó la limit_date sin completar el pago
+///   ERROR      — falló la creación del pago en Efipay (mantiene contexto)
+enum EfipayEstado {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  EXPIRADA
+  ERROR
+}
+
+/// Intento de pago via Efipay sobre un CobroAliado. Cada click en
+/// "Pagar con Efipay" crea una nueva fila — los rechazos quedan en historial.
+model EfipayTransaccion {
+  id               String       @id @default(cuid())
+  cobroAliadoId    String
+  /// UUID que devuelve Efipay al crear el pago. Único en su sistema.
+  /// Llega también en el webhook → es la clave para correlacionar.
+  efipayPaymentId  String?      @unique
+  /// El consecutivo del CobroAliado (CA-000001) — viaja como reference[0]
+  /// hacia Efipay para identificar la transacción del lado nuestro.
+  referencia       String
+  /// Monto base (== totalCobro del CobroAliado al momento del intento).
+  montoBase        Decimal      @db.Decimal(12, 2)
+  /// Sobrecosto cobrado al aliado para mitigar la comisión Efipay (1% del
+  /// montoBase). Se calcula al crear, queda congelado.
+  sobrecosto       Decimal      @db.Decimal(12, 2)
+  /// Lo que efectivamente se le cobra al aliado (montoBase + sobrecosto).
+  /// Es el `amount` enviado a Efipay.
+  montoCobrado     Decimal      @db.Decimal(12, 2)
+  /// URL de checkout devuelta por Efipay para redirigir al aliado.
+  urlCheckout      String?
+  estado           EfipayEstado @default(PENDIENTE)
+  /// Mensaje de error o motivo de rechazo (texto libre devuelto por Efipay).
+  motivo           String?
+  /// Payload crudo del último webhook recibido — útil para debugging y
+  /// para re-procesar si la lógica cambia. JSON.
+  webhookPayload   Json?
+  webhookRecibidoEn DateTime?
+  /// Cuántas veces Efipay nos llamó al webhook (debe ser 1 o, si fallamos,
+  /// hasta 3 según su política de reintentos).
+  intentosWebhook  Int          @default(0)
+  iniciadaPorId    String?
+  iniciadaEn       DateTime     @default(now())
+  aprobadaEn       DateTime?
+  rechazadaEn      DateTime?
+  expiradaEn       DateTime?
+  updatedAt        DateTime     @updatedAt
+
+  cobro       CobroAliado @relation(fields: [cobroAliadoId], references: [id], onDelete: Cascade)
+  iniciadaPor User?       @relation("EfipayTrxIniciadaPor", fields: [iniciadaPorId], references: [id], onDelete: SetNull)
+
+  @@index([cobroAliadoId])
+  @@index([estado])
+  @@index([referencia])
+  @@map("efipay_transaccion")
 }

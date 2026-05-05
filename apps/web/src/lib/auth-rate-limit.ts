@@ -1,4 +1,5 @@
 import { prisma } from '@pila/db';
+import { withDbRetry } from './db-retry';
 
 /**
  * Política de rate limit para intentos de login.
@@ -41,11 +42,19 @@ export async function getRateLimitStatus(email: string): Promise<RateLimitStatus
   const e = normalizeEmail(email);
   const desde = new Date(Date.now() - LOCK_WINDOW_MS);
 
-  const fallidos = await prisma.loginAttempt.findMany({
-    where: { email: e, success: false, createdAt: { gte: desde } },
-    orderBy: { createdAt: 'desc' },
-    select: { createdAt: true },
-  });
+  // Retry transitorio: Neon (free tier) hace auto-suspend del compute
+  // tras unos minutos de inactividad y la PRIMERA query suele fallar con
+  // "Can't reach database server" mientras el endpoint se despierta.
+  // Esta es la primera query del login → la más afectada por cold-start.
+  const fallidos = await withDbRetry(
+    () =>
+      prisma.loginAttempt.findMany({
+        where: { email: e, success: false, createdAt: { gte: desde } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    { label: 'getRateLimitStatus' },
+  );
 
   if (fallidos.length < MAX_FAILED_ATTEMPTS) {
     return {
@@ -82,15 +91,19 @@ export async function registrarIntentoFallido(
   meta?: { ip?: string; userAgent?: string },
 ): Promise<void> {
   const e = normalizeEmail(email);
-  await prisma.loginAttempt.create({
-    data: {
-      email: e,
-      success: false,
-      motivo,
-      ip: meta?.ip,
-      userAgent: meta?.userAgent,
-    },
-  });
+  await withDbRetry(
+    () =>
+      prisma.loginAttempt.create({
+        data: {
+          email: e,
+          success: false,
+          motivo,
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+        },
+      }),
+    { label: 'registrarIntentoFallido' },
+  );
 
   if (motivo === 'rate_limited') {
     await prisma.auditLog.create({

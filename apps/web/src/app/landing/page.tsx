@@ -802,11 +802,12 @@ function Faq() {
                 Presencia nacional
               </span>
               <h3 className="mt-3 font-heading text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                Operamos en 6 departamentos.
+                Operamos en 10 departamentos.
               </h3>
               <p className="mt-2 text-sm text-slate-600">
-                Sede principal en Pereira (Risaralda) con presencia activa en el Eje Cafetero, Valle
-                del Cauca, Antioquia y Bogotá D.C.
+                Sede principal en Pereira (Risaralda). Presencia activa en el Eje Cafetero, Valle
+                del Cauca, Cauca, Antioquia, Cundinamarca, Bogotá D.C., Santander y Norte de
+                Santander.
               </p>
               <div className="mt-6">
                 <ColombiaMap />

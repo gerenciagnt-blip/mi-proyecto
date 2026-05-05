@@ -1,9 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { AlertTriangle, DollarSign, X, ChevronRight } from 'lucide-react';
+import { useState, useTransition } from 'react';
+import { AlertTriangle, DollarSign, X, ChevronRight, CreditCard, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
+import {
+  calcularDesglosePagoEfipayNumber,
+  SOBRECOSTO_PORCENTAJE,
+} from '@/lib/efipay/comision-utils';
+import { iniciarPagoEfipayAction } from '@/lib/efipay/server';
 
 /**
  * Banner que muestra los cobros pendientes o vencidos de la sucursal del
@@ -44,6 +49,24 @@ export function CobrosPendientesBanner({
   bloqueadaPorMora: boolean;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [pagandoCobroId, setPagandoCobroId] = useState<string | null>(null);
+  const [pagoError, setPagoError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handlePagarConEfipay(cobroId: string) {
+    setPagoError(null);
+    setPagandoCobroId(cobroId);
+    startTransition(async () => {
+      const r = await iniciarPagoEfipayAction(cobroId);
+      if (!r.ok) {
+        setPagoError(r.error);
+        setPagandoCobroId(null);
+        return;
+      }
+      // Redirige al checkout de Efipay (URL externa)
+      window.location.href = r.checkoutUrl;
+    });
+  }
 
   if (cobros.length === 0) return null;
 
@@ -137,11 +160,13 @@ export function CobrosPendientesBanner({
                     <th className="px-6 py-2">Fecha límite</th>
                     <th className="px-6 py-2">Estado</th>
                     <th className="px-6 py-2 text-right">Total</th>
+                    <th className="px-6 py-2 text-right">Pagar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {cobros.map((c) => {
                     const vencido = c.estado === 'VENCIDO' || c.fechaLimite < new Date();
+                    const esEstePagando = pagandoCobroId === c.id && pending;
                     return (
                       <tr key={c.id}>
                         <td className="px-6 py-2.5 font-mono text-xs font-semibold text-brand-blue">
@@ -173,6 +198,22 @@ export function CobrosPendientesBanner({
                         <td className="px-6 py-2.5 text-right font-mono text-sm font-semibold">
                           {formatCOP(c.total)}
                         </td>
+                        <td className="px-6 py-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handlePagarConEfipay(c.id)}
+                            disabled={pending}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+                            title={`Pagar ${formatCOP(c.total)} + ${(SOBRECOSTO_PORCENTAJE * 100).toFixed(0)}% pasarela = ${formatCOP(calcularDesglosePagoEfipayNumber(c.total).montoCobrado)}`}
+                          >
+                            {esEstePagando ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <CreditCard className="h-3.5 w-3.5" />
+                            )}
+                            <span>{esEstePagando ? 'Iniciando...' : 'Efipay'}</span>
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -188,9 +229,27 @@ export function CobrosPendientesBanner({
                     <td className="px-6 py-2 text-right font-mono text-base font-bold text-brand-blue-dark">
                       {formatCOP(cobros.reduce((s, c) => s + c.total, 0))}
                     </td>
+                    <td className="px-6 py-2" />
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {pagoError && (
+              <div className="border-t border-red-200 bg-red-50 px-6 py-3">
+                <p className="flex items-start gap-2 text-xs text-red-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{pagoError}</span>
+                </p>
+              </div>
+            )}
+
+            <div className="border-t border-slate-100 bg-slate-50 px-6 py-3 text-[11px] text-slate-600">
+              <p>
+                Al pagar con Efipay se aplica un {(SOBRECOSTO_PORCENTAJE * 100).toFixed(0)}%
+                adicional sobre el monto del cobro para cubrir la comisión de la pasarela. El
+                desglose exacto se muestra en la página de Efipay antes de confirmar.
+              </p>
             </div>
 
             <footer className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">

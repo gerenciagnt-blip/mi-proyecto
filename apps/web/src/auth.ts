@@ -9,6 +9,7 @@ import {
   registrarIntentoFallido,
   registrarIntentoExitoso,
 } from './lib/auth-rate-limit';
+import { withDbRetry } from './lib/db-retry';
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -35,9 +36,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: emailNorm },
-        });
+        // Retry transitorio: cubre cold-start de Neon en el lookup del
+        // usuario (segunda query crítica del flujo de login).
+        const user = await withDbRetry(
+          () =>
+            prisma.user.findUnique({
+              where: { email: emailNorm },
+            }),
+          { label: 'authorize.user.findUnique' },
+        );
 
         if (!user) {
           await registrarIntentoFallido(emailNorm, 'unknown_email');

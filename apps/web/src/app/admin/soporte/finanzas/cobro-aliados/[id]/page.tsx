@@ -8,13 +8,23 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileText,
+  CreditCard,
+  ExternalLink,
 } from 'lucide-react';
-import type { CobroAliadoEstado } from '@pila/db';
+import type { CobroAliadoEstado, EfipayEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { MarcarPagadoForm } from './marcar-pagado-form';
+
+const EFIPAY_TONE: Record<EfipayEstado, string> = {
+  PENDIENTE: 'bg-amber-50 text-amber-700 ring-amber-200',
+  APROBADA: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  RECHAZADA: 'bg-rose-50 text-rose-700 ring-rose-200',
+  EXPIRADA: 'bg-slate-100 text-slate-600 ring-slate-200',
+  ERROR: 'bg-red-100 text-red-800 ring-red-300',
+};
 
 export const metadata = { title: 'Detalle cobro · Finanzas' };
 export const dynamic = 'force-dynamic';
@@ -71,6 +81,10 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
         medioPago: { select: { nombre: true } },
         conceptos: { orderBy: [{ tipo: 'asc' }, { descripcion: 'asc' }] },
         createdBy: { select: { name: true } },
+        efipayTransacciones: {
+          orderBy: { iniciadaEn: 'desc' },
+          include: { iniciadaPor: { select: { name: true } } },
+        },
       },
     }),
     prisma.medioPago.findMany({
@@ -239,6 +253,91 @@ export default async function CobroDetailPage({ params }: { params: Promise<{ id
               </div>
             )}
           </section>
+
+          {/* Historial Efipay */}
+          {cobro.efipayTransacciones.length > 0 && (
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <header className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+                <CreditCard className="h-4 w-4 text-slate-500" />
+                <h2 className="text-sm font-semibold text-slate-700">
+                  Pasarela Efipay ({cobro.efipayTransacciones.length} intento
+                  {cobro.efipayTransacciones.length !== 1 ? 's' : ''})
+                </h2>
+              </header>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-left text-[10px] uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-5 py-1.5">Inicio</th>
+                      <th className="px-5 py-1.5">Iniciado por</th>
+                      <th className="px-5 py-1.5">Estado</th>
+                      <th className="px-5 py-1.5 text-right">Monto base</th>
+                      <th className="px-5 py-1.5 text-right">Sobrecosto</th>
+                      <th className="px-5 py-1.5 text-right">Cobrado</th>
+                      <th className="px-5 py-1.5">Payment ID / motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {cobro.efipayTransacciones.map((trx) => (
+                      <tr key={trx.id} className="align-top">
+                        <td className="px-5 py-1.5 text-slate-600">
+                          {trx.iniciadaEn.toLocaleString('es-CO')}
+                        </td>
+                        <td className="px-5 py-1.5 text-slate-700">
+                          {trx.iniciadaPor?.name ?? '—'}
+                        </td>
+                        <td className="px-5 py-1.5">
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset',
+                              EFIPAY_TONE[trx.estado],
+                            )}
+                          >
+                            {trx.estado}
+                          </span>
+                          {trx.intentosWebhook > 0 && (
+                            <span className="ml-1.5 text-[10px] text-slate-500">
+                              · {trx.intentosWebhook} webhook
+                              {trx.intentosWebhook !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-1.5 text-right font-mono">
+                          {formatCOP(Number(trx.montoBase))}
+                        </td>
+                        <td className="px-5 py-1.5 text-right font-mono text-slate-500">
+                          +{formatCOP(Number(trx.sobrecosto))}
+                        </td>
+                        <td className="px-5 py-1.5 text-right font-mono font-semibold">
+                          {formatCOP(Number(trx.montoCobrado))}
+                        </td>
+                        <td className="px-5 py-1.5 text-slate-600">
+                          {trx.efipayPaymentId ? (
+                            <span className="font-mono text-[10px]">{trx.efipayPaymentId}</span>
+                          ) : trx.motivo ? (
+                            <span className="text-rose-700">{trx.motivo}</span>
+                          ) : (
+                            '—'
+                          )}
+                          {trx.urlCheckout && trx.estado === 'PENDIENTE' && (
+                            <a
+                              href={trx.urlCheckout}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-1.5 inline-flex items-center gap-0.5 text-brand-blue hover:underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              checkout
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Derecha — acción "Marcar pagado" */}
