@@ -4,6 +4,7 @@ import { ArrowLeft, FileText, Image as ImageIcon } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { requireRole } from '@/lib/auth-helpers';
 import { ReintentarButton } from '../reintentar-button';
+import { CerrarJobButton } from '../cerrar-job-button';
 
 export const metadata = { title: 'Job Colpatria — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -142,8 +143,9 @@ export default async function JobDetallePage({ params }: { params: Promise<{ id:
             {job.error}
           </pre>
           {reintentable && (
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <ReintentarButton jobId={job.id} />
+              <CerrarJobButton jobId={job.id} />
             </div>
           )}
         </section>
