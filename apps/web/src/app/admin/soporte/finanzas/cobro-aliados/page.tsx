@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft, DollarSign, AlertCircle, AlertTriangle, Download } from 'lucide-react';
+import { ReconciliarMasivoButton } from './reconciliar-masivo-button';
 import type { CobroAliadoEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requireStaff } from '@/lib/auth-helpers';
@@ -123,7 +124,10 @@ export default async function CobroAliadosPage({ searchParams }: { searchParams:
             Cobros mensuales a los aliados por afiliaciones procesadas y mensualidades facturadas.
           </p>
         </div>
-        <DescargarExcelMenu periodos={periodos} periodoSeleccionado={periodoFilter} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ReconciliarMasivoButton />
+          <DescargarExcelMenu periodos={periodos} periodoSeleccionado={periodoFilter} />
+        </div>
       </header>
 
       {/* Stats */}
