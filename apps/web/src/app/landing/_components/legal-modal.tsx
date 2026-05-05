@@ -151,8 +151,25 @@ Retroalimentación. Las sugerencias, comentarios o ideas que el Usuario remita a
 No se considerará confidencial la información que: (i) sea o llegue a ser de dominio público sin culpa de la parte receptora; (ii) ya estuviera en posesión legítima de la parte receptora antes de la divulgación; (iii) deba revelarse por mandato legal, judicial o administrativo, en cuyo caso la parte receptora notificará a la otra cuando ello sea legalmente posible.`,
       },
       {
-        heading: '9. Disponibilidad del servicio (SLA) y mantenimiento',
-        body: `${RAZON_SOCIAL} se compromete a desplegar esfuerzos comerciales razonables (best-effort) para mantener la Plataforma disponible las 24 horas del día, los 7 días de la semana, con una meta interna de disponibilidad del 99% mensual, excluidas las ventanas de mantenimiento.
+        heading: '9. Disponibilidad del servicio (SLA), soporte y mantenimiento',
+        body: `Disponibilidad. ${RAZON_SOCIAL} se compromete a desplegar esfuerzos comerciales razonables (best-effort) para mantener la Plataforma disponible las 24 horas del día, los 7 días de la semana, con una meta interna de disponibilidad del 99% mensual, excluidas las ventanas de mantenimiento.
+
+Soporte técnico. El Prestador atiende solicitudes de soporte en el siguiente horario (hora de Colombia):
+  • Lunes a viernes: 8:00 a.m. a 6:00 p.m.
+  • Sábados: 8:00 a.m. a 12:00 m.
+  • Domingos y festivos: sin atención humana presencial; se recibirán solicitudes con respuesta al inicio del siguiente turno hábil.
+
+Canales oficiales de soporte:
+  • Correo electrónico: ${EMAIL}
+  • Formulario de PQRS disponible en la Plataforma
+  • WhatsApp / mensajería: el número se publica en la sección de contacto de la Plataforma
+
+Tiempos máximos de respuesta (medidos en horas hábiles dentro del horario de soporte):
+  • Solicitudes generales (consultas, configuración, capacitación): 1 día hábil
+  • Incidentes que afectan la operación de un Usuario individual: 4 horas hábiles
+  • Caída total de la Plataforma o incidentes que afectan a múltiples Usuarios: respuesta inmediata en horario de soporte; mejor esfuerzo fuera de horario para mitigar el impacto.
+
+Estos tiempos son de respuesta inicial al ticket, no de resolución definitiva, la cual dependerá de la complejidad del caso y de la dependencia de terceros (Operadores Autorizados, Entidades del SGSS, pasarelas de pago, etc.).
 
 Ventanas de mantenimiento programado: típicamente domingos entre las 00:00 y las 04:00 (hora de Colombia). Estas ventanas se anunciarán con al menos cuarenta y ocho (48) horas de anticipación cuando sean preventivas. El mantenimiento correctivo de emergencia podrá ejecutarse sin preaviso para mitigar incidentes críticos.
 
@@ -198,7 +215,11 @@ Efectos de la terminación. Tras la terminación, ${RAZON_SOCIAL}: (i) inhabilit
 
 (a) Información clara y suficiente. El Prestador garantiza información transparente sobre tarifas, ciclo de cobro, condiciones de prestación y mecanismos de cancelación, conforme al artículo 23 y siguientes del Estatuto.
 
-(b) Derecho de retracto (artículo 47). En las contrataciones celebradas a distancia (incluyendo contrataciones por medios electrónicos), el consumidor podrá ejercer el derecho de retracto dentro de los cinco (5) días hábiles siguientes a la celebración del contrato, devolviendo lo recibido en buen estado y siempre que no se haya iniciado total o significativamente la prestación del servicio. Para ejercerlo, basta enviar comunicación a ${EMAIL} indicando la voluntad de retractarse. El reembolso se realizará dentro de los treinta (30) días calendario siguientes, conforme al artículo 47.
+(b) Derecho de retracto (artículo 47, Ley 1480 de 2011). Tratándose de contrataciones celebradas a distancia o por medios electrónicos, el consumidor podrá ejercer el derecho de retracto dentro de los cinco (5) días hábiles siguientes a la celebración del contrato, mediante comunicación dirigida a ${EMAIL} manifestando su voluntad de retractarse.
+
+No obstante, conforme al numeral 4 del artículo 47 de la Ley 1480 de 2011, NO procede el derecho de retracto cuando se haya iniciado total o significativamente la prestación del servicio. Para efectos de los presentes Términos, se entenderá que la prestación del servicio se ha iniciado significativamente cuando el Usuario haya realizado cualquiera de las siguientes actividades en la Plataforma: (i) creación, importación o gestión de cotizantes o cuentas de cobro; (ii) emisión, procesamiento o transmisión de planillas PILA u otros archivos de aportes; (iii) generación, emisión o entrega de comprobantes; (iv) radicación de incapacidades o de soportes de afiliación; (v) integración o sincronización con Operadores Autorizados o pasarelas de pago. En tales casos, el cobro causado por el período en que se inició la prestación no es reembolsable.
+
+Cuando el retracto sea procedente por no haberse iniciado la prestación del servicio, el reembolso del valor pagado se efectuará dentro de los treinta (30) días calendario siguientes a la solicitud, descontando los costos de pasarela de pago en que se hubiere incurrido y a través del mismo medio de pago original, salvo acuerdo en contrario.
 
 (c) Reversión del pago (artículo 51). El consumidor podrá solicitar la reversión del pago electrónico cuando se presente una de las causales legales (transacción no autorizada, producto no recibido o no corresponde a lo solicitado, etc.).
 

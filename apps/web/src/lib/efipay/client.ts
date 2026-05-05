@@ -228,6 +228,161 @@ function serializarErrorFetch(err: unknown): { message: string; code?: string; c
   };
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Consultar estado de transacción (polling)
+// ──────────────────────────────────────────────────────────────────────
+
+export type ConsultarEstadoResultado =
+  | {
+      ok: true;
+      /** Status string crudo de Efipay (ej. "Aprobada", "Pendiente", "Rechazada") */
+      statusRaw: string;
+      /** Status mapeado a nuestro enum interno */
+      estado: 'PENDIENTE' | 'APROBADA' | 'RECHAZADA' | 'EXPIRADA' | 'ERROR';
+      raw: unknown;
+      /** Endpoint que respondió OK — útil para diagnóstico */
+      endpoint: string;
+    }
+  | { ok: false; error: string; statusCode?: number };
+
+/**
+ * Consulta el estado actual de una transacción Efipay por su payment_id.
+ *
+ * IMPORTANTE: la doc oficial menciona que existe una sección
+ * `/docs/1.0/status-transaction` pero NO publica el endpoint exacto. Por
+ * eso probamos varios paths comunes hasta encontrar uno que responda
+ * 200. Se cachea el primero que funciona para no hacer probing en cada
+ * llamada.
+ *
+ * Si Efipay actualiza la doc con el endpoint correcto, basta cambiar el
+ * orden de PROBE_PATHS o quedarse con uno solo.
+ */
+const PROBE_PATHS = [
+  '/api/v1/payment/{id}',
+  '/api/v1/payment/{id}/status',
+  '/api/v1/transaction/{id}',
+  '/api/v1/payments/{id}',
+] as const;
+
+let endpointCache: string | null = null;
+
+export async function consultarEstadoEfipay(paymentId: string): Promise<ConsultarEstadoResultado> {
+  const cfg = getEfipayConfig();
+  const cfgError = validateEfipayConfig(cfg);
+  if (cfgError) {
+    return { ok: false, error: `Configuración Efipay incompleta: ${cfgError}` };
+  }
+
+  const headers = {
+    Authorization: `Bearer ${cfg.accessToken}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+
+  // Si ya descubrimos cuál endpoint funciona, lo usamos directo
+  const pathsToTry = endpointCache ? [endpointCache] : [...PROBE_PATHS];
+
+  let ultimoStatusCode: number | undefined;
+  let ultimoBody: unknown;
+  for (const pathTpl of pathsToTry) {
+    const path = pathTpl.replace('{id}', encodeURIComponent(paymentId));
+    const url = `${cfg.baseUrl}${path}`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      log.warn(
+        { url, err: String(err) },
+        'Efipay status: error de red — siguiendo con próximo endpoint',
+      );
+      continue;
+    }
+    if (res.status === 404 || res.status === 405) {
+      // Endpoint no existe en este path — probar siguiente
+      continue;
+    }
+
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    ultimoStatusCode = res.status;
+    ultimoBody = body;
+
+    if (!res.ok) {
+      log.warn({ url, statusCode: res.status, body }, 'Efipay status: no-OK pero el path existe');
+      // Si fue 401/403 no tiene sentido seguir probando otros paths
+      if (res.status === 401 || res.status === 403) {
+        return {
+          ok: false,
+          error: extraerMensajeError(body) ?? `HTTP ${res.status}`,
+          statusCode: res.status,
+        };
+      }
+      continue;
+    }
+
+    // 200 — encontramos el endpoint correcto
+    if (!endpointCache) {
+      endpointCache = pathTpl;
+      log.info({ endpoint: pathTpl }, 'Efipay status endpoint descubierto');
+    }
+
+    const statusRaw = extraerStatusDelBody(body);
+    if (!statusRaw) {
+      log.warn({ body }, 'Efipay status: respuesta 200 pero no encontré campo `status`');
+      return {
+        ok: false,
+        error: 'Respuesta de Efipay sin campo status reconocible',
+        statusCode: res.status,
+      };
+    }
+
+    const { mapEfipayStatus } = await import('./validations');
+    return {
+      ok: true,
+      statusRaw,
+      estado: mapEfipayStatus(statusRaw),
+      raw: body,
+      endpoint: pathTpl,
+    };
+  }
+
+  return {
+    ok: false,
+    error:
+      ultimoStatusCode !== undefined
+        ? (extraerMensajeError(ultimoBody) ?? `HTTP ${ultimoStatusCode}`)
+        : 'Ningún endpoint de status respondió. Verifica EFIPAY_BASE_URL y EFIPAY_ACCESS_TOKEN.',
+    statusCode: ultimoStatusCode,
+  };
+}
+
+/**
+ * Extrae el campo `status` del body de Efipay. Probamos las ubicaciones
+ * conocidas: `transaction.status`, `data.status`, `status` plano.
+ */
+function extraerStatusDelBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as Record<string, unknown>;
+  if (typeof b.status === 'string') return b.status;
+  if (b.transaction && typeof b.transaction === 'object') {
+    const t = b.transaction as Record<string, unknown>;
+    if (typeof t.status === 'string') return t.status;
+  }
+  if (b.data && typeof b.data === 'object') {
+    const d = b.data as Record<string, unknown>;
+    if (typeof d.status === 'string') return d.status;
+  }
+  return null;
+}
+
 function extraerMensajeError(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
   const b = body as Record<string, unknown>;
