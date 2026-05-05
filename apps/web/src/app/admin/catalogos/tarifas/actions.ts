@@ -69,12 +69,6 @@ export async function toggleTarifaAction(id: string) {
   revalidatePath('/admin/catalogos/tarifas');
 }
 
-export async function deleteTarifaAction(id: string) {
-  await requireStaff();
-  await prisma.tarifaSgss.delete({ where: { id } });
-  revalidatePath('/admin/catalogos/tarifas');
-}
-
 // ============ FSP ============
 
 function parseFsp(fd: FormData) {
@@ -130,11 +124,5 @@ export async function toggleFspAction(id: string) {
   const r = await prisma.fspRango.findUnique({ where: { id } });
   if (!r) return;
   await prisma.fspRango.update({ where: { id }, data: { active: !r.active } });
-  revalidatePath('/admin/catalogos/tarifas');
-}
-
-export async function deleteFspAction(id: string) {
-  await requireStaff();
-  await prisma.fspRango.delete({ where: { id } });
   revalidatePath('/admin/catalogos/tarifas');
 }
