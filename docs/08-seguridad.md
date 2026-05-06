@@ -170,7 +170,7 @@ Cubierta por la combinación de bcrypt cost 12 (≈250 ms por intento en hardwar
 | ----------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------- |
 | Escape automático de React          | Activo (default del framework)                                                                | —                                       |
 | `dangerouslySetInnerHTML`           | Auditado: solo en componentes de PDF / mailers donde el contenido viene de templates internos | —                                       |
-| CSP con nonces                      | **Report-Only** (no bloquea, solo reporta)                                                    | `apps/web/src/middleware.ts:42–64, 103` |
+| CSP con nonces                      | **Enforce** en producción (`NODE_ENV=production`), Report-Only en dev                         | `apps/web/src/middleware.ts:42–64, 103` |
 | Header legacy `X-XSS-Protection: 0` | Activo                                                                                        | `apps/web/next.config.mjs:25`           |
 
 **Detalle de la CSP (`middleware.ts:42–64`):**
@@ -198,7 +198,7 @@ Notas pragmáticas:
 - `style-src 'unsafe-inline'`: necesario por Tailwind y librerías UI. Migrar a nonces es un sprint adicional.
 - El nonce se inyecta en el header `x-nonce` del request, accesible vía `headers()` de Next desde server components.
 
-**Por qué Report-Only:** Next 15 inyecta scripts internos en dev y queremos confirmar que `nonce + strict-dynamic` los acepta antes de promover a CSP enforce. Cuando no haya violations en logs durante una semana, cambiar `Content-Security-Policy-Report-Only` por `Content-Security-Policy` (`middleware.ts:103`).
+**Por qué híbrido (enforce en prod / Report-Only en dev):** Next 15 inyecta scripts internos en dev (HMR, Fast Refresh) que pueden violar la política sin nonce — bloquearlos rompería la experiencia de desarrollo. En producción ya no hay HMR, así que enforce es seguro y bloquea XSS de verdad. La selección del header se hace en runtime según `process.env.NODE_ENV`.
 
 ### 4.2 CSRF
 
@@ -248,7 +248,7 @@ Aplicados globalmente a todas las rutas vía `apps/web/next.config.mjs:4–26`:
 | `Permissions-Policy`        | `camera=(), microphone=(), geolocation=(), interest-cohort=()` | 21–22 | Deshabilita APIs no usadas                                     |
 | `X-XSS-Protection`          | `0`                                                            | 25    | Desactiva el filtro legacy del browser (recomendación moderna) |
 
-`Content-Security-Policy-Report-Only` se setea desde el middleware (no desde `next.config.mjs`) porque cambia por request (nonce dinámico).
+El header CSP (`Content-Security-Policy` en prod o `-Report-Only` en dev) se setea desde el middleware (no desde `next.config.mjs`) porque cambia por request (nonce dinámico).
 
 ---
 
@@ -395,7 +395,6 @@ Honestidad operativa — esto **no** está cubierto hoy:
 
 | Gap                                                                                            | Impacto                                                                  | Plan                                                                                                                                                    |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CSP en **Report-Only**, no enforce                                                             | XSS exitoso no se bloquea, solo se reportaría                            | Promover a `Content-Security-Policy` (sin `-Report-Only`) tras verificar logs limpios por una semana (`middleware.ts:103`)                              |
 | Rate limit **por email**, no por IP                                                            | Atacante distribuido con muchos emails diferentes no cae bajo el bloqueo | Agregar segundo bucket por IP (sliding window)                                                                                                          |
 | No hay **complexity check** en passwords                                                       | User puede usar `12345678`                                               | Validación adicional Zod (mayúscula/minúscula/dígito) y/o chequeo contra HIBP Pwned Passwords API                                                       |
 | No hay **2FA / MFA**                                                                           | Un único factor (password)                                               | Agregar TOTP (RFC 6238) — una columna `totpSecret` cifrada y librería `otpauth`                                                                         |
@@ -414,7 +413,7 @@ Honestidad operativa — esto **no** está cubierto hoy:
 | --- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | A01 | Broken Access Control          | `requireAuth` / `requireRole` / `requireStaff` en todas las server actions; sucursal scope (`scopeWhere`, `scopeWhereOpt`, `scopeWhereViaCotizante`); chequeo dual UI + endpoint en documentos confidenciales; `validarSucursalIdAsignable` en writes | OK                                                                               |
 | A02 | Cryptographic Failures         | bcrypt cost 12 para passwords; AES-256-GCM con scrypt KDF para credenciales Colpatria; TLS forzado (HSTS + sslmode=require); JWT firmado con `AUTH_SECRET`                                                                                            | OK                                                                               |
-| A03 | Injection                      | Prisma parameterized queries, no `$queryRawUnsafe`; Zod validation en todos los inputs; React escape automático; CSP con nonces (Report-Only)                                                                                                         | Mayor parte OK; CSP pendiente de enforce                                         |
+| A03 | Injection                      | Prisma parameterized queries, no `$queryRawUnsafe`; Zod validation en todos los inputs; React escape automático; CSP con nonces (enforce en prod, Report-Only en dev)                                                                                 | Cubierto                                                                         |
 | A04 | Insecure Design                | Sucursal scope diseñado en helpers reusables (no se duplica lógica); rate limit en login; sesiones de 15 min con renovación; logs con redact                                                                                                          | OK                                                                               |
 | A05 | Security Misconfiguration      | Headers de seguridad globales en `next.config.mjs`; `frame-ancestors 'none'`; `Permissions-Policy` con todo en `()`; HSTS 1 año + subdominios; `X-Content-Type-Options: nosniff`                                                                      | OK                                                                               |
 | A06 | Vulnerable Components          | pnpm + lockfile pinneado; dependabot configurable en GitHub; sin componentes deprecated críticos en uso (Next 15, Prisma vigente, NextAuth v5)                                                                                                        | Parcial — falta auditoría programada (`pnpm audit` en CI)                        |

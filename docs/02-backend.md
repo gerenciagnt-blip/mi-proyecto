@@ -78,7 +78,7 @@ Redirige al dashboard. La autenticación efectiva la fuerza el middleware antes 
 3. Construye la directiva CSP con `'strict-dynamic'`, `'nonce-XXX'`, `'unsafe-inline'` como fallback, y `connect-src` que incluye Sentry y PagoSimple si están configurados.
 4. Define rutas públicas (`/login`, `/api/auth/*`, `/api/health`) que se sirven sin sesión. Cualquier otra ruta sin sesión → redirect a `/login?callbackUrl=...`.
 5. Inyecta el header `x-nonce` en el request para que server components lo lean si necesitan scripts inline.
-6. Aplica `Content-Security-Policy-Report-Only` a la respuesta (modo report-only mientras se valida; se promueve a CSP estricta cuando no haya violations).
+6. Aplica CSP a la respuesta: `Content-Security-Policy` en producción (enforce), `Content-Security-Policy-Report-Only` en dev (no bloquea HMR/Fast Refresh de Next).
 7. El `matcher` excluye `_next/static`, `_next/image`, `favicon.ico` y assets estáticos para que no consuman ciclos del middleware.
 
 ## 4. Server Actions — la arquitectura real

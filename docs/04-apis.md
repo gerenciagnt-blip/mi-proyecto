@@ -871,8 +871,7 @@ Llamada por el endpoint REST 7. Encapsula:
 
 ## Cambios futuros previsibles
 
-- Migración a CSP estricta (en curso, ahora Report-Only con nonces — ver
-  commit `847286a`).
+- CSP con nonces — enforce en prod, Report-Only en dev (commit `847286a` + promoción posterior).
 - Cache BDUA/RUAF con TTL de 30 min (ya implementado, ver
   `pagosimple/bdua-cache.ts`, commit `ed5fd18`).
 - Watchdog del bot Colpatria con detección de zombies y reciclaje de

@@ -165,11 +165,8 @@ Se identifica como cuello potencial en `tests/load/README.md` (script futuro `pd
 
 | Item                                       | Origen / archivo                                           | Estado                                 |
 | ------------------------------------------ | ---------------------------------------------------------- | -------------------------------------- |
-| CSP en Report-Only                         | `apps/web/src/middleware.ts`, commit `847286a`             | Pasar a Enforce tras validar Sentry    |
 | Sprint 4.4 (email) y 4.5 (SMS)             | Roadmap memoria 2026-04                                    | Esperando credenciales Resend/Twilio   |
 | Catálogo EPS/AFP completo con `codigoAxa`  | `EntidadSgss.codigoAxa`                                    | Solo 2 mapeados — falta importar Excel |
-| Rate limit por email, no por IP            | Login flow                                                 | Agregar bucket por IP (sliding window) |
-| Catálogo EPS/AFP completo                  | Solo ~2 entidades mapeadas a códigos AXA                   | Faltan ~50+                            |
 | Tests E2E con Playwright contra la web app | No existen — solo Playwright para el bot                   | Cobertura 0 en flujo aliado            |
 | CI sin tests automáticos en push           | `.github/workflows/ci.yml` paso `pnpm test` ya configurado | Hay paso, faltan tests reales          |
 
@@ -209,7 +206,6 @@ Se identifica como cuello potencial en `tests/load/README.md` (script futuro `pd
 | Seguridad | Logs con PII no redactados                    | Media        | Alto    |
 | Seguridad | Webhook sin verificación de firma             | Media        | Alto    |
 | Seguridad | Secret manager ausente                        | Alta         | Medio   |
-| Seguridad | CSP en Report-Only                            | Alta         | Medio   |
 | Seguridad | Tests E2E inexistentes en web                 | Alta         | Medio   |
 
 ---

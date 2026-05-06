@@ -340,7 +340,7 @@ Actions de Next.
 - **Cache catalógico in-memory** (`lib/catalogos-cache.ts`) para listas
   de entidades SGSS, planes, tarifas que no cambian en tiempo de request.
 - **Rate limiting de login** (`lib/auth-rate-limit.ts`).
-- **CSP con nonces (Report-Only)** según commit `847286a`.
+- **CSP con nonces** — enforce en producción, Report-Only en dev (origen: commit `847286a`, promovido a enforce posteriormente).
 
 ### 2.5 Justificación de decisiones
 

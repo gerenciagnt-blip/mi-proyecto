@@ -85,11 +85,12 @@ export default auth((req) => {
   const nonce = generarNonce();
   const csp = construirCSP(nonce);
 
-  // En este momento publicamos la CSP en modo "Report-Only" para detectar
-  // violations sin bloquear nada (Next 15 inyecta scripts internos en dev
-  // y queremos verificar que con `nonce + strict-dynamic` los acepta antes
-  // de promover a CSP real). Cuando se confirme que no hay violations en
-  // logs del browser durante una semana, cambiar al header sin "-Report-Only".
+  // CSP enforce en prod, Report-Only en dev. Next 15 inyecta scripts
+  // internos en dev (HMR, Fast Refresh) que pueden violar la política
+  // sin nonce — bloquearlos rompería la experiencia de desarrollo. En
+  // prod ya no hay HMR, así que enforce es seguro y bloquea XSS de
+  // verdad. Antes de promover esto se validó que las páginas públicas
+  // (login + landing) no generan violations en logs.
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set('x-nonce', nonce);
 
@@ -105,7 +106,11 @@ export default auth((req) => {
   }
 
   // CSP en cualquier respuesta (incluso redirects) y nonce reflected.
-  response.headers.set('Content-Security-Policy-Report-Only', csp);
+  const cspHeader =
+    process.env.NODE_ENV === 'production'
+      ? 'Content-Security-Policy'
+      : 'Content-Security-Policy-Report-Only';
+  response.headers.set(cspHeader, csp);
   response.headers.set('x-nonce', nonce);
   return response;
 });
