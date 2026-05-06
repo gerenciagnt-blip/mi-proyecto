@@ -379,5 +379,26 @@ export async function pagosimpleSyncPlanillasCommand(opts: {
     `\n✅ Sync completado — ${actualizadas} actualizadas · ${sinCambio} sin cambio · ${errores} errores`,
   );
   await prisma.$disconnect();
-  if (errores > 0) process.exit(1);
+
+  // Política de exit code:
+  //   - Si TODAS las planillas fallaron (sin éxitos ni "sin cambio"),
+  //     es un problema genuino (auth roto, PagoSimple caído, etc) →
+  //     exit 1 para que CI alerte.
+  //   - Si hubo errores parciales pero al menos algunas planillas se
+  //     procesaron OK, los errores son típicamente de DATOS (planillas
+  //     individuales con aportantes no encontrados en PagoSimple). No
+  //     vale la pena romper el cron entero — el detalle por consecutivo
+  //     queda en los logs arriba para investigación posterior.
+  const huboExitos = actualizadas > 0 || sinCambio > 0;
+  if (errores > 0 && !huboExitos) {
+    console.error(
+      '\n❌ Todas las planillas con número PagoSimple fallaron. Revisar credenciales o disponibilidad del servicio.',
+    );
+    process.exit(1);
+  }
+  if (errores > 0) {
+    console.warn(
+      `\n⚠️  ${errores} planilla(s) con error parcial — revisar arriba para diagnóstico individual. El cron no falla por errores de datos en planillas específicas.`,
+    );
+  }
 }
