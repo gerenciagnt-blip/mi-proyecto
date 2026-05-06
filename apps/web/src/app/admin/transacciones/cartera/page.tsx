@@ -2,25 +2,15 @@ import Link from 'next/link';
 import { Wallet, Search, AlertCircle, Download } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { calcularLiquidacion } from '@/lib/liquidacion/calcular';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
-import {
-  formatCOP,
-  fullName,
-  nombreCompleto as getNombreCompleto,
-} from '@/lib/format';
-import {
-  puedeCerrarPeriodo,
-  debeFacturarseEnPeriodo,
-  opcionesFacturacion,
-} from './helpers';
-import {
-  ConsultarCotizanteButton,
-  type ConsultaCotizante,
-} from './consultar-dialog';
+import { formatCOP, fullName, nombreCompleto as getNombreCompleto } from '@/lib/format';
+import { puedeCerrarPeriodo, debeFacturarseEnPeriodo, opcionesFacturacion } from './helpers';
+import { ConsultarCotizanteButton, type ConsultaCotizante } from './consultar-dialog';
 import { GestionButton } from './gestion-dialog';
 import { CerrarPeriodoButton } from './cerrar-periodo-button';
 
@@ -44,11 +34,8 @@ const MESES = [
 
 type SP = { q?: string };
 
-export default async function CarteraPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function CarteraPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('transacciones');
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
 
@@ -85,12 +72,9 @@ export default async function CarteraPage({
 
   // Scope: SUCURSAL ve sólo sus cotizantes; STAFF ve todo.
   const scope = await getUserScope();
-  const cotizanteScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cotizanteScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
   const comprobanteCotizanteScope =
-    scope?.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope?.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
   // Cotizantes con MENSUALIDAD procesada y no anulada en el período.
   // Las vinculaciones/afiliaciones NO cuentan — un cotizante puede tener
@@ -320,8 +304,8 @@ export default async function CarteraPage({
           afp: af.afp?.nombre ?? null,
           arl:
             af.modalidad === 'DEPENDIENTE'
-              ? af.empresa?.arl?.nombre ?? null
-              : af.arl?.nombre ?? null,
+              ? (af.empresa?.arl?.nombre ?? null)
+              : (af.arl?.nombre ?? null),
           ccf: af.ccf?.nombre ?? null,
         },
         ibc: calc.ibc,
@@ -354,8 +338,7 @@ export default async function CarteraPage({
       fechaIngreso: primera.fechaIngreso.toISOString().slice(0, 10),
       totalGeneral: totalCot,
       gestionesCount: c.gestionesCartera.length,
-      duenoAliado:
-        duenosBySuc && c.sucursalId ? (duenosBySuc.get(c.sucursalId) ?? null) : null,
+      duenoAliado: duenosBySuc && c.sucursalId ? (duenosBySuc.get(c.sucursalId) ?? null) : null,
       consulta: {
         cotizante: {
           tipoDocumento: c.tipoDocumento,
@@ -409,9 +392,7 @@ export default async function CarteraPage({
               {anio}-{String(mes).padStart(2, '0')}
             </span>{' '}
             ({MESES[mes - 1]}). Total estimado:{' '}
-            <strong className="font-mono">
-              {formatCOP(totalGeneralCartera)}
-            </strong>
+            <strong className="font-mono">{formatCOP(totalGeneralCartera)}</strong>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -509,9 +490,7 @@ export default async function CarteraPage({
                     </td>
                     {esStaff && (
                       <td className="px-4 py-2.5 text-xs text-slate-600">
-                        {r.duenoAliado ?? (
-                          <span className="italic text-slate-400">—</span>
-                        )}
+                        {r.duenoAliado ?? <span className="italic text-slate-400">—</span>}
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-xs">
@@ -527,9 +506,7 @@ export default async function CarteraPage({
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-xs">
-                      {r.empresaPlanilla ?? (
-                        <span className="italic text-slate-400">—</span>
-                      )}
+                      {r.empresaPlanilla ?? <span className="italic text-slate-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs">
                       {r.empresaCC ?? <span className="italic text-slate-400">—</span>}

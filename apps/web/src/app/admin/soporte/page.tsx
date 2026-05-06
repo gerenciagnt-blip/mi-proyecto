@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { LifeBuoy, Wallet, HeartPulse, FileText, DollarSign, ArrowRight } from 'lucide-react';
+import { requirePermiso } from '@/lib/auth-helpers';
 
 export const metadata = { title: 'Soporte — Sistema PILA' };
 
-export default function SoportePage() {
+export default async function SoportePage() {
+  await requirePermiso('soporte.afiliaciones');
   const items = [
     {
       href: '/admin/soporte/cartera',

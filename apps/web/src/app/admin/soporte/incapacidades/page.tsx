@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { HeartPulse, Paperclip, AlertCircle } from 'lucide-react';
 import type { IncapacidadEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { TIPO_LABEL, ESTADO_LABEL, ESTADO_TONE } from '@/lib/incapacidades/validations';
@@ -25,6 +26,7 @@ export default async function SoporteIncapacidadesPage({
 }: {
   searchParams: Promise<SP>;
 }) {
+  await requirePermiso('soporte.incapacidades');
   const sp = await searchParams;
 
   const estadoFilter: IncapacidadEstado | undefined =

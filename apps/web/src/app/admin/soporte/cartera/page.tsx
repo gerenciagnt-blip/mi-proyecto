@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Wallet, AlertCircle, FileText, Clock, CheckCircle2, Send, XCircle } from 'lucide-react';
 import type { CarteraEstado, CarteraTipoEntidad, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
@@ -33,6 +34,7 @@ type SP = {
 };
 
 export default async function SoporteCarteraPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('soporte.cartera');
   const sp = await searchParams;
   const desde = parseDateIso(sp.desde);
   const hasta = parseDateIso(sp.hasta);

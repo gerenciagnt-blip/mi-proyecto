@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { IncapacidadDetalleContent } from '../_components/incapacidad-detalle-content';
 
 export const metadata = { title: 'Incapacidad · Soporte — Sistema PILA' };
@@ -10,6 +11,7 @@ export default async function IncapacidadDetallePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermiso('soporte.incapacidades');
   const { id } = await params;
   return (
     <div className="space-y-6">

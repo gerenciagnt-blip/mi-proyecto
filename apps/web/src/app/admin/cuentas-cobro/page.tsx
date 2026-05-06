@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { CreateCuentaCobroDialog } from './create-dialog';
@@ -22,11 +23,8 @@ function buildHref(patch: Partial<SP>, current: SP) {
   return `/admin/cuentas-cobro${s ? '?' + s : ''}`;
 }
 
-export default async function EmpresasCCPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function EmpresasCCPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('cuentas_cobro');
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
   const sucursalFilter = sp.sucursalId?.trim() ?? '';
@@ -35,8 +33,7 @@ export default async function EmpresasCCPage({
   // Scope: SUCURSAL sólo ve (y gestiona) las cuentas de su propia sucursal.
   // STAFF (ADMIN/SOPORTE) ve todas y puede filtrar por sucursal desde el UI.
   const scope = await getUserScope();
-  const scopeSucursal =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const scopeSucursal = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
 
   const where: Prisma.CuentaCobroWhereInput = { ...scopeSucursal };
   // Para staff: respetar el filtro del dropdown; para aliado: ya está forzado.
@@ -71,7 +68,12 @@ export default async function EmpresasCCPage({
 
   const total = activasCount + inactivasCount;
   const tabs = [
-    { label: 'Todas', count: total, href: buildHref({ estado: undefined }, sp), active: !estadoFilter },
+    {
+      label: 'Todas',
+      count: total,
+      href: buildHref({ estado: undefined }, sp),
+      active: !estadoFilter,
+    },
     {
       label: 'Activas',
       count: activasCount,
@@ -115,13 +117,16 @@ export default async function EmpresasCCPage({
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
                   )}
                 >
-                  {t.label}{' '}
-                  <span className="ml-1 text-xs text-slate-400">({t.count})</span>
+                  {t.label} <span className="ml-1 text-xs text-slate-400">({t.count})</span>
                 </Link>
               ))}
             </div>
 
-            <form method="GET" action="/admin/cuentas-cobro" className="flex flex-wrap items-center gap-2">
+            <form
+              method="GET"
+              action="/admin/cuentas-cobro"
+              className="flex flex-wrap items-center gap-2"
+            >
               {estadoFilter && <input type="hidden" name="estado" value={estadoFilter} />}
               {esStaff && (
                 <select

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { HeartPulse, FileText, Plus, Paperclip, AlertCircle } from 'lucide-react';
 import type { IncapacidadEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
@@ -23,6 +24,7 @@ export default async function IncapacidadesAdministrativoPage({
 }: {
   searchParams: Promise<SP>;
 }) {
+  await requirePermiso('admin.incapacidades');
   const sp = await searchParams;
   const tab: 'radicar' | 'historico' = sp.tab === 'historico' ? 'historico' : 'radicar';
 

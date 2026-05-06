@@ -9,13 +9,11 @@ import {
 } from 'lucide-react';
 import type { PeriodoContable, SmlvConfig } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
-import {
-  TransaccionWorkflow,
-  type PeriodoOpt,
-} from './nueva-transaccion/transaccion-workflow';
+import { TransaccionWorkflow, type PeriodoOpt } from './nueva-transaccion/transaccion-workflow';
 
 export const metadata = { title: 'Transacción — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -54,8 +52,7 @@ function periodosHabilitados(): Array<{ anio: number; mes: number }> {
     items.push({ anio, mes: m });
   }
 
-  const esUltimoMinutoDelAnio =
-    mesActual === 12 && dia === 31 && hora === 23 && minuto >= 59;
+  const esUltimoMinutoDelAnio = mesActual === 12 && dia === 31 && hora === 23 && minuto >= 59;
   if (esUltimoMinutoDelAnio) {
     items.push({ anio: anio + 1, mes: 1 });
   }
@@ -74,43 +71,33 @@ function periodosHabilitados(): Array<{ anio: number; mes: number }> {
 async function kpisDelPeriodo(periodoId: string) {
   // Scope: SUCURSAL ve KPI de su sucursal; STAFF (ADMIN/SOPORTE) ve todo.
   const scope = await getUserScope();
-  const cotizanteScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
-  const planillaScope =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cotizanteScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const planillaScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
   const comprobanteCotizanteScope =
-    scope?.tipo === 'SUCURSAL'
-      ? { cotizante: { sucursalId: scope.sucursalId } }
-      : {};
+    scope?.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
 
-  const [
-    comprobantesActivos,
-    cotizantesActivos,
-    planillasGuardadas,
-    planillasPagadas,
-  ] = await Promise.all([
-    prisma.comprobante.findMany({
-      where: {
-        periodoId,
-        estado: { not: 'ANULADO' },
-        procesadoEn: { not: null },
-        tipo: 'MENSUALIDAD',
-        agrupacion: 'INDIVIDUAL',
-        ...comprobanteCotizanteScope,
-      },
-      select: { cotizanteId: true },
-    }),
-    prisma.cotizante.count({
-      where: { afiliaciones: { some: { estado: 'ACTIVA' } }, ...cotizanteScope },
-    }),
-    prisma.planilla.count({ where: { periodoId, estado: 'CONSOLIDADO', ...planillaScope } }),
-    prisma.planilla.count({ where: { periodoId, estado: 'PAGADA', ...planillaScope } }),
-  ]);
+  const [comprobantesActivos, cotizantesActivos, planillasGuardadas, planillasPagadas] =
+    await Promise.all([
+      prisma.comprobante.findMany({
+        where: {
+          periodoId,
+          estado: { not: 'ANULADO' },
+          procesadoEn: { not: null },
+          tipo: 'MENSUALIDAD',
+          agrupacion: 'INDIVIDUAL',
+          ...comprobanteCotizanteScope,
+        },
+        select: { cotizanteId: true },
+      }),
+      prisma.cotizante.count({
+        where: { afiliaciones: { some: { estado: 'ACTIVA' } }, ...cotizanteScope },
+      }),
+      prisma.planilla.count({ where: { periodoId, estado: 'CONSOLIDADO', ...planillaScope } }),
+      prisma.planilla.count({ where: { periodoId, estado: 'PAGADA', ...planillaScope } }),
+    ]);
 
   const facturados = new Set(
-    comprobantesActivos
-      .map((c) => c.cotizanteId)
-      .filter((x): x is string => x != null),
+    comprobantesActivos.map((c) => c.cotizanteId).filter((x): x is string => x != null),
   ).size;
   const pendientes = Math.max(0, cotizantesActivos - facturados);
 
@@ -122,9 +109,7 @@ async function kpisDelPeriodo(periodoId: string) {
   };
 }
 
-async function asegurarPeriodos(
-  smlv: SmlvConfig,
-): Promise<PeriodoContable[]> {
+async function asegurarPeriodos(smlv: SmlvConfig): Promise<PeriodoContable[]> {
   const disponibles = periodosHabilitados();
   // Upsert de cada período disponible
   for (const d of disponibles) {
@@ -141,6 +126,7 @@ async function asegurarPeriodos(
 }
 
 export default async function TransaccionPage() {
+  await requirePermiso('transacciones');
   const smlvConfig = await prisma.smlvConfig.findUnique({
     where: { id: 'singleton' },
   });
@@ -163,9 +149,7 @@ export default async function TransaccionPage() {
   const periodoActual = periodos.find(
     (p) => p.anio === now.getFullYear() && p.mes === now.getMonth() + 1,
   );
-  const kpis = periodoActual
-    ? await kpisDelPeriodo(periodoActual.id)
-    : null;
+  const kpis = periodoActual ? await kpisDelPeriodo(periodoActual.id) : null;
 
   return (
     <div className="space-y-6">
@@ -185,8 +169,7 @@ export default async function TransaccionPage() {
           <div>
             <p className="font-medium">SMLV no configurado</p>
             <p className="mt-0.5 text-xs">
-              Antes de procesar transacciones, configura el SMLV vigente en{' '}
-              Catálogos → SMLV.
+              Antes de procesar transacciones, configura el SMLV vigente en Catálogos → SMLV.
             </p>
           </div>
         </Alert>
@@ -256,23 +239,14 @@ function Kpi({
     violet: 'border-violet-200',
   }[tone];
   return (
-    <div
-      className={cn('rounded-xl border bg-white p-4 shadow-sm', toneBorder)}
-    >
-      <div
-        className={cn(
-          'inline-flex h-8 w-8 items-center justify-center rounded-lg',
-          toneBg,
-        )}
-      >
+    <div className={cn('rounded-xl border bg-white p-4 shadow-sm', toneBorder)}>
+      <div className={cn('inline-flex h-8 w-8 items-center justify-center rounded-lg', toneBg)}>
         <Icon className="h-4 w-4" />
       </div>
       <p className="mt-3 text-[10px] font-medium uppercase tracking-wider text-slate-500">
         {label}
       </p>
-      <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-slate-900">
-        {value}
-      </p>
+      <p className="mt-0.5 font-mono text-2xl font-bold tracking-tight text-slate-900">{value}</p>
     </div>
   );
 }

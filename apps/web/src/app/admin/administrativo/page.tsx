@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { Briefcase, Wallet, HeartPulse, ArrowRight } from 'lucide-react';
+import { requirePermiso } from '@/lib/auth-helpers';
 
 export const metadata = { title: 'Administrativo — Sistema PILA' };
 
-export default function AdministrativoPage() {
+export default async function AdministrativoPage() {
+  await requirePermiso('admin.cartera');
   const items = [
     {
       href: '/admin/administrativo/cartera',
@@ -29,8 +31,7 @@ export default function AdministrativoPage() {
           Administrativo
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Gestiona desde tu sucursal lo que Soporte confirma sobre cartera SGSS
-          e incapacidades.
+          Gestiona desde tu sucursal lo que Soporte confirma sobre cartera SGSS e incapacidades.
         </p>
       </header>
 
@@ -41,12 +42,12 @@ export default function AdministrativoPage() {
             href={it.href}
             className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue hover:shadow-brand"
           >
-            <div className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${it.tone}`}>
+            <div
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-lg ${it.tone}`}
+            >
               <it.icon className="h-5 w-5" />
             </div>
-            <h2 className="mt-3 font-heading text-lg font-semibold text-slate-900">
-              {it.label}
-            </h2>
+            <h2 className="mt-3 font-heading text-lg font-semibold text-slate-900">{it.label}</h2>
             <p className="mt-1 text-xs text-slate-500">{it.description}</p>
             <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-blue transition group-hover:gap-2">
               Abrir <ArrowRight className="h-3.5 w-3.5" />

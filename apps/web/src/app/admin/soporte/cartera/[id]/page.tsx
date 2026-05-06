@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, FileText, Download, UserCircle2, FileSpreadsheet, Info } from 'lucide-react';
 import type { CarteraEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { formatCOP } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { ESTADO_LINEA_LABEL, ESTADO_CONSOLIDADO_LABEL, ESTADO_TONE } from '@/lib/cartera/labels';
@@ -24,6 +25,7 @@ export default async function ConsolidadoDetallePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<SP>;
 }) {
+  await requirePermiso('soporte.cartera');
   const { id } = await params;
   const sp = await searchParams;
 

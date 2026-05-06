@@ -12,16 +12,11 @@ import {
 } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
-import {
-  formatCOP,
-  hoyIso,
-  parseIsoToUtcNoon,
-  fechaLegibleDesdeIso,
-  fullName,
-} from '@/lib/format';
+import { formatCOP, hoyIso, parseIsoToUtcNoon, fechaLegibleDesdeIso, fullName } from '@/lib/format';
 import { Stat } from '@/components/admin/stat';
 import { ConceptoCard } from '@/components/admin/concepto-card';
 import { Button } from '@/components/ui/button';
@@ -49,11 +44,8 @@ function diaAnteriorIso(iso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 
-export default async function CuadreCajaPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function CuadreCajaPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('transacciones');
   const sp = await searchParams;
   const valid = (s?: string) => (s?.match(/^\d{4}-\d{2}-\d{2}$/) ? s : null);
 
@@ -171,9 +163,7 @@ export default async function CuadreCajaPage({
     servicios: number;
   };
 
-  function desgloseDe(
-    liquidaciones: (typeof comprobantes)[number]['liquidaciones'],
-  ): DesgloseComp {
+  function desgloseDe(liquidaciones: (typeof comprobantes)[number]['liquidaciones']): DesgloseComp {
     const acc = { sgssReal: 0, sgssInterno: 0, admon: 0, servicios: 0 };
     for (const cl of liquidaciones) {
       for (const c of cl.liquidacion.conceptos) {
@@ -227,9 +217,7 @@ export default async function CuadreCajaPage({
     curr.total += Number(c.totalGeneral);
     porMedio.set(key, curr);
   }
-  const mediosOrdenados = Array.from(porMedio.values()).sort(
-    (a, b) => b.total - a.total,
-  );
+  const mediosOrdenados = Array.from(porMedio.values()).sort((a, b) => b.total - a.total);
 
   // Navegación rápida día anterior / siguiente (solo en modo día único)
   const prevIso = diaAnteriorIso(desdeIso);
@@ -353,30 +341,13 @@ export default async function CuadreCajaPage({
             label="Transacciones"
             value={String(activos.length)}
             mono={false}
-            sub={
-              anulados.length > 0
-                ? `${anulados.length} anuladas`
-                : undefined
-            }
+            sub={anulados.length > 0 ? `${anulados.length} anuladas` : undefined}
           />
-          <Stat
-            label="Recibido neto"
-            value={formatCOP(totalActivo)}
-            tone="emerald"
-            highlight
-          />
+          <Stat label="Recibido neto" value={formatCOP(totalActivo)} tone="emerald" highlight />
           {anulados.length > 0 && (
-            <Stat
-              label="Anulado"
-              value={formatCOP(totalAnulado)}
-              tone="red"
-            />
+            <Stat label="Anulado" value={formatCOP(totalAnulado)} tone="red" />
           )}
-          <Stat
-            label="Medios usados"
-            value={String(mediosOrdenados.length)}
-            mono={false}
-          />
+          <Stat label="Medios usados" value={String(mediosOrdenados.length)} mono={false} />
         </div>
       </section>
 
@@ -432,15 +403,12 @@ export default async function CuadreCajaPage({
                   <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
                     {m.codigo}
                   </p>
-                  <p className="mt-0.5 text-sm font-semibold text-slate-900">
-                    {m.nombre}
-                  </p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{m.nombre}</p>
                   <p className="mt-2 font-mono text-xl font-bold tracking-tight text-brand-blue-dark">
                     {formatCOP(m.total)}
                   </p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    {m.count}{' '}
-                    {m.count === 1 ? 'transacción' : 'transacciones'} · {pct.toFixed(1)}%
+                    {m.count} {m.count === 1 ? 'transacción' : 'transacciones'} · {pct.toFixed(1)}%
                   </p>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div
@@ -498,10 +466,7 @@ export default async function CuadreCajaPage({
                   } else if (c.agrupacion === 'EMPRESA_CC' && c.cuentaCobro) {
                     destinatario = c.cuentaCobro.razonSocial;
                     sub = c.cuentaCobro.codigo;
-                  } else if (
-                    c.agrupacion === 'ASESOR_COMERCIAL' &&
-                    c.asesorComercial
-                  ) {
+                  } else if (c.agrupacion === 'ASESOR_COMERCIAL' && c.asesorComercial) {
                     destinatario = c.asesorComercial.nombre;
                     sub = c.asesorComercial.codigo;
                   }
@@ -520,15 +485,12 @@ export default async function CuadreCajaPage({
                     c.cuentaCobro?.sucursalId ??
                     c.asesorComercial?.sucursalId ??
                     null;
-                  const dueno =
-                    duenosBySuc && sucComp ? (duenosBySuc.get(sucComp) ?? null) : null;
+                  const dueno = duenosBySuc && sucComp ? (duenosBySuc.get(sucComp) ?? null) : null;
 
                   return (
                     <tr
                       key={c.id}
-                      className={cn(
-                        anulado && 'bg-red-50/50 text-slate-400 line-through',
-                      )}
+                      className={cn(anulado && 'bg-red-50/50 text-slate-400 line-through')}
                     >
                       {!diaUnico && (
                         <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
@@ -538,28 +500,20 @@ export default async function CuadreCajaPage({
                       <td className="px-4 py-2.5 font-mono text-xs">{hora}</td>
                       {esStaff && (
                         <td className="px-4 py-2.5 text-xs text-slate-600 no-underline">
-                          {dueno ?? (
-                            <span className="italic text-slate-400">—</span>
-                          )}
+                          {dueno ?? <span className="italic text-slate-400">—</span>}
                         </td>
                       )}
-                      <td className="px-4 py-2.5 font-mono text-xs font-medium">
-                        {c.consecutivo}
-                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs font-medium">{c.consecutivo}</td>
                       <td className="px-4 py-2.5">
                         <p className="font-medium no-underline">{destinatario}</p>
                         {sub && (
-                          <p className="font-mono text-[10px] text-slate-500 no-underline">
-                            {sub}
-                          </p>
+                          <p className="font-mono text-[10px] text-slate-500 no-underline">{sub}</p>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-xs">
                         {c.medioPago ? (
                           <>
-                            <p className="font-medium no-underline">
-                              {c.medioPago.codigo}
-                            </p>
+                            <p className="font-medium no-underline">{c.medioPago.codigo}</p>
                             <p className="text-[10px] text-slate-500 no-underline">
                               {c.medioPago.nombre}
                             </p>
@@ -569,9 +523,7 @@ export default async function CuadreCajaPage({
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-xs">
-                        {c.createdBy?.name ?? (
-                          <span className="italic text-slate-400">—</span>
-                        )}
+                        {c.createdBy?.name ?? <span className="italic text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs">
                         {formatCOP(d.sgssReal)}
@@ -583,9 +535,7 @@ export default async function CuadreCajaPage({
                         {formatCOP(d.servicios)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs text-amber-700">
-                        {d.sgssInterno > 0
-                          ? formatCOP(d.sgssInterno)
-                          : '—'}
+                        {d.sgssInterno > 0 ? formatCOP(d.sgssInterno) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold">
                         {formatCOP(Number(c.totalGeneral))}
@@ -616,14 +566,13 @@ export default async function CuadreCajaPage({
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
           <p className="font-medium">ℹ️ Sobre los cobros internos</p>
           <p className="mt-1">
-            Los cobros internos ({formatCOP(desgloseDia.sgssInterno)}) corresponden
-            a CCF fijo de $100 y ARL de 1 día (Nivel I) que se aplican cuando el plan
-            SGSS del cotizante no los incluye. Son ingresos del aliado — no se
-            transfieren al operador PILA con el resto del SGSS.
+            Los cobros internos ({formatCOP(desgloseDia.sgssInterno)}) corresponden a CCF fijo de
+            $100 y ARL de 1 día (Nivel I) que se aplican cuando el plan SGSS del cotizante no los
+            incluye. Son ingresos del aliado — no se transfieren al operador PILA con el resto del
+            SGSS.
           </p>
         </div>
       )}
     </div>
   );
 }
-

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { EstadoPlanilla, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
@@ -80,6 +81,7 @@ const ESTADO_LABEL: Record<EstadoPlanilla, string> = {
 };
 
 export default async function PlanosPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('planos');
   const sp = await searchParams;
   const tabRaw = sp.tab;
   const tab: Tab =

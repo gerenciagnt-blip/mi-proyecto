@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { History, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
@@ -60,6 +61,7 @@ const AGRUPACION_LABEL: Record<string, string> = {
 };
 
 export default async function HistorialPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('transacciones');
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
   const skip = (page - 1) * PAGE_SIZE;

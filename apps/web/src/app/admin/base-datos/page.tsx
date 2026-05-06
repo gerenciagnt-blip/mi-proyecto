@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Search, Upload } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { getUserScope, scopeWhereOpt, scopeWhereViaCotizante } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
@@ -41,6 +42,7 @@ function dateInput(d: Date | null | undefined) {
 }
 
 export default async function BaseDatosPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('base_datos');
   const sp = await searchParams;
   const estadoFilter = sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;
   const modalidadFilter =

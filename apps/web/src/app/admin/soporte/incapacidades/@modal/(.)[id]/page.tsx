@@ -6,6 +6,7 @@
  * directo cae al `[id]/page.tsx` normal (no este archivo).
  */
 
+import { requirePermiso } from '@/lib/auth-helpers';
 import { DetalleModalShell } from '../../_components/detalle-modal-shell';
 import { IncapacidadDetalleContent } from '../../_components/incapacidad-detalle-content';
 
@@ -16,6 +17,7 @@ export default async function IncapacidadDetalleModal({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermiso('soporte.incapacidades');
   const { id } = await params;
   return (
     <DetalleModalShell>

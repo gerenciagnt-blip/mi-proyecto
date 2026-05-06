@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { Prisma, CarteraEstado } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
@@ -29,6 +30,7 @@ export default async function AdministrativoCarteraPage({
 }: {
   searchParams: Promise<SP>;
 }) {
+  await requirePermiso('admin.cartera');
   const sp = await searchParams;
   const estadoFilter =
     sp.estado === 'MORA_REAL' || sp.estado === 'CARTERA_REAL' || sp.estado === 'PAGADA_CARTERA_REAL'
