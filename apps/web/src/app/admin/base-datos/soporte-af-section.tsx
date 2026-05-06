@@ -11,6 +11,7 @@ import type {
 import { cn } from '@/lib/utils';
 import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
 import { listarSoportesPorAfiliacionAction } from './actions';
+import { ColpatriaCertButton } from './colpatria-cert-button';
 
 const ESTADO_LABEL: Record<SoporteAfEstado, string> = {
   EN_PROCESO: 'En proceso',
@@ -188,6 +189,10 @@ export function SoporteAfSection({ afiliacionId }: { afiliacionId: string }) {
                   PDF afiliación
                 </a>
               )}
+            {/* Sprint 8.6 — Certificado de afiliación vigente, on-demand. */}
+            <div className="ml-auto">
+              <ColpatriaCertButton afiliacionId={afiliacionId} />
+            </div>
           </div>
           {arlBot.lastJob?.error && (
             <p className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[10px] text-red-700">

@@ -13,7 +13,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile, access, constants as fsConstants } from 'node:fs/promises';
+import { mkdir, writeFile, access, unlink, constants as fsConstants } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { createLogger } from './logger.js';
 import { captureMessage } from './sentry.js';
@@ -188,4 +188,53 @@ export async function guardarPdfComprobante(
   // en la API de Next.
   const relPath = join(relDir, filename).replace(/\\/g, '/');
   return { path: relPath, hash, size: pdf.byteLength };
+}
+
+/**
+ * Sprint 8.6 — Guarda el PDF del certificado de afiliación vigente.
+ *
+ * Path relativo: `colpatria/<empresaId>/certificados/<jobId>-<hash12>.pdf`
+ *
+ * Sin partición por mes porque NO hay retención: el archivo se borra
+ * apenas el endpoint lo sirve al usuario. Mientras tanto vive en una
+ * carpeta dedicada para no mezclarse con los comprobantes.
+ */
+export async function guardarPdfCertificado(
+  pdf: Buffer,
+  empresaId: string,
+  jobId: string,
+): Promise<{ path: string; hash: string; size: number }> {
+  if (pdf.byteLength === 0) {
+    throw new Error('PDF vacío — se rechaza para no guardar artefacto inútil');
+  }
+  const hash = sha256(pdf);
+  const relDir = join('colpatria', empresaId, 'certificados');
+  const absDir = join(uploadsRoot(), relDir);
+  await mkdir(absDir, { recursive: true });
+
+  const filename = `${jobId}-${hash.slice(0, 12)}.pdf`;
+  const absPath = join(absDir, filename);
+  await writeFile(absPath, pdf);
+
+  const relPath = join(relDir, filename).replace(/\\/g, '/');
+  return { path: relPath, hash, size: pdf.byteLength };
+}
+
+/**
+ * Borra un PDF del filesystem dado el path relativo persistido en BD.
+ * Idempotente: si el archivo ya no existe, no tira (logueamos warn).
+ *
+ * Usado por el endpoint que sirve el certificado al usuario:
+ * lee + sirve + borra + marca `entregadoAt` en el job.
+ */
+export async function borrarPdfRelativo(relPath: string): Promise<void> {
+  const abs = join(uploadsRoot(), relPath);
+  try {
+    await unlink(abs);
+  } catch (err) {
+    log.warn(
+      { path: abs, err: err instanceof Error ? err.message : err },
+      'unlink falló — quizás el archivo ya no existe',
+    );
+  }
 }

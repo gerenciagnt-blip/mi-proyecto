@@ -296,6 +296,7 @@ model User {
   pqrsGestiones           PqrsGestion[]                @relation("PqrsGestionUser")
   pqrsDocsUser            PqrsDocumento[]              @relation("PqrsDocUser")
   efipayTrxIniciadas      EfipayTransaccion[]          @relation("EfipayTrxIniciadaPor")
+  colpatriaCertSolicitados ColpatriaCertificadoJob[]   @relation("ColpatriaCertSolicitante")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -446,6 +447,7 @@ model Empresa {
   movimientosDetallePagadoCon MovimientoIncDetalle[]   @relation("MovDetallePagadoCon")
   colpatriaSesion             ColpatriaSesion?
   colpatriaJobs               ColpatriaAfiliacionJob[]
+  colpatriaCertificadoJobs    ColpatriaCertificadoJob[]
 
   @@index([arlId])
   @@index([departamentoId])
@@ -910,6 +912,7 @@ model Afiliacion {
   liquidaciones        Liquidacion[]
   soportes             SoporteAfiliacion[]
   colpatriaJobs        ColpatriaAfiliacionJob[]
+  colpatriaCertificadoJobs ColpatriaCertificadoJob[]
 
   /**
    * Sprint Soporte reorg fase 2 — un cotizante puede tener máximo dos
@@ -2607,6 +2610,48 @@ model ColpatriaAfiliacionJob {
   @@index([afiliacionId])
   @@index([empresaId, status])
   @@map("colpatria_afiliacion_jobs")
+}
+
+// =============================================================================
+// Sprint 8.6 — Certificado de afiliación vigente (on-demand, sin retención)
+// =============================================================================
+// El usuario solicita el certificado desde la UI; el bot lo descarga del
+// portal AXA y lo entrega UNA vez. Se borra el archivo apenas se sirve
+// (campo `entregadoAt`). No se conservan históricos: cada solicitud crea
+// un job nuevo y descarga un certificado fresco.
+
+model ColpatriaCertificadoJob {
+  id              String             @id @default(cuid())
+  afiliacionId    String
+  empresaId       String
+  /// User que pidió el certificado (para auditoría y permisos).
+  requestedById   String
+  status          ColpatriaJobStatus @default(PENDING)
+  intento         Int                @default(1)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationMs      Int?
+  /// Path al PDF descargado (relativo a UPLOADS_DIR). Se borra al
+  /// servirlo; queda null tras `entregadoAt`.
+  pdfPath         String?
+  /// Cuando el endpoint sirvió el PDF al usuario y borró el archivo.
+  /// Si null + status SUCCESS → PDF aún disponible para descarga.
+  /// Si fechado → ya entregado, no se vuelve a servir (que pida otro).
+  entregadoAt     DateTime?
+  error           String?
+  errorDetalle    Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  afiliacion  Afiliacion @relation(fields: [afiliacionId], references: [id], onDelete: Cascade)
+  empresa     Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  requestedBy User       @relation("ColpatriaCertSolicitante", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([afiliacionId])
+  @@index([empresaId, status])
+  @@index([requestedById])
+  @@map("colpatria_certificado_jobs")
 }
 
 // =============================================================================

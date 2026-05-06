@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import { APP_NAME, APP_VERSION } from '@pila/core';
 import { testLoginCommand } from './commands/test-login.js';
 import { testIngresoCommand } from './commands/test-ingreso.js';
+import { testCertificadoCommand } from './commands/test-certificado.js';
+import { descargarCertificadosCommand } from './commands/descargar-certificados.js';
 import { procesarCommand } from './commands/procesar.js';
 import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
 import { loginAutoCommand } from './commands/login-auto.js';
@@ -116,6 +118,40 @@ program
   );
 
 /**
+ * Sprint 8.6 — debug standalone para validar la descarga del certificado
+ * de afiliación vigente. NO toca BD ni la cola — solo abre browser,
+ * loguea, navega a Consulta, busca al empleado y baja el PDF.
+ *
+ * Uso:
+ *   pnpm bot-colpatria test-certificado --empresa-id <id> --documento 10125360
+ *   pnpm bot-colpatria test-certificado --empresa-id <id> --afiliacion-id <afId>
+ *   COLPATRIA_HEADLESS=false pnpm bot-colpatria test-certificado ... --keep-open
+ */
+program
+  .command('test-certificado')
+  .description('Descarga el certificado de afiliación vigente — debug standalone')
+  .requiredOption('--empresa-id <id>', 'ID de la empresa en BD')
+  .option('--documento <numDoc>', 'Número de documento del cotizante')
+  .option('--tipo-doc <tipo>', 'Tipo PILA (CC|CE|TI|...)', 'CC')
+  .option('--afiliacion-id <id>', 'UUID de la afiliación (resuelve doc desde BD)')
+  .option('--output <path>', 'Path del PDF de salida', './certificado.pdf')
+  .option('--screenshot <path>', 'Guarda screenshot del estado final')
+  .option('--keep-open', 'Mantiene el browser abierto al terminar')
+  .action(
+    async (options: {
+      empresaId: string;
+      documento?: string;
+      tipoDoc?: string;
+      afiliacionId?: string;
+      output?: string;
+      screenshot?: string;
+      keepOpen?: boolean;
+    }) => {
+      await runWithSentry('test-certificado', () => testCertificadoCommand(options));
+    },
+  );
+
+/**
  * Procesa N jobs PENDING. En Sprint 8.3 solo hace el login y deja el
  * job marcado como RETRYABLE con output explicativo (el llenado del
  * form viene en Sprint 8.4).
@@ -129,6 +165,23 @@ program
     const limite = parseInt(options.limite ?? '20', 10) || 20;
     await runWithSentry('procesar', () =>
       procesarCommand({ limite, empresaId: options.empresaId }),
+    );
+  });
+
+/**
+ * Sprint 8.6 — Procesa jobs de certificado de afiliación vigente.
+ * Disparado on-demand por la web cuando un usuario solicita el PDF.
+ * Mismo patrón de cola que `procesar`, pero sin lógica de form.
+ */
+program
+  .command('descargar-certificados')
+  .description('Procesa jobs ColpatriaCertificadoJob PENDING (Sprint 8.6)')
+  .option('--limite <n>', 'Máximo de jobs a procesar en esta corrida', '20')
+  .option('--empresa-id <id>', 'Procesa solo jobs de esta empresa (debug)')
+  .action(async (options: { limite?: string; empresaId?: string }) => {
+    const limite = parseInt(options.limite ?? '20', 10) || 20;
+    await runWithSentry('descargar-certificados', () =>
+      descargarCertificadosCommand({ limite, empresaId: options.empresaId }),
     );
   });
 

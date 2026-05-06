@@ -1,0 +1,88 @@
+name: Bot Colpatria — descargar certificados (Sprint 8.6)
+
+# On-demand puro: solo se dispara con workflow_dispatch (lo invoca la
+# web cuando un usuario clic en "Descargar certificado vigente"). NO
+# tiene schedule porque sin solicitudes en cola no hay nada que hacer.
+#
+# Recibe `--limite` opcional para acotar la corrida en caso de cola
+# acumulada. Default 5 — ajustado a "cola corta + entrega rápida".
+
+on:
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: 'Cuántos jobs de certificado procesar como máximo'
+        required: false
+        default: '5'
+        type: string
+
+jobs:
+  descargar:
+    name: Descargar certificados PENDING
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UPLOADS_DIR: ${{ secrets.UPLOADS_DIR || './uploads' }}
+      COLPATRIA_BASE_URL: ${{ secrets.COLPATRIA_BASE_URL }}
+      COLPATRIA_HEADLESS: 'true'
+      COLPATRIA_ENC_KEY: ${{ secrets.COLPATRIA_ENC_KEY }}
+      COLPATRIA_CONSULTA_URL: ${{ secrets.COLPATRIA_CONSULTA_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Install Playwright Chromium
+        working-directory: apps/bot-colpatria
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Validate DATABASE_URL shape
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          if ! printf '%s' "$DATABASE_URL_RAW" | grep -qE '^"?postgres(ql)?://'; then
+            echo "::error::El secret DATABASE_URL no empieza con postgresql://"
+            exit 1
+          fi
+          echo "✓ DATABASE_URL OK"
+
+      - name: Validate COLPATRIA_ENC_KEY presence
+        run: |
+          if [ -z "${{ secrets.COLPATRIA_ENC_KEY }}" ]; then
+            echo "::error::COLPATRIA_ENC_KEY no configurado en secrets de GitHub"
+            exit 1
+          fi
+          echo "✓ COLPATRIA_ENC_KEY presente"
+
+      - name: Descargar certificados
+        working-directory: apps/bot-colpatria
+        env:
+          DATABASE_URL_RAW: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB="$DATABASE_URL_RAW"
+          DB="${DB%\"}"
+          DB="${DB#\"}"
+          DB="${DB## }"
+          DB="${DB%% }"
+          export DATABASE_URL="$DB"
+          LIMITE="${{ inputs.limite || '5' }}"
+          pnpm exec tsx src/index.ts descargar-certificados --limite "$LIMITE"
