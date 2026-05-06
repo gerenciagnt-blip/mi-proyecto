@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
 import { formatCOP } from '@/lib/format';
 import { CreateServicioForm } from './create-form';
@@ -9,6 +10,7 @@ export const metadata = { title: 'Servicios adicionales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function ServiciosPage() {
+  await requirePermiso('config.servicios_adicionales');
   const scope = await getUserScope();
   const where = await scopeWhereOpt();
 
@@ -77,9 +79,7 @@ export default async function ServiciosPage() {
                 </td>
                 <td className="px-4 py-3 text-xs">
                   {s.sucursal ? (
-                    <span className="font-mono text-slate-600">
-                      {s.sucursal.codigo}
-                    </span>
+                    <span className="font-mono text-slate-600">{s.sucursal.codigo}</span>
                   ) : (
                     <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
                       Global

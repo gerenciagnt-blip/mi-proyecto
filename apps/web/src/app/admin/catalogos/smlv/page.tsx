@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { SmlvForm } from './form';
 
 export const metadata = { title: 'SMLV — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function SmlvPage() {
+  await requirePermiso('config.catalogos');
   const config = await prisma.smlvConfig.findUnique({ where: { id: 'singleton' } });
   const valorActual = config ? Number(config.valor) : 0;
 

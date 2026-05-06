@@ -1,17 +1,18 @@
 import Link from 'next/link';
 import { ArrowLeft, Check, Minus } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 
 export const metadata = { title: 'Formato de comprobantes — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function ComprobantesPage() {
+  await requirePermiso('config.formato_comprobante');
   const scope = await getUserScope();
 
   // Un aliado solo ve su sucursal. Staff ve todas.
-  const where =
-    scope?.tipo === 'SUCURSAL' ? { id: scope.sucursalId } : {};
+  const where = scope?.tipo === 'SUCURSAL' ? { id: scope.sucursalId } : {};
 
   const sucursales = await prisma.sucursal.findMany({
     where,
@@ -33,8 +34,8 @@ export default async function ComprobantesPage() {
           Formato de comprobantes de pago
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Cada Dueño Aliado puede tener su logo y encabezado personalizados en los comprobantes
-          que emite desde Transacciones.
+          Cada Dueño Aliado puede tener su logo y encabezado personalizados en los comprobantes que
+          emite desde Transacciones.
         </p>
       </header>
 
@@ -65,7 +66,9 @@ export default async function ComprobantesPage() {
                     <p className="font-mono text-xs text-slate-500">{s.codigo}</p>
                     <p className="text-sm">{s.nombre}</p>
                   </td>
-                  <td className="px-4 py-3">{f?.nombre ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-3">
+                    {f?.nombre ?? <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3">
                     {f?.logoUrl ? (
                       <span className="inline-flex items-center gap-1 text-xs text-emerald-700">

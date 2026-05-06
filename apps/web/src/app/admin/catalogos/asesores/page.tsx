@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
 import { CreateAsesorForm } from './create-form';
 import { toggleAsesorAction } from './actions';
@@ -8,6 +9,7 @@ export const metadata = { title: 'Asesores comerciales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function AsesoresPage() {
+  await requirePermiso('config.asesores_comerciales');
   const scope = await getUserScope();
   const where = await scopeWhereOpt();
 
@@ -74,9 +76,7 @@ export default async function AsesoresPage() {
                 <td className="px-4 py-3">{a.nombre}</td>
                 <td className="px-4 py-3 text-xs">
                   {a.sucursal ? (
-                    <span className="font-mono text-slate-600">
-                      {a.sucursal.codigo}
-                    </span>
+                    <span className="font-mono text-slate-600">{a.sucursal.codigo}</span>
                   ) : (
                     <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
                       Global

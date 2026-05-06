@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { EmpresasAccessForm } from './empresas-form';
 
 export const metadata = { title: 'Accesos a empresas — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function UserEmpresasPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.usuarios');
   const { id } = await params;
 
   const user = await prisma.user.findUnique({

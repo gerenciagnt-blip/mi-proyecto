@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { ComprobanteForm } from './form';
 import { toggleComprobanteAction } from './actions';
@@ -14,6 +15,7 @@ export default async function ComprobanteEditPage({
 }: {
   params: Promise<{ sucursalId: string }>;
 }) {
+  await requirePermiso('config.formato_comprobante');
   const { sucursalId } = await params;
 
   // Un aliado solo puede abrir la página de su propia sucursal. Si manipula

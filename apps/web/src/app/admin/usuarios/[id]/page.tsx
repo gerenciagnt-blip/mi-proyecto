@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
 import { auth } from '@/auth';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { UsuariosTabs } from '../usuarios-tabs';
 import { EditUserForm } from './edit-form';
 import { PasswordForm } from './password-form';
@@ -10,6 +11,7 @@ import { PasswordForm } from './password-form';
 export const metadata = { title: 'Editar usuario — Sistema PILA' };
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.usuarios');
   const { id } = await params;
   const [user, sucursales, rolesCustom, session] = await Promise.all([
     prisma.user.findUnique({

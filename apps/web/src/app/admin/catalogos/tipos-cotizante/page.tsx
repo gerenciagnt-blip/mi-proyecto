@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { CreateTipoForm } from './create-form';
 import { ModalidadToggle } from './modalidad-toggle';
 import { toggleTipoAction, importTiposAction } from './actions';
@@ -9,6 +10,7 @@ export const metadata = { title: 'Tipos de cotizante — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function TiposCotizantePage() {
+  await requirePermiso('config.catalogos');
   const tipos = await prisma.tipoCotizante.findMany({
     orderBy: { codigo: 'asc' },
     include: { _count: { select: { subtipos: true } } },
@@ -38,8 +40,8 @@ export default async function TiposCotizantePage() {
         <p className="mt-2 text-[11px] text-slate-500">
           La columna <span className="font-mono">modalidad</span> acepta{' '}
           <span className="font-mono">DEPENDIENTE</span> o{' '}
-          <span className="font-mono">INDEPENDIENTE</span>. Si se omite, queda
-          como DEPENDIENTE por defecto.
+          <span className="font-mono">INDEPENDIENTE</span>. Si se omite, queda como DEPENDIENTE por
+          defecto.
         </p>
       </section>
 

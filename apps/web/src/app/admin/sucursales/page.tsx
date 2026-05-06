@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { UsuariosTabs } from '../usuarios/usuarios-tabs';
 import { CreateSucursalForm } from './create-form';
 import { toggleSucursalAction, toggleBloqueoMoraAction } from './actions';
@@ -9,6 +10,7 @@ export const metadata = { title: 'Sucursales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function SucursalesPage() {
+  await requirePermiso('config.sucursales');
   const sucursales = await prisma.sucursal.findMany({
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { users: true } } },

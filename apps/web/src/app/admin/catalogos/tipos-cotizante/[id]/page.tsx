@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { CreateSubtipoForm } from './subtipo-create-form';
 import { toggleSubtipoAction, importSubtiposAction } from './actions';
 import { ImportForm } from '../../_components/import-form';
@@ -9,6 +10,7 @@ export const metadata = { title: 'Subtipos — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function TipoDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.catalogos');
   const { id } = await params;
 
   const tipo = await prisma.tipoCotizante.findUnique({
@@ -45,7 +47,11 @@ export default async function TipoDetailPage({ params }: { params: Promise<{ id:
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold">Importar subtipos desde Excel</h2>
         <p className="mb-2 text-xs text-slate-500">
-          Solo subtipos para <strong>{tipo.codigo} — {tipo.nombre}</strong>.
+          Solo subtipos para{' '}
+          <strong>
+            {tipo.codigo} — {tipo.nombre}
+          </strong>
+          .
         </p>
         <ImportForm
           action={importAction}

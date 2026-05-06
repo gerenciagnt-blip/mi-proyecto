@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
 import type { TipoEntidadSgss } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { TipoEntidadSgssEnum } from '@/lib/validations';
 import { EntidadTabs } from './tabs';
 import { CreateEntidadForm } from './create-form';
@@ -23,6 +24,7 @@ export default async function EntidadesPage({
 }: {
   searchParams: Promise<{ tipo?: string }>;
 }) {
+  await requirePermiso('config.catalogos');
   const sp = await searchParams;
   const parsedTipo = TipoEntidadSgssEnum.safeParse(sp.tipo ?? 'ARL');
   const tipo: TipoEntidadSgss = parsedTipo.success ? (parsedTipo.data as TipoEntidadSgss) : 'ARL';

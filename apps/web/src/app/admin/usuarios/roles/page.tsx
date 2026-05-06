@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Shield, LifeBuoy, UserCog, UserCheck, Layers } from 'lucide-react';
 import { prisma } from '@pila/db';
 import type { Role } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { UsuariosTabs } from '../usuarios-tabs';
 import { PermisosForm } from './permisos-form';
 import { CreateRolCustomDialog } from './create-rol-dialog';
@@ -52,6 +53,7 @@ const BASE_LABELS: Record<string, string> = {
 };
 
 export default async function RolesPage() {
+  await requirePermiso('config.roles');
   const [counts, permisos, rolesCustom] = await Promise.all([
     prisma.user.groupBy({ by: ['role'], _count: true }),
     prisma.permiso.findMany(),

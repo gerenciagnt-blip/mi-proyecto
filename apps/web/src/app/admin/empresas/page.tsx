@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { EmpresaTabsDialog, type CatalogosModal } from './empresa-tabs-dialog';
 import { toggleEmpresaAction } from './actions';
@@ -21,6 +22,7 @@ function buildHref(patch: Partial<SP>, current: SP) {
 }
 
 export default async function EmpresasPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('config.empresas_planilla');
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
   const estadoFilter = sp.estado === 'ACTIVA' || sp.estado === 'INACTIVA' ? sp.estado : undefined;

@@ -1,16 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { ConfigForm } from './config-form';
 
 export const metadata = { title: 'Configuración PILA — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
-export default async function EmpresaConfigPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function EmpresaConfigPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.empresas_planilla');
   const { id } = await params;
 
   const empresa = await prisma.empresa.findUnique({

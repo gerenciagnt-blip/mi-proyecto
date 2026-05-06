@@ -1,12 +1,9 @@
 import Link from 'next/link';
 import { ArrowLeft, Percent, TrendingUp } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
-import {
-  CreateTarifaButton,
-  EditTarifaButton,
-  type TarifaInitial,
-} from './tarifa-dialog';
+import { CreateTarifaButton, EditTarifaButton, type TarifaInitial } from './tarifa-dialog';
 import { CreateFspButton, EditFspButton, type FspInitial } from './fsp-dialog';
 import { toggleTarifaAction, toggleFspAction } from './actions';
 
@@ -18,7 +15,10 @@ const CONCEPTO_ORDER = ['EPS', 'AFP', 'ARL', 'CCF', 'SENA', 'ICBF'] as const;
 const CONCEPTO_LABELS: Record<string, { label: string; desc: string }> = {
   EPS: { label: 'EPS — Salud', desc: '12.5% general · 4% empresas exoneradas (Ley 1607)' },
   AFP: { label: 'AFP — Pensión', desc: 'Aporte base 16% + FSP por rango de SMLV' },
-  ARL: { label: 'ARL — Riesgos Laborales', desc: 'Cinco niveles de riesgo según decreto 2090/2003' },
+  ARL: {
+    label: 'ARL — Riesgos Laborales',
+    desc: 'Cinco niveles de riesgo según decreto 2090/2003',
+  },
   CCF: { label: 'CCF — Caja de Compensación', desc: 'Dependiente 4% · Independiente 0.6% o 2%' },
   SENA: { label: 'SENA', desc: 'Parafiscal 2% · Exonerado con Ley 1607' },
   ICBF: { label: 'ICBF', desc: 'Parafiscal 3% · Exonerado con Ley 1607' },
@@ -32,6 +32,7 @@ function pctFmt(n: number) {
 }
 
 export default async function TarifasPage() {
+  await requirePermiso('config.catalogos');
   const [tarifas, fspRangos] = await Promise.all([
     prisma.tarifaSgss.findMany({ orderBy: [{ concepto: 'asc' }, { porcentaje: 'asc' }] }),
     prisma.fspRango.findMany({ orderBy: { smlvDesde: 'asc' } }),
@@ -84,8 +85,8 @@ export default async function TarifasPage() {
             Tarifas SGSS
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Porcentajes vigentes de salud, pensión, ARL, caja de compensación y parafiscales.
-            Se consumen por el motor de liquidación para armar la planilla PILA.
+            Porcentajes vigentes de salud, pensión, ARL, caja de compensación y parafiscales. Se
+            consumen por el motor de liquidación para armar la planilla PILA.
           </p>
         </div>
         <CreateTarifaButton />
@@ -101,9 +102,7 @@ export default async function TarifasPage() {
             <header className="border-b border-slate-100 bg-slate-50 px-5 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="font-heading text-base font-semibold text-slate-900">
-                    {r.label}
-                  </h2>
+                  <h2 className="font-heading text-base font-semibold text-slate-900">{r.label}</h2>
                   <p className="mt-0.5 text-[11px] text-slate-500">{r.desc}</p>
                 </div>
                 <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
@@ -131,11 +130,7 @@ export default async function TarifasPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {r.items.map((t) => (
-                    <TarifaRow
-                      key={t.id}
-                      t={t}
-                      active={r.activeIds.includes(t.id)}
-                    />
+                    <TarifaRow key={t.id} t={t} active={r.activeIds.includes(t.id)} />
                   ))}
                 </tbody>
               </table>
@@ -179,9 +174,7 @@ export default async function TarifasPage() {
                 const fullRow = fspRangos.find((f) => f.id === rango.id)!;
                 return (
                   <tr key={rango.id}>
-                    <td className="px-5 py-2.5 font-mono text-xs">
-                      {rango.smlvDesde.toFixed(2)}
-                    </td>
+                    <td className="px-5 py-2.5 font-mono text-xs">{rango.smlvDesde.toFixed(2)}</td>
                     <td className="px-5 py-2.5 font-mono text-xs text-slate-500">
                       {rango.smlvHasta == null ? '∞' : rango.smlvHasta.toFixed(2)}
                     </td>
@@ -213,9 +206,9 @@ export default async function TarifasPage() {
       </section>
 
       <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
-        <strong>Nota:</strong> estas tarifas son parámetros editables. El motor de liquidación
-        (Fase futura — módulo Transacciones/Planos) las consumirá para armar la planilla PILA.
-        Si cambian las regulaciones, actualiza aquí antes de procesar el período siguiente.
+        <strong>Nota:</strong> estas tarifas son parámetros editables. El motor de liquidación (Fase
+        futura — módulo Transacciones/Planos) las consumirá para armar la planilla PILA. Si cambian
+        las regulaciones, actualiza aquí antes de procesar el período siguiente.
       </section>
     </div>
   );
@@ -226,9 +219,7 @@ function TarifaRow({ t, active }: { t: TarifaInitial; active: boolean }) {
     <tr>
       <td className="px-5 py-2.5">
         <p className="font-medium text-slate-800">{t.etiqueta ?? t.concepto}</p>
-        {t.observaciones && (
-          <p className="mt-0.5 text-[11px] text-slate-500">{t.observaciones}</p>
-        )}
+        {t.observaciones && <p className="mt-0.5 text-[11px] text-slate-500">{t.observaciones}</p>}
       </td>
       <td className="px-5 py-2.5 text-xs text-slate-600">
         {t.modalidad ?? <span className="text-slate-400">Ambas</span>}

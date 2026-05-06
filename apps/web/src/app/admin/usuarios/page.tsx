@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import type { Prisma } from '@pila/db';
 import { auth } from '@/auth';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { CreateUserDialog } from './create-dialog';
 import { UsuariosTabs } from './usuarios-tabs';
 import { ToggleUserButton } from './toggle-user-button';
@@ -19,11 +20,8 @@ const ROLE_LABELS: Record<string, string> = {
 
 type SP = { q?: string; sucursalId?: string };
 
-export default async function UsuariosPage({
-  searchParams,
-}: {
-  searchParams: Promise<SP>;
-}) {
+export default async function UsuariosPage({ searchParams }: { searchParams: Promise<SP> }) {
+  await requirePermiso('config.usuarios');
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
   const sucursalFilter = sp.sucursalId?.trim() ?? '';
@@ -70,9 +68,7 @@ export default async function UsuariosPage({
           <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
             Usuarios
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Usuarios del sistema, roles y sucursales.
-          </p>
+          <p className="mt-1 text-sm text-slate-500">Usuarios del sistema, roles y sucursales.</p>
         </div>
         <CreateUserDialog sucursales={sucursales} rolesCustom={rolesCustom} />
       </header>
@@ -161,9 +157,7 @@ export default async function UsuariosPage({
                   <td className="px-4 py-3 text-xs">
                     <p>{ROLE_LABELS[u.role] ?? u.role}</p>
                     {u.rolCustom && (
-                      <p className="mt-0.5 text-[10px] text-brand-blue">
-                        {u.rolCustom.nombre}
-                      </p>
+                      <p className="mt-0.5 text-[10px] text-brand-blue">{u.rolCustom.nombre}</p>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">
@@ -205,11 +199,7 @@ export default async function UsuariosPage({
                         </Link>
                       )}
                       {!isSelf && (
-                        <ToggleUserButton
-                          userId={u.id}
-                          activo={u.active}
-                          nombre={u.name}
-                        />
+                        <ToggleUserButton userId={u.id} activo={u.active} nombre={u.name} />
                       )}
                     </div>
                   </td>
@@ -222,4 +212,3 @@ export default async function UsuariosPage({
     </div>
   );
 }
-

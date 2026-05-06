@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
 import { CreateMedioPagoForm } from './create-form';
 import { toggleMedioPagoAction } from './actions';
@@ -8,6 +9,7 @@ export const metadata = { title: 'Medios de pago — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function MediosPagoPage() {
+  await requirePermiso('config.catalogos');
   const scope = await getUserScope();
   const where = await scopeWhereOpt();
 
@@ -76,9 +78,7 @@ export default async function MediosPagoPage() {
                 <td className="px-4 py-3">{m.nombre}</td>
                 <td className="px-4 py-3 text-xs">
                   {m.sucursal ? (
-                    <span className="font-mono text-slate-600">
-                      {m.sucursal.codigo}
-                    </span>
+                    <span className="font-mono text-slate-600">{m.sucursal.codigo}</span>
                   ) : (
                     <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
                       Global

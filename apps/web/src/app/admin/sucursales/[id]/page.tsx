@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { EditSucursalForm } from './edit-form';
 
 export const metadata = { title: 'Editar Sucursal — Sistema PILA' };
 
 export default async function EditSucursalPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.sucursales');
   const { id } = await params;
   const sucursal = await prisma.sucursal.findUnique({ where: { id } });
   if (!sucursal) notFound();

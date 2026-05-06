@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { scopeWhereOpt } from '@/lib/sucursal-scope';
 
 export const metadata = { title: 'Parametrización — Sistema PILA' };
@@ -25,18 +26,13 @@ type Card = {
 };
 
 export default async function ParametrizacionPage() {
+  await requirePermiso('config.catalogos');
   // Medios de pago es el único catálogo con scope por sucursal en este hub.
   // Los demás son globales (entidades, actividades, tipos, planes, tarifas,
   // SMLV) — todos los usuarios ven el mismo count.
   const mediosWhere = await scopeWhereOpt();
 
-  const [
-    entidadesPorTipo,
-    actividades,
-    tipos,
-    subtipos,
-    medios,
-  ] = await Promise.all([
+  const [entidadesPorTipo, actividades, tipos, subtipos, medios] = await Promise.all([
     prisma.entidadSgss.groupBy({ by: ['tipo'], _count: true }),
     prisma.actividadEconomica.count(),
     prisma.tipoCotizante.count(),
@@ -54,9 +50,10 @@ export default async function ParametrizacionPage() {
     maximumFractionDigits: 0,
   });
 
-  const counts = Object.fromEntries(
-    entidadesPorTipo.map((r) => [r.tipo, r._count]),
-  ) as Record<string, number>;
+  const counts = Object.fromEntries(entidadesPorTipo.map((r) => [r.tipo, r._count])) as Record<
+    string,
+    number
+  >;
   const totalEntidades =
     (counts.EPS ?? 0) + (counts.AFP ?? 0) + (counts.ARL ?? 0) + (counts.CCF ?? 0);
 

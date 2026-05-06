@@ -2,12 +2,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { EditRolCustomForm } from './edit-form';
 
 export const metadata = { title: 'Editar rol — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function EditRolCustomPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.roles');
   const { id } = await params;
 
   const rol = await prisma.rolCustom.findUnique({

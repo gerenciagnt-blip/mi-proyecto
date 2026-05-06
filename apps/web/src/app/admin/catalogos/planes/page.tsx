@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft, Check, Minus } from 'lucide-react';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { CreatePlanForm } from './create-form';
 import { togglePlanAction } from './actions';
 
@@ -16,6 +17,7 @@ function Flag({ on }: { on: boolean }) {
 }
 
 export default async function PlanesPage() {
+  await requirePermiso('config.catalogos');
   const planes = await prisma.planSgss.findMany({
     orderBy: [{ active: 'desc' }, { codigo: 'asc' }],
   });
@@ -35,8 +37,8 @@ export default async function PlanesPage() {
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           Define combinaciones de entidades (EPS, AFP, ARL, CCF) y el régimen aplicable. El plan
-          determina qué campos de entidades son requeridos en la afiliación, y el régimen filtra
-          qué cotizantes pueden usarlo.
+          determina qué campos de entidades son requeridos en la afiliación, y el régimen filtra qué
+          cotizantes pueden usarlo.
         </p>
       </header>
 
@@ -73,9 +75,7 @@ export default async function PlanesPage() {
                 <td className="px-4 py-3 font-mono text-xs">{p.codigo}</td>
                 <td className="px-4 py-3">
                   <p className="font-medium">{p.nombre}</p>
-                  {p.descripcion && (
-                    <p className="text-[11px] text-slate-500">{p.descripcion}</p>
-                  )}
+                  {p.descripcion && <p className="text-[11px] text-slate-500">{p.descripcion}</p>}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-center">

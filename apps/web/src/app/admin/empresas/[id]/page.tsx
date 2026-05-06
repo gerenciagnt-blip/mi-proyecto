@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { EditEmpresaForm } from './edit-form';
 import { SyncPagosimpleButton } from '../sync-pagosimple-button';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
@@ -9,6 +10,7 @@ export const metadata = { title: 'Editar Empresa — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function EditEmpresaPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePermiso('config.empresas_planilla');
   const { id } = await params;
   const [empresa, arls, departamentos] = await Promise.all([
     prisma.empresa.findUnique({ where: { id } }),

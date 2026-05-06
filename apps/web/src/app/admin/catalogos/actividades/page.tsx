@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@pila/db';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { CreateActividadForm } from './create-form';
 import { toggleActividadAction, importActividadesAction } from './actions';
 import { ImportForm } from '../_components/import-form';
@@ -8,6 +9,7 @@ export const metadata = { title: 'Actividades (CIIU) — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function ActividadesPage() {
+  await requirePermiso('config.catalogos');
   const actividades = await prisma.actividadEconomica.findMany({
     orderBy: { codigoCiiu: 'asc' },
     take: 500,
