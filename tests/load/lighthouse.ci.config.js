@@ -41,7 +41,13 @@ module.exports = {
       },
     },
     upload: {
-      target: 'temporary-public-storage',
+      // En CI guardamos los reportes en filesystem para que el step
+      // `Upload Lighthouse reports as artifact` los suba a GitHub
+      // (retención 14 días). El config base (`lighthouse.config.js`)
+      // sigue usando temporary-public-storage para el flujo manual.
+      target: 'filesystem',
+      outputDir: '.lighthouseci',
+      reportFilenamePattern: '%%PATHNAME%%-%%DATETIME%%.report.%%EXTENSION%%',
     },
     assert: {
       // Gates relajados en una vuelta para evitar falsos positivos
