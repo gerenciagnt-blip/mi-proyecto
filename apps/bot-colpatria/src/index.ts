@@ -5,6 +5,7 @@ import { testLoginCommand } from './commands/test-login.js';
 import { testIngresoCommand } from './commands/test-ingreso.js';
 import { testCertificadoCommand } from './commands/test-certificado.js';
 import { descargarCertificadosCommand } from './commands/descargar-certificados.js';
+import { scrapeCodigosAxaCommand } from './commands/scrape-codigos-axa.js';
 import { procesarCommand } from './commands/procesar.js';
 import { limpiarPdfsCommand } from './commands/limpiar-pdfs.js';
 import { loginAutoCommand } from './commands/login-auto.js';
@@ -247,6 +248,27 @@ program
     await runWithSentry('watchdog', () =>
       watchdogCommand({ dryRun: options.dryRun, maxIntentos: options.maxIntentos }),
     );
+  });
+
+/**
+ * Sprint EPS/AFP — scrapea las options de los selects EPS/AFP del
+ * portal AXA y matchea contra BD por nombre normalizado, autollenando
+ * el campo `codigoAxa` de cada EntidadSgss. Útil para inicializar el
+ * catálogo o refrescar cuando AXA agrega/quita administradoras.
+ *
+ * Uso:
+ *   pnpm bot-colpatria scrape-codigos-axa --empresa-id <id>
+ *   pnpm bot-colpatria scrape-codigos-axa --empresa-id <id> --dry-run
+ *   pnpm bot-colpatria scrape-codigos-axa --empresa-id <id> --force
+ */
+program
+  .command('scrape-codigos-axa')
+  .description('Scrapea EPS/AFP del portal AXA y mapea codigoAxa en EntidadSgss')
+  .requiredOption('--empresa-id <id>', 'Empresa con credenciales válidas para hacer login')
+  .option('--dry-run', 'No escribe en BD, solo muestra qué cambiaría')
+  .option('--force', 'Sobrescribe codigoAxa aún si la entidad ya tenía uno')
+  .action(async (options: { empresaId: string; dryRun?: boolean; force?: boolean }) => {
+    await runWithSentry('scrape-codigos-axa', () => scrapeCodigosAxaCommand(options));
   });
 
 // Filtra el '--' que pnpm-filter-run inyecta entre el script y los args
