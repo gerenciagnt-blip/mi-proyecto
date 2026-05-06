@@ -9,13 +9,23 @@ import { withDbRetry } from './db-retry';
  *  - `AuditLog` — solo eventos significativos (login exitoso, bloqueo),
  *    para trazabilidad en la bitácora global del sistema.
  *
- *  - Si un email acumula `MAX_FAILED_ATTEMPTS` intentos fallidos en
- *    `LOCK_WINDOW_MS` milisegundos, queda bloqueado.
- *  - El bloqueo dura `LOCK_WINDOW_MS` desde el ÚLTIMO intento fallido.
- *  - Un login exitoso limpia los intentos fallidos previos.
+ * Hay dos buckets independientes que se chequean en orden:
+ *  1. **Por email** (estricto, anti-fuerza-bruta dirigida): si un email
+ *     acumula `MAX_FAILED_ATTEMPTS` intentos fallidos en `LOCK_WINDOW_MS`,
+ *     queda bloqueado. Un login exitoso limpia el contador.
+ *  2. **Por IP** (laxo, anti-credential-stuffing distribuido): si una
+ *     IP acumula `MAX_FAILED_BY_IP` fallos en `IP_LOCK_WINDOW_MS`,
+ *     queda bloqueada — independiente del email usado. Esto detiene
+ *     bots que rotan emails contra una lista de credenciales filtradas.
+ *
+ * Los umbrales del bucket por IP son más laxos que los por email
+ * porque varios usuarios legítimos pueden compartir IP (oficinas,
+ * NAT corporativo, ISPs móviles).
  */
 export const MAX_FAILED_ATTEMPTS = 3;
 export const LOCK_WINDOW_MS = 10 * 60 * 1000; // 10 minutos
+export const MAX_FAILED_BY_IP = 30;
+export const IP_LOCK_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
 
 export type LoginAttemptMotivo =
   | 'password_wrong'
@@ -166,4 +176,60 @@ export function formatearMensajeBloqueo(desbloqueoEn: Date): string {
   return `Demasiados intentos fallidos. Intenta nuevamente en ${mins} ${
     mins === 1 ? 'minuto' : 'minutos'
   }.`;
+}
+
+/**
+ * Cuenta los fallos `success=false` para una IP dentro de la ventana
+ * `IP_LOCK_WINDOW_MS` y decide si está bloqueada.
+ *
+ * Si la IP es null (header no presente — ej. local sin proxy), retorna
+ * "no bloqueado" sin consultar BD.
+ */
+export async function getRateLimitStatusByIp(ip: string | null): Promise<RateLimitStatus> {
+  if (!ip) {
+    return { bloqueado: false, intentosFallidos: 0, desbloqueoEn: null };
+  }
+  const desde = new Date(Date.now() - IP_LOCK_WINDOW_MS);
+  const fallidos = await withDbRetry(
+    () =>
+      prisma.loginAttempt.findMany({
+        where: { ip, success: false, createdAt: { gte: desde } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    { label: 'getRateLimitStatusByIp' },
+  );
+
+  if (fallidos.length < MAX_FAILED_BY_IP) {
+    return {
+      bloqueado: false,
+      intentosFallidos: fallidos.length,
+      desbloqueoEn: null,
+    };
+  }
+
+  const ultimo = fallidos[0]!.createdAt;
+  const desbloqueoEn = new Date(ultimo.getTime() + IP_LOCK_WINDOW_MS);
+  return {
+    bloqueado: desbloqueoEn.getTime() > Date.now(),
+    intentosFallidos: fallidos.length,
+    desbloqueoEn,
+  };
+}
+
+/**
+ * Extrae la IP del cliente desde los headers HTTP. Detrás de un proxy
+ * (típico en Vercel, DigitalOcean App Platform, Caddy reverso) la IP
+ * real viaja en `x-forwarded-for` (formato "cliente, proxy1, proxy2").
+ * Como fallback, algunos proxies usan `x-real-ip`.
+ *
+ * Retorna `null` si no encuentra ninguno (ej. dev local sin proxy).
+ */
+export function extraerIpDeHeaders(h: Headers): string | null {
+  const xff = h.get('x-forwarded-for');
+  if (xff) {
+    const primera = xff.split(',')[0]?.trim();
+    if (primera) return primera;
+  }
+  return h.get('x-real-ip') ?? null;
 }

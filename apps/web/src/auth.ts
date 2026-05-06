@@ -5,9 +5,11 @@ import { z } from 'zod';
 import { prisma } from '@pila/db';
 import { authConfig } from './auth.config';
 import {
+  extraerIpDeHeaders,
   getRateLimitStatus,
-  registrarIntentoFallido,
+  getRateLimitStatusByIp,
   registrarIntentoExitoso,
+  registrarIntentoFallido,
 } from './lib/auth-rate-limit';
 import { withDbRetry } from './lib/db-retry';
 
@@ -20,19 +22,33 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const parsed = LoginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
         const { email, password } = parsed.data;
         const emailNorm = email.toLowerCase();
 
-        // 1. Rate limit: si ya está bloqueado, denegar aunque las
-        //    credenciales sean correctas (evita que pasen por fuerza
-        //    bruta cuando adivinan dentro de la ventana).
+        // Extraer IP del cliente — viaja en x-forwarded-for detrás de
+        // un proxy (Vercel, DO App Platform, Caddy reverso). En dev
+        // local puede ser null.
+        const ip = request?.headers ? extraerIpDeHeaders(request.headers) : null;
+        const userAgent = request?.headers?.get('user-agent') ?? undefined;
+        const meta = ip || userAgent ? { ip: ip ?? undefined, userAgent } : undefined;
+
+        // 1a. Rate limit por IP — anti credential-stuffing distribuido.
+        //     Se chequea ANTES que el bucket por email para frenar bots
+        //     que rotan emails sin gastar bcrypt ni queries de usuario.
+        const ipStatus = await getRateLimitStatusByIp(ip);
+        if (ipStatus.bloqueado) {
+          await registrarIntentoFallido(emailNorm, 'rate_limited', meta);
+          return null;
+        }
+
+        // 1b. Rate limit por email — anti fuerza-bruta dirigida.
         const status = await getRateLimitStatus(emailNorm);
         if (status.bloqueado) {
-          await registrarIntentoFallido(emailNorm, 'rate_limited');
+          await registrarIntentoFallido(emailNorm, 'rate_limited', meta);
           return null;
         }
 
@@ -47,27 +63,24 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         );
 
         if (!user) {
-          await registrarIntentoFallido(emailNorm, 'unknown_email');
+          await registrarIntentoFallido(emailNorm, 'unknown_email', meta);
           return null;
         }
 
         if (!user.active) {
-          await registrarIntentoFallido(emailNorm, 'user_inactive');
+          await registrarIntentoFallido(emailNorm, 'user_inactive', meta);
           return null;
         }
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
-          await registrarIntentoFallido(emailNorm, 'password_wrong');
+          await registrarIntentoFallido(emailNorm, 'password_wrong', meta);
           return null;
         }
 
         // 2. Login exitoso → registra (con info del usuario para AuditLog)
         //    y limpia intentos fallidos previos
-        await registrarIntentoExitoso(emailNorm, {
-          id: user.id,
-          name: user.name,
-        });
+        await registrarIntentoExitoso(emailNorm, { id: user.id, name: user.name }, meta);
 
         return {
           id: user.id,
