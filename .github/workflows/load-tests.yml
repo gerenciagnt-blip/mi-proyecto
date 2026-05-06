@@ -1,0 +1,143 @@
+name: Load tests · k6 + Lighthouse
+
+# Corre tests de performance en cada PR a master y on-demand.
+#
+# Cubre solo las páginas públicas (/login, /landing, /api/health) — las
+# admin pages necesitan login programático que aún no está montado en
+# CI. Para los tests pesados (login-stress, afiliaciones-list) ver el
+# README en tests/load: se corren manualmente contra staging.
+#
+# Para evitar bloquear merges por ruido del runner, los gates de
+# Lighthouse están relajados al inicio (Performance ≥ 60). Subir al
+# alza en `lighthouse.ci.config.js` cuando pasen 3 PRs limpios.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      # Solo dispara cuando el PR toca código del web (no tests del bot
+      # ni docs ni archivos sueltos), y cuando se cambia el config de
+      # Lighthouse o este mismo workflow.
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'tests/load/**'
+      - '.github/workflows/load-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  load-tests:
+    name: Load tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pila
+          POSTGRES_PASSWORD: pila
+          POSTGRES_DB: pila_loadtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pila -d pila_loadtest"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: 'postgresql://pila:pila@localhost:5432/pila_loadtest?schema=public'
+      AUTH_SECRET: 'ci-loadtest-secret-at-least-32-characters-long-xx'
+      AUTH_URL: 'http://localhost:3000'
+      NODE_ENV: 'production'
+      # CSP enforce activo (gateado por NODE_ENV=production en middleware).
+      # Si Lighthouse o k6 disparan violations, se ven en los logs del
+      # paso "Run server".
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Create empty .env
+        # dotenv-cli en los scripts (`dotenv -e ../../.env -- ...`)
+        # falla si el archivo no existe. Las env vars reales vienen del
+        # bloque `env:` del workflow, que ya están exportadas al runner;
+        # dotenv-cli no las pisa con un .env vacío.
+        run: touch .env
+
+      - name: Apply migrations to loadtest DB
+        run: pnpm --filter @pila/db prisma:deploy
+
+      - name: Build web app
+        run: pnpm --filter @pila/web build
+
+      - name: Start web app in background
+        # `nohup ... &` deja el proceso corriendo después del step.
+        # Redirige stdout/stderr a un log que podemos cat-ear si algo
+        # falla.
+        run: |
+          nohup pnpm --filter @pila/web start > /tmp/web.log 2>&1 &
+          echo "Web app PID: $!"
+
+      - name: Wait for /api/health
+        # 60s de margen — el primer hit hace lazy-load de Sentry y otros
+        # módulos pesados. Si no responde en ese tiempo, falla con tail
+        # del log.
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/api/health > /dev/null 2>&1; then
+              echo "Health OK tras ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::/api/health no respondió en 60s. Tail del log:"
+          tail -50 /tmp/web.log
+          exit 1
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 health check
+        env:
+          BASE_URL: 'http://localhost:3000'
+        run: k6 run tests/load/health.k6.js
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: Run Lighthouse CI
+        # `lhci autorun` arma collect → assert → upload. Si algún gate
+        # con severity "error" falla, exit code != 0 y CI rojo.
+        run: lhci autorun --config=tests/load/lighthouse.ci.config.js
+
+      - name: Upload Lighthouse reports as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports-${{ github.run_id }}
+          path: .lighthouseci/
+          retention-days: 14
+
+      - name: Tail web log on failure
+        if: failure()
+        run: |
+          echo "=== /tmp/web.log (last 100 lines) ==="
+          tail -100 /tmp/web.log || true
