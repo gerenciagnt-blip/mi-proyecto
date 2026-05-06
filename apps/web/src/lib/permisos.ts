@@ -135,12 +135,38 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Soporte',
     rolesAplica: STAFF,
   },
+  // Sprint PQRS — bandeja específica dentro de Jurídico para peticiones,
+  // quejas, reclamos y sugerencias entrantes desde la landing pública.
+  // Solo staff atiende.
+  {
+    key: 'soporte.juridico.pqrs',
+    label: 'Jurídico · PQRS',
+    grupo: 'Soporte',
+    rolesAplica: STAFF,
+  },
 
   // ========================= Operación =========================
   // Operación es transversal: aliado y staff la usan.
+  { key: 'dashboard_ejecutivo', label: 'Dashboard ejecutivo', grupo: 'Operación' },
   { key: 'base_datos', label: 'Base de datos', grupo: 'Operación' },
+  { key: 'cuentas_cobro', label: 'Cuentas de cobro', grupo: 'Operación' },
   { key: 'transacciones', label: 'Transacciones', grupo: 'Operación' },
   { key: 'planos', label: 'Planos', grupo: 'Operación' },
+  // Sprint 8.6 — Permiso específico para solicitar el certificado de
+  // afiliación vigente desde el modal Consultar de cada afiliación. Si
+  // se quita, el botón "Certificado vigente" no debería aparecer.
+  // Aplica al mismo set que ve el modal de afiliación (todos los roles
+  // con acceso a la afiliación según scope de sucursal).
+  {
+    key: 'colpatria.certificado_vigente',
+    label: 'Bot Colpatria · Certificado vigente',
+    grupo: 'Operación',
+  },
+  // Bandeja de notificaciones del usuario (alertas de cartera, cobros,
+  // soportes, jobs Colpatria, etc.). Es personal — cualquier user
+  // autenticado ve solo las suyas; el módulo en sí está disponible
+  // para todos los roles base.
+  { key: 'notificaciones', label: 'Notificaciones', grupo: 'Operación' },
 
   // ========================= Administrativo =========================
   // Solo aliado (la ve scopeada a su sucursal). Staff ve la versión
