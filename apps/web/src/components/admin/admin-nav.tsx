@@ -51,6 +51,14 @@ type NavItem = {
    * aplica al rol actual.
    */
   roles?: Role[];
+  /**
+   * Sprint Permisos — módulo asociado al item. Si está y el user no
+   * lo tiene en su set de módulos accesibles (calculado server-side
+   * por `puedeAccederModulo`), el item se oculta. Esto hace que la
+   * matriz `RolCustom` filtre el nav, no solo bloquee el acceso a la
+   * page. Items sin `modulo` se rigen solo por `roles?` como antes.
+   */
+  modulo?: string;
 };
 
 const NAV: NavItem[] = [
@@ -62,32 +70,68 @@ const NAV: NavItem[] = [
     label: 'Configuración',
     icon: Settings,
     children: [
-      { label: 'Empresas planilla', href: '/admin/empresas', icon: Building, roles: STAFF },
-      { label: 'Empresa CC', href: '/admin/cuentas-cobro', icon: Receipt },
+      {
+        label: 'Empresas planilla',
+        href: '/admin/empresas',
+        icon: Building,
+        roles: STAFF,
+        modulo: 'config.empresas_planilla',
+      },
+      { label: 'Empresa CC', href: '/admin/cuentas-cobro', icon: Receipt, modulo: 'cuentas_cobro' },
       // Usuarios incluye una tab interna a /admin/sucursales — no
       // exponemos "Sucursales" como entrada separada del nav.
-      { label: 'Usuarios', href: '/admin/usuarios', icon: Users, roles: STAFF },
-      { label: 'Parametrización', href: '/admin/catalogos', icon: Database, roles: STAFF },
-      { label: 'Asesor comercial', href: '/admin/catalogos/asesores', icon: Users2 },
-      { label: 'Servicios adicionales', href: '/admin/catalogos/servicios', icon: Sparkles },
-      { label: 'Formato comprobante', href: '/admin/catalogos/comprobantes', icon: FileSignature },
+      {
+        label: 'Usuarios',
+        href: '/admin/usuarios',
+        icon: Users,
+        roles: STAFF,
+        modulo: 'config.usuarios',
+      },
+      {
+        label: 'Parametrización',
+        href: '/admin/catalogos',
+        icon: Database,
+        roles: STAFF,
+        modulo: 'config.catalogos',
+      },
+      {
+        label: 'Asesor comercial',
+        href: '/admin/catalogos/asesores',
+        icon: Users2,
+        modulo: 'config.asesores_comerciales',
+      },
+      {
+        label: 'Servicios adicionales',
+        href: '/admin/catalogos/servicios',
+        icon: Sparkles,
+        modulo: 'config.servicios_adicionales',
+      },
+      {
+        label: 'Formato comprobante',
+        href: '/admin/catalogos/comprobantes',
+        icon: FileSignature,
+        modulo: 'config.formato_comprobante',
+      },
       {
         label: 'Bitácora',
         href: '/admin/configuracion/bitacora',
         icon: History,
         roles: STAFF_Y_ALIADO_OWNER,
+        modulo: 'config.bitacora',
       },
       {
         label: 'Bot Colpatria',
         href: '/admin/configuracion/colpatria-jobs',
         icon: Bot,
         roles: STAFF,
+        modulo: 'config.colpatria_jobs',
       },
       {
         label: 'Sistema',
         href: '/admin/sistema',
         icon: Activity,
         roles: ADMIN_ONLY,
+        modulo: 'config.sistema',
       },
     ],
   },
@@ -96,38 +140,87 @@ const NAV: NavItem[] = [
     icon: LifeBuoy,
     roles: STAFF,
     children: [
-      { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet },
-      { label: 'Afiliaciones', href: '/admin/soporte/afiliaciones', icon: FileCheck },
-      { label: 'Incapacidades', href: '/admin/soporte/incapacidades', icon: FileText },
+      { label: 'Cartera', href: '/admin/soporte/cartera', icon: Wallet, modulo: 'soporte.cartera' },
+      {
+        label: 'Afiliaciones',
+        href: '/admin/soporte/afiliaciones',
+        icon: FileCheck,
+        modulo: 'soporte.afiliaciones',
+      },
+      {
+        label: 'Incapacidades',
+        href: '/admin/soporte/incapacidades',
+        icon: FileText,
+        modulo: 'soporte.incapacidades',
+      },
       // Sprint Jurídico — bandeja de casos derivados al área legal.
       // Visible a todo STAFF; los documentos confidenciales se filtran
       // por permiso `soporte.juridico_confidencial` en el endpoint.
-      { label: 'Jurídico', href: '/admin/soporte/juridico', icon: Scale },
-      { label: 'Finanzas', href: '/admin/soporte/finanzas', icon: DollarSign },
+      {
+        label: 'Jurídico',
+        href: '/admin/soporte/juridico',
+        icon: Scale,
+        modulo: 'soporte.juridico',
+      },
+      // Finanzas raíz: usamos el módulo del sub-tab default (cobro_aliados).
+      // Si el user no tiene ninguno de los 3 sub-módulos, el grupo Soporte
+      // se auto-oculta porque su único hijo desaparece.
+      {
+        label: 'Finanzas',
+        href: '/admin/soporte/finanzas',
+        icon: DollarSign,
+        modulo: 'soporte.finanzas.cobro_aliados',
+      },
     ],
   },
-  { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive },
-  { label: 'Transacciones', href: '/admin/transacciones', icon: ArrowRightLeft },
-  { label: 'Planos', href: '/admin/planos', icon: FileSpreadsheet },
+  { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive, modulo: 'base_datos' },
+  {
+    label: 'Transacciones',
+    href: '/admin/transacciones',
+    icon: ArrowRightLeft,
+    modulo: 'transacciones',
+  },
+  { label: 'Planos', href: '/admin/planos', icon: FileSpreadsheet, modulo: 'planos' },
   {
     label: 'Administrativo',
     icon: Briefcase,
     children: [
-      { label: 'Cartera', href: '/admin/administrativo/cartera', icon: Wallet },
-      { label: 'Incapacidades', href: '/admin/administrativo/incapacidades', icon: FileText },
+      {
+        label: 'Cartera',
+        href: '/admin/administrativo/cartera',
+        icon: Wallet,
+        modulo: 'admin.cartera',
+      },
+      {
+        label: 'Incapacidades',
+        href: '/admin/administrativo/incapacidades',
+        icon: FileText,
+        modulo: 'admin.incapacidades',
+      },
     ],
   },
 ];
 
-/** Filtra el árbol de navegación según el rol; oculta grupos vacíos. */
-function filtrarPorRol(items: NavItem[], role: Role): NavItem[] {
+/**
+ * Filtra el árbol de navegación según rol base + permisos granulares.
+ * Reglas:
+ *  - `item.modulo` y `accesibles` provistos: si el módulo no está en
+ *    `accesibles`, el item se oculta (RolCustom efectivo en el menú).
+ *  - `item.roles`: si el rol no está incluido, se oculta (compat).
+ *  - Grupo sin hijos visibles → se oculta.
+ *
+ * Si `accesibles` es undefined (caller no calculó permisos), solo se
+ * aplica filtrado por `roles` — comportamiento legacy. Esto evita que
+ * el nav quede vacío si por alguna razón el cálculo server-side falla.
+ */
+function filtrarNav(items: NavItem[], role: Role, accesibles?: Set<string>): NavItem[] {
   const out: NavItem[] = [];
   for (const it of items) {
-    // Si el item restringe y el rol no está, lo saltamos.
+    if (it.modulo && accesibles && !accesibles.has(it.modulo)) continue;
     if (it.roles && !it.roles.includes(role)) continue;
     if (it.children && it.children.length > 0) {
-      const hijos = filtrarPorRol(it.children, role);
-      if (hijos.length === 0) continue; // grupo vacío ⇒ ocultar
+      const hijos = filtrarNav(it.children, role, accesibles);
+      if (hijos.length === 0) continue;
       out.push({ ...it, children: hijos });
     } else {
       out.push(it);
@@ -248,9 +341,21 @@ function NavGroup({
   );
 }
 
-export function AdminNav({ role }: { role: Role }) {
+export function AdminNav({
+  role,
+  modulosAccesibles,
+}: {
+  role: Role;
+  /**
+   * Set de módulos a los que el user tiene acceso (calculado server-side
+   * por `puedeAccederModulo`). Si es undefined, solo se filtra por rol
+   * base (backward compat).
+   */
+  modulosAccesibles?: string[];
+}) {
   const pathname = usePathname() ?? '';
-  const items = filtrarPorRol(NAV, role);
+  const accesibles = modulosAccesibles ? new Set(modulosAccesibles) : undefined;
+  const items = filtrarNav(NAV, role, accesibles);
 
   return (
     <nav className="flex h-full flex-col p-3">
@@ -268,4 +373,4 @@ export function AdminNav({ role }: { role: Role }) {
 
 // Re-exportamos también el array filtrado como helper si alguien más
 // lo necesita (futuro: breadcrumb, búsqueda, etc).
-export { filtrarPorRol, NAV, type NavItem };
+export { filtrarNav, NAV, type NavItem };

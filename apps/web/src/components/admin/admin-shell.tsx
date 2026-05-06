@@ -19,12 +19,19 @@ export function AdminShell({
   userRole,
   userEmail,
   userSucursalCodigo,
+  modulosAccesibles,
   children,
 }: {
   userName: string;
   userRole: Role;
   userEmail: string;
   userSucursalCodigo: string | null;
+  /**
+   * Set de módulos a los que el user tiene acceso (server-side via
+   * `puedeAccederModulo`). El nav lo usa para ocultar items que el
+   * RolCustom del user no permite.
+   */
+  modulosAccesibles?: string[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
@@ -56,7 +63,7 @@ export function AdminShell({
             <PilaLogo size="sm" />
           </div>
           <div className="flex-1 overflow-y-auto">
-            <AdminNav role={userRole} />
+            <AdminNav role={userRole} modulosAccesibles={modulosAccesibles} />
           </div>
         </div>
       </aside>
