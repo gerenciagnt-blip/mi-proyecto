@@ -163,18 +163,15 @@ Se identifica como cuello potencial en `tests/load/README.md` (script futuro `pd
 
 ### 14.2 Deuda técnica
 
-| Item                                                     | Origen / archivo                                           | Estado                               |
-| -------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------ |
-| Rol `ALIADO_USER` deprecado pero aún en código y schema  | `schema.prisma`, `lib/permisos.ts`, varias rutas /admin    | Reemplazo `RolCustom` ya operativo   |
-| `Afiliacion.tipoSalario` `@deprecated`                   | `schema.prisma:884`                                        | DROP COLUMN pendiente                |
-| `Empresa.colpatriaModalidadTrabajoDefault` `@deprecated` | `schema.prisma:423`                                        | El bot quema "01" Presencial         |
-| CSP en Report-Only                                       | `apps/web/src/middleware.ts`, commit `847286a`             | Pasar a Enforce                      |
-| Sprint 4.4 (email) y 4.5 (SMS)                           | Roadmap memoria 2026-04                                    | Esperando credenciales Resend/Twilio |
-| Sprint 8.6 — Carné / Certificado AXA                     | Roadmap, ver memoria                                       | En pausa                             |
-| Sprint 8 REACTIVAR (bot)                                 | Bot solo cubre CREAR                                       | No implementado                      |
-| Catálogo EPS/AFP completo                                | Solo ~2 entidades mapeadas a códigos AXA                   | Faltan ~50+                          |
-| Tests E2E con Playwright contra la web app               | No existen — solo Playwright para el bot                   | Cobertura 0 en flujo aliado          |
-| CI sin tests automáticos en push                         | `.github/workflows/ci.yml` paso `pnpm test` ya configurado | Hay paso, faltan tests reales        |
+| Item                                       | Origen / archivo                                           | Estado                                 |
+| ------------------------------------------ | ---------------------------------------------------------- | -------------------------------------- |
+| CSP en Report-Only                         | `apps/web/src/middleware.ts`, commit `847286a`             | Pasar a Enforce tras validar Sentry    |
+| Sprint 4.4 (email) y 4.5 (SMS)             | Roadmap memoria 2026-04                                    | Esperando credenciales Resend/Twilio   |
+| Catálogo EPS/AFP completo con `codigoAxa`  | `EntidadSgss.codigoAxa`                                    | Solo 2 mapeados — falta importar Excel |
+| Rate limit por email, no por IP            | Login flow                                                 | Agregar bucket por IP (sliding window) |
+| Catálogo EPS/AFP completo                  | Solo ~2 entidades mapeadas a códigos AXA                   | Faltan ~50+                            |
+| Tests E2E con Playwright contra la web app | No existen — solo Playwright para el bot                   | Cobertura 0 en flujo aliado            |
+| CI sin tests automáticos en push           | `.github/workflows/ci.yml` paso `pnpm test` ya configurado | Hay paso, faltan tests reales          |
 
 ### 14.3 Vulnerabilidades potenciales
 

@@ -314,7 +314,7 @@ Tabla: `colpatria_sesiones`.
 - **Activación**: `colpatriaActivo Boolean @default(false)`.
 - **Credenciales**: `colpatriaUsuario String?`, `colpatriaPasswordEnc String?` (AES-256-GCM), `colpatriaPasswordSetAt DateTime?` (para detectar logins que fallan tras rotación).
 - **Selectores `/Bienvenida`**: `colpatriaAplicacion String? @default("ARP")`, `colpatriaPerfil String? @default("OFI")`, `colpatriaEmpresaIdInterno String?` (option value de `#ddlEmpresas`, ~6 dígitos asignados por AXA, NO el NIT), `colpatriaAfiliacionId String?` (option value de `#ddlAfiliaciones`).
-- **Defaults del form**: `colpatriaCodigoSucursalDefault`, `colpatriaTipoAfiliacionDefault`, `colpatriaGrupoOcupacionDefault`, `colpatriaTipoOcupacionDefault`. El campo `colpatriaModalidadTrabajoDefault` está marcado `@deprecated` — el bot quema `"01"` y `TareaAltoRiesgo "0000001"` (no aplica).
+- **Defaults del form**: `colpatriaCodigoSucursalDefault`, `colpatriaTipoAfiliacionDefault`, `colpatriaGrupoOcupacionDefault`, `colpatriaTipoOcupacionDefault`. `ModalidadTrabajo` y `TareaAltoRiesgo` son hardcoded en el bot (`"01"` Presencial, `"0000001"` No aplica).
 
 Adicionalmente, `EmpresaNivelRiesgo` tiene tres campos de override por nivel: `colpatriaCentroTrabajo`, `colpatriaGrupoOcupacion`, `colpatriaTipoOcupacion` — usados por `resolverConfig` para mapear el `nivelRiesgo` de la afiliación a centros/grupos/ocupaciones específicos cuando la empresa lo requiere.
 

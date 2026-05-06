@@ -175,12 +175,12 @@ A continuación se documentan los modelos del schema, agrupados por dominio. Cad
 Usuario del sistema. Cada usuario pertenece a una sucursal (excepto staff `ADMIN`/`SOPORTE`, que son globales) y opcionalmente puede tener un `RolCustom` que afina sus permisos sobre el rol base.
 
 | Campo          | Tipo          | Modificadores                        | Notas                                                             |
-| -------------- | ------------- | ------------------------------------ | ----------------------------------------------------------------- | ------- | ------------ | ------------------------ |
+| -------------- | ------------- | ------------------------------------ | ----------------------------------------------------------------- | ------- | ------------ | ------------ |
 | `id`           | `String`      | `@id @default(cuid())`               | PK                                                                |
 | `email`        | `String`      | `@unique`                            | Lowercased en aplicación                                          |
 | `name`         | `String`      |                                      |                                                                   |
 | `passwordHash` | `String`      |                                      | Hash bcrypt                                                       |
-| `role`         | `Role` (enum) |                                      | `ADMIN                                                            | SOPORTE | ALIADO_OWNER | ALIADO_USER (deprecado)` |
+| `role`         | `Role` (enum) |                                      | `ADMIN                                                            | SOPORTE | ALIADO_OWNER | ALIADO_USER` |
 | `sucursalId`   | `String?`     | FK → `Sucursal` `onDelete: Restrict` | Null sólo para staff                                              |
 | `rolCustomId`  | `String?`     | FK → `RolCustom` `onDelete: SetNull` | Si está seteado, los permisos efectivos vienen de `PermisoCustom` |
 | `active`       | `Boolean`     | `@default(true)`                     |                                                                   |
@@ -285,7 +285,7 @@ Bloque PILA: `ciiuPrincipal?`, `arlId?` (FK `EntidadSgss`), `fechaInicioActivida
 
 Bloque PagoSimple: `pagosimpleContributorId?`, `pagosimpleSyncedAt?`.
 
-Bloque Colpatria (Sprint 8): `colpatriaActivo` (`@default(false)`), `colpatriaUsuario?`, `colpatriaPasswordEnc?` (AES-256-GCM con `COLPATRIA_ENC_KEY`), `colpatriaPasswordSetAt?`, `colpatriaAplicacion?` (`@default("ARP")`), `colpatriaPerfil?` (`@default("OFI")`), `colpatriaEmpresaIdInterno?`, `colpatriaAfiliacionId?`, defaults del form: `colpatriaCodigoSucursalDefault?`, `colpatriaTipoAfiliacionDefault?`, `colpatriaGrupoOcupacionDefault?`, `colpatriaTipoOcupacionDefault?`, `colpatriaModalidadTrabajoDefault?` (deprecado, hardcoded "01" en bot).
+Bloque Colpatria (Sprint 8): `colpatriaActivo` (`@default(false)`), `colpatriaUsuario?`, `colpatriaPasswordEnc?` (AES-256-GCM con `COLPATRIA_ENC_KEY`), `colpatriaPasswordSetAt?`, `colpatriaAplicacion?` (`@default("ARP")`), `colpatriaPerfil?` (`@default("OFI")`), `colpatriaEmpresaIdInterno?`, `colpatriaAfiliacionId?`, defaults del form: `colpatriaCodigoSucursalDefault?`, `colpatriaTipoAfiliacionDefault?`, `colpatriaGrupoOcupacionDefault?`, `colpatriaTipoOcupacionDefault?`. `ModalidadTrabajo` y `TareaAltoRiesgo` son hardcoded en el bot.
 
 Relaciones inversas: `nivelesPermitidos`, `actividadesPermitidas`, `tiposPermitidos`, `subtiposPermitidos`, `accesos` (UsuarioEmpresa), `afiliaciones`, `planillas`, `carterasConsolidado`, `incapacidades`, `colpatriaSesion` (1:1), `colpatriaJobs` (1:N).
 
@@ -659,7 +659,7 @@ Campos: `titulo`, `mensaje`, `href?`, `metadatos: Json?`. Índices por cada dest
 
 | Enum                       | Valores                                                                                                                                                                                                                         | Uso                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `Role`                     | `ADMIN`, `SOPORTE`, `ALIADO_OWNER`, `ALIADO_USER` (deprecado)                                                                                                                                                                   | Roles base del sistema                               |
+| `Role`                     | `ADMIN`, `SOPORTE`, `ALIADO_OWNER`, `ALIADO_USER`                                                                                                                                                                               | Roles base del sistema                               |
 | `TipoPersona`              | `NATURAL`, `JURIDICA`                                                                                                                                                                                                           | Empresa / CuentaCobro                                |
 | `TipoDocumento`            | `CC`, `CE`, `NIT`, `PAS`, `TI`, `RC`, `NIP`                                                                                                                                                                                     | Cotizante, CarteraDetallado                          |
 | `NivelRiesgo`              | `I`, `II`, `III`, `IV`, `V`                                                                                                                                                                                                     | ARL                                                  |

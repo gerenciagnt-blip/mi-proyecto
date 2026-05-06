@@ -66,7 +66,7 @@ Hay **dos capas** de autorización que se combinan:
 | `ADMIN`        | Plenipotenciario — siempre `true` en cualquier chequeo de permiso.                            |
 | `SOPORTE`      | Staff de la plataforma. Por defecto puede lo mismo que ADMIN, pero ajustable vía `RolCustom`. |
 | `ALIADO_OWNER` | Dueño de una sucursal. Ve solo su sucursal, opera dentro de ella.                             |
-| `ALIADO_USER`  | Usuario operativo de un aliado. **Deprecado** pero aún presente en schema y código.           |
+| `ALIADO_USER`  | Sub-usuario del aliado. Depende de un `ALIADO_OWNER`; permisos finos vía `RolCustom`.         |
 
 **Capa 2 — `RolCustom` con matriz `Permiso(modulo × accion)`:**
 
@@ -357,7 +357,7 @@ Tabla central que registra eventos relevantes del sistema. Esquema simplificado 
 
 - **STAFF (ADMIN, SOPORTE):** ve cross-tenant, todos los eventos.
 - **ALIADO_OWNER:** ve solo eventos donde `entidadSucursalId === su sucursalId` (filtrado en la query, no a nivel de fila — la BD no tiene RLS).
-- **ALIADO_USER:** no ve la bitácora (deprecado).
+- **ALIADO_USER:** no ve la bitácora — la información administrativa se reserva al ALIADO_OWNER.
 
 ---
 
@@ -397,7 +397,6 @@ Honestidad operativa — esto **no** está cubierto hoy:
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CSP en **Report-Only**, no enforce                                                             | XSS exitoso no se bloquea, solo se reportaría                            | Promover a `Content-Security-Policy` (sin `-Report-Only`) tras verificar logs limpios por una semana (`middleware.ts:103`)                              |
 | Rate limit **por email**, no por IP                                                            | Atacante distribuido con muchos emails diferentes no cae bajo el bloqueo | Agregar segundo bucket por IP (sliding window)                                                                                                          |
-| `ALIADO_USER` deprecado pero presente                                                          | Código muerto / posible bypass por confusión de roles                    | Migración para fusionar con `ALIADO_OWNER` o eliminar el rol del schema                                                                                 |
 | No hay **complexity check** en passwords                                                       | User puede usar `12345678`                                               | Validación adicional Zod (mayúscula/minúscula/dígito) y/o chequeo contra HIBP Pwned Passwords API                                                       |
 | No hay **2FA / MFA**                                                                           | Un único factor (password)                                               | Agregar TOTP (RFC 6238) — una columna `totpSecret` cifrada y librería `otpauth`                                                                         |
 | **CSRF en server actions** confía en SameSite Lax                                              | Ataques con SameSite-bypass conocidos pueden ser viables                 | Agregar token sincronizador en server actions críticas                                                                                                  |

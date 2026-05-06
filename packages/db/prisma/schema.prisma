@@ -19,7 +19,7 @@ enum Role {
   ADMIN // staff plataforma — ve todo, sin sucursal
   SOPORTE // staff plataforma — mismos permisos base que ADMIN pero con matriz configurable
   ALIADO_OWNER // dueño del aliado — ve toda su sucursal
-  ALIADO_USER // [DEPRECADO] usar ALIADO_OWNER + rolCustom. Se mantiene por retrocompatibilidad.
+  ALIADO_USER // sub-usuario del aliado — depende del ALIADO_OWNER, permisos refinados con RolCustom
 }
 
 enum TipoPersona {
