@@ -8,7 +8,7 @@ import type {
   MovimientoIncEstado,
 } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { NuevoDetalleForm } from './detalle-form';
@@ -53,7 +53,7 @@ export default async function MovimientoDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.movimientos_incapacidades');
   const { id } = await params;
 
   const [mov, empresas] = await Promise.all([

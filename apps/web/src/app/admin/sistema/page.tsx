@@ -11,7 +11,7 @@ import {
   Bot,
   ArrowRight,
 } from 'lucide-react';
-import { requireAdmin } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import {
   chequearBD,
   chequearColpatria,
@@ -68,7 +68,7 @@ function chipEstado(c: ResultadoCron): { label: string; clase: string; Icon: typ
 }
 
 export default async function SistemaPage() {
-  await requireAdmin();
+  await requirePermiso('config.sistema');
 
   // Las consultas son independientes — paralelo.
   const [bd, crons, colpatria, uploads] = await Promise.all([

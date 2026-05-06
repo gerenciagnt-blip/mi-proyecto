@@ -3,7 +3,7 @@ import { FileCheck, AlertCircle, UserCog } from 'lucide-react';
 import type { ColpatriaJobStatus, Prisma, SoporteAfEstado } from '@pila/db';
 import { prisma } from '@pila/db';
 import { Alert } from '@/components/ui/alert';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
 import { SolicitudesTable, type SolicitudRow } from './solicitudes-table';
@@ -45,7 +45,7 @@ export default async function SoporteAfiliacionesPage({
 }: {
   searchParams: Promise<SP>;
 }) {
-  const session = await requireStaff();
+  const session = await requirePermiso('soporte.afiliaciones');
   const myUserId = session.user.id;
   const sp = await searchParams;
 

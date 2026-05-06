@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, FileSearch, AlertCircle } from 'lucide-react';
 import type { MedioPagoFisico, MovimientoDetalleEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
@@ -61,7 +61,7 @@ export default async function DetalleMovimientosPage({
 }: {
   searchParams: Promise<SP>;
 }) {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.detalle_movimientos');
   const sp = await searchParams;
 
   const estadoFilter: MovimientoDetalleEstado | undefined =

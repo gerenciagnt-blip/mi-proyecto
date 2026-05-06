@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, FileText, Image as ImageIcon } from 'lucide-react';
 import { prisma } from '@pila/db';
-import { requireRole } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { ReintentarButton } from '../reintentar-button';
 import { CerrarJobButton } from '../cerrar-job-button';
 
@@ -18,7 +18,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export default async function JobDetallePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireRole('ADMIN', 'SOPORTE');
+  await requirePermiso('config.colpatria_jobs');
   const { id } = await params;
 
   const job = await prisma.colpatriaAfiliacionJob.findUnique({

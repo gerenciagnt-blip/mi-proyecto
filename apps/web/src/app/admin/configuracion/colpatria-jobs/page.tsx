@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Bot, ListChecks, KeyRound } from 'lucide-react';
-import { requireRole } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { JobsSection, type JobsSectionParams } from './_components/jobs-section';
 import { SesionesSection } from './_components/sesiones-section';
@@ -29,7 +29,7 @@ const SECCIONES: { key: Seccion; label: string; icon: typeof ListChecks; descrip
 ];
 
 export default async function BotColpatriaPage({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireRole('ADMIN', 'SOPORTE');
+  await requirePermiso('config.colpatria_jobs');
 
   const sp = await searchParams;
   const seccionRaw = sp.seccion;

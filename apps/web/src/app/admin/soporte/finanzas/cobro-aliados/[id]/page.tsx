@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { CobroAliadoEstado, EfipayEstado } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
 import { MarcarPagadoForm } from './marcar-pagado-form';
@@ -62,7 +62,7 @@ function mesLabel(a: number, m: number): string {
 }
 
 export default async function CobroDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.cobro_aliados');
   const { id } = await params;
 
   const [cobro, mediosPago] = await Promise.all([

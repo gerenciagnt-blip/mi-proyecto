@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { prisma } from '@pila/db';
 import type { Prisma } from '@pila/db';
-import { requireRole } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { buildAuditoriaWhere } from '@/lib/auditoria/scope';
 import {
@@ -59,7 +59,7 @@ type SP = {
 
 export default async function BitacoraPage({ searchParams }: { searchParams: Promise<SP> }) {
   // Bloqueamos ALIADO_USER — la bitácora es info administrativa.
-  await requireRole('ADMIN', 'SOPORTE', 'ALIADO_OWNER');
+  await requirePermiso('config.bitacora');
   const scope = await getUserScope();
   if (!scope) return null;
 

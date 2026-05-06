@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Scale, MessageSquare } from 'lucide-react';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { IncapacidadesSection } from './_components/incapacidades-section';
 import { PqrsSection } from './_components/pqrs-section';
@@ -51,7 +51,7 @@ const SECCIONES: {
  * incapacidades).
  */
 export default async function JuridicoBandejaPage({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireStaff();
+  await requirePermiso('soporte.juridico');
   const sp = await searchParams;
   const seccion: Seccion = sp.seccion === 'pqrs' ? 'pqrs' : 'incapacidades';
   const meta = SECCIONES.find((s) => s.key === seccion)!;

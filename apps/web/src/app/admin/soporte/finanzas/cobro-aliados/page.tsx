@@ -4,7 +4,7 @@ import { ReconciliarMasivoButton } from './reconciliar-masivo-button';
 import { GenerarManualButton } from './generar-manual-button';
 import type { CobroAliadoEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
@@ -50,7 +50,7 @@ function mesLabel(a: number, m: number): string {
 }
 
 export default async function CobroAliadosPage({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.cobro_aliados');
   const sp = await searchParams;
 
   const estadoFilter: CobroAliadoEstado | undefined =

@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { DollarSign, Landmark, FileSearch } from 'lucide-react';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 
 export const metadata = { title: 'Finanzas · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function FinanzasHubPage() {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.cobro_aliados');
 
   const [cobrosPendientes, cobrosVencidos, movimientosPendientes] = await Promise.all([
     prisma.cobroAliado.count({ where: { estado: 'PENDIENTE' } }),

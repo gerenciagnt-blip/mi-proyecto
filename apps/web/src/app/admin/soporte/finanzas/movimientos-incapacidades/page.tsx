@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, Landmark, AlertCircle } from 'lucide-react';
 import type { MovimientoIncEstado, Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { Alert } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { formatCOP } from '@/lib/format';
@@ -42,7 +42,7 @@ function defaultHasta() {
 }
 
 export default async function MovimientosPage({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireStaff();
+  await requirePermiso('soporte.finanzas.movimientos_incapacidades');
   const sp = await searchParams;
 
   const estadoFilter: MovimientoIncEstado | undefined =

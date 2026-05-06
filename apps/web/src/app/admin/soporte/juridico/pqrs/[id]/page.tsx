@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import type { PqrsEstado, PqrsTipo } from '@pila/db';
 import { prisma } from '@pila/db';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { PQRS_TIPO_LABEL, diasHabilesRestantes } from '@/lib/pqrs/plazos';
 import { GestionPqrsButton } from './_components/gestion-pqrs-button';
@@ -77,7 +77,7 @@ function formatDateOnly(d: Date): string {
 }
 
 export default async function PqrsDetallePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requirePermiso('soporte.juridico.pqrs');
   const { id } = await params;
 
   const pqrs = await prisma.pqrs.findUnique({

@@ -1,4 +1,4 @@
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { DetalleModalShell } from '../../_components/detalle-modal-shell';
 import { JuridicoDetalleContent } from '../../_components/juridico-detalle-content';
 
@@ -9,7 +9,7 @@ export default async function JuridicoDetalleModal({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireStaff();
+  await requirePermiso('soporte.juridico');
   const { id } = await params;
   return (
     <DetalleModalShell>

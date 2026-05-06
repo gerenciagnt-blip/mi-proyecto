@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { Role } from '@pila/db';
 import { auth } from '@/auth';
+import { puedeAccederModulo } from './permisos-runtime';
 
 export async function requireAuth() {
   const session = await auth();
@@ -40,4 +41,38 @@ export async function requireStaff() {
  */
 export function esStaff(role: Role): boolean {
   return role === 'ADMIN' || role === 'SOPORTE';
+}
+
+/**
+ * Sprint Permisos — Page guard granular.
+ *
+ * Combina autenticación + chequeo del módulo. Si el user puede acceder
+ * (según `puedeAccederModulo`: ADMIN siempre, sin RolCustom → defaults
+ * por rol base, con RolCustom → matriz custom), retorna la sesión.
+ * Si no, redirige a `/admin` (landing protegida).
+ *
+ * Ejemplo de uso en una page admin:
+ *   ```ts
+ *   export default async function BitacoraPage() {
+ *     await requirePermiso('config.bitacora');
+ *     // ...
+ *   }
+ *   ```
+ *
+ * Reemplaza/complementa a `requireStaff`/`requireRole` de las pages —
+ * los users con RolCustom limitado se bloquean aunque su rol base les
+ * daría acceso.
+ */
+export async function requirePermiso(modulo: string) {
+  const session = await requireAuth();
+  const ok = await puedeAccederModulo(
+    {
+      id: session.user.id,
+      role: session.user.role,
+      rolCustomId: session.user.rolCustomId,
+    },
+    modulo,
+  );
+  if (!ok) redirect('/admin');
+  return session;
 }

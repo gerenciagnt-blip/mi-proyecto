@@ -16,7 +16,7 @@ import {
 import type { SoporteAfEstado, SoporteAfTipoDisparo } from '@pila/db';
 import { prisma } from '@pila/db';
 import { cn } from '@/lib/utils';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { formatCOP } from '@/lib/format';
 import { resolverCambios } from '@/lib/soporte-af/cambios';
 import { arlStatusFromBot } from '@/lib/soporte-af/arl-status';
@@ -71,7 +71,7 @@ export default async function SolicitudSoporteAfPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireStaff();
+  await requirePermiso('soporte.afiliaciones');
   const { id } = await params;
 
   const [sol, staffAsignables] = await Promise.all([

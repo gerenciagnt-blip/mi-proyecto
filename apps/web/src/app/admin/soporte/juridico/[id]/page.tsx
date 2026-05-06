@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { requireStaff } from '@/lib/auth-helpers';
+import { requirePermiso } from '@/lib/auth-helpers';
 import { JuridicoDetalleContent } from '../_components/juridico-detalle-content';
 
 export const metadata = { title: 'Caso jurídico · Soporte — Sistema PILA' };
 export const dynamic = 'force-dynamic';
 
 export default async function JuridicoDetallePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requirePermiso('soporte.juridico');
   const { id } = await params;
   return (
     <div className="space-y-6">
