@@ -128,20 +128,12 @@ jobs:
         # con severity "error" falla, exit code != 0 y CI rojo.
         run: lhci autorun --config=tests/load/lighthouse.ci.config.js
 
-      - name: List generated reports (debug)
-        if: always()
-        run: |
-          echo "=== .lhci-reports/ ==="
-          ls -la .lhci-reports/ 2>/dev/null || echo "no existe"
-          echo "=== .lighthouseci/ (default lhci) ==="
-          ls -la .lighthouseci/ 2>/dev/null || echo "no existe"
-
       - name: Upload Lighthouse reports as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lighthouse-reports-${{ github.run_id }}
-          path: .lhci-reports/
+          path: lhci-reports/
           retention-days: 14
           if-no-files-found: warn
 

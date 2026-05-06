@@ -47,7 +47,7 @@ module.exports = {
       // de lhci (`.lighthouseci/`) para evitar que el internal cleanup
       // del autorun los borre antes del upload-artifact.
       target: 'filesystem',
-      outputDir: './.lhci-reports',
+      outputDir: './lhci-reports',
       reportFilenamePattern: '%%PATHNAME%%-%%DATETIME%%.report.%%EXTENSION%%',
     },
     assert: {
