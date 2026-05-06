@@ -90,6 +90,11 @@ program
   )
   .option('--eps-codigo-axa <code>', 'Código AXA de la EPS (provisional, hasta extender payload)')
   .option('--afp-codigo-axa <code>', 'Código AXA de la AFP (provisional, hasta extender payload)')
+  .option(
+    '--evento <CREAR|REACTIVAR>',
+    'Evento a simular cuando el payload se construye desde una afiliación (--job-id ignora este flag)',
+    'CREAR',
+  )
   .option('--screenshot <path>', 'Guarda screenshot del estado final', './test-ingreso.png')
   .option('--keep-open', 'Mantiene el browser abierto al terminar')
   .action(
@@ -100,10 +105,13 @@ program
       documento?: string;
       epsCodigoAxa?: string;
       afpCodigoAxa?: string;
+      evento?: string;
       screenshot?: string;
       keepOpen?: boolean;
     }) => {
-      await runWithSentry('test-ingreso', () => testIngresoCommand(options));
+      const evento =
+        options.evento === 'REACTIVAR' || options.evento === 'CREAR' ? options.evento : 'CREAR';
+      await runWithSentry('test-ingreso', () => testIngresoCommand({ ...options, evento }));
     },
   );
 

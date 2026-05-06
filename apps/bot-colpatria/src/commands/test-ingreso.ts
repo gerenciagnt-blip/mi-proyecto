@@ -11,6 +11,7 @@ import {
   type ColpatriaPayload,
   type ConfigResuelta,
 } from '../lib/payload-form.js';
+import { decidirAccion, reactivarHabilitado } from '../lib/decidir-accion.js';
 import { createLogger } from '../lib/logger.js';
 import type { Page } from 'playwright';
 
@@ -54,6 +55,10 @@ export async function testIngresoCommand(options: {
    *  los puede pasar manualmente para probar el flujo end-to-end. */
   epsCodigoAxa?: string;
   afpCodigoAxa?: string;
+  /** Evento a simular cuando el payload se construye desde una
+   *  afiliación. Si viene de un job real (`--job-id`), se ignora y
+   *  prevalece el evento del payload. Default: 'CREAR'. */
+  evento?: 'CREAR' | 'REACTIVAR';
 }): Promise<number> {
   const inicio = Date.now();
   log.info({ options }, 'iniciando test-ingreso');
@@ -106,7 +111,10 @@ export async function testIngresoCommand(options: {
     }
     payload = job.payload as unknown as ColpatriaPayload;
   } else if (options.afiliacionId) {
-    payload = await construirPayloadDesdeAfiliacion(options.afiliacionId);
+    payload = await construirPayloadDesdeAfiliacion(
+      options.afiliacionId,
+      options.evento ?? 'CREAR',
+    );
   } else if (options.documento) {
     // Resolución por documento del cotizante: tomar la afiliación
     // ACTIVA más reciente del cotizante en la empresa de --empresa-id
@@ -119,7 +127,7 @@ export async function testIngresoCommand(options: {
       return 2;
     }
     console.log(`   ↳ Resuelto: afiliación ${afId} (cotizante doc=${options.documento})`);
-    payload = await construirPayloadDesdeAfiliacion(afId);
+    payload = await construirPayloadDesdeAfiliacion(afId, options.evento ?? 'CREAR');
   } else {
     console.error('❌ Pasa --job-id <id>, --afiliacion-id <id> o --documento <numDoc>');
     await prisma.$disconnect();
@@ -209,19 +217,23 @@ export async function testIngresoCommand(options: {
     }
 
     const verif = await verificarEmpleado(page, campos.consulta);
-    if (verif.kind === 'ERROR') {
-      console.error(`❌ BUSCAR falló: ${verif.mensaje}`);
-      exitCode = 3;
-    } else if (verif.kind === 'EXISTE') {
-      console.error(
-        `❌ Empleado ya existe en AXA (ID_OPERACION=${verif.idOperacion}). REACTIVAR no implementado.`,
-      );
-      exitCode = 1;
-    } else {
-      console.log('✅ Empleado nuevo — formIngreso renderizado');
+    const decision = decidirAccion(verif, payload.evento, {
+      reactivarEnabled: reactivarHabilitado(),
+    });
 
-      // Llenar y crear
-      console.log('\n📝 Llenando formIngreso...');
+    if (decision.kind === 'FALLAR') {
+      const tag = decision.retryable ? '⚠ RETRY' : '❌ FAILED';
+      console.error(`${tag} — ${decision.mensaje}`);
+      exitCode = decision.retryable ? 3 : 1;
+    } else {
+      const verboCorto = decision.modo === 'REACTIVAR' ? 'reactivación' : 'creación';
+      console.log(`✅ Form listo para ${verboCorto} (kind=${verif.kind})`);
+      if (decision.warnings) {
+        for (const w of decision.warnings) console.log(`   ⚠ ${w}`);
+      }
+
+      // Llenar y submitear
+      console.log(`\n📝 Llenando formIngreso (${verboCorto})...`);
       const res = await llenarYCrearEmpleado(page, campos, {
         epsCodigoAxa: options.epsCodigoAxa,
         afpCodigoAxa: options.afpCodigoAxa,
@@ -348,7 +360,10 @@ function resolverConfig(
  * `apps/web/src/lib/colpatria/disparos.ts > dispararColpatriaSiAplica`.
  * Si esa función cambia, esta también — son contractuales.
  */
-async function construirPayloadDesdeAfiliacion(afiliacionId: string): Promise<ColpatriaPayload> {
+async function construirPayloadDesdeAfiliacion(
+  afiliacionId: string,
+  evento: 'CREAR' | 'REACTIVAR' = 'CREAR',
+): Promise<ColpatriaPayload> {
   const af = await prisma.afiliacion.findUnique({
     where: { id: afiliacionId },
     select: {
@@ -387,7 +402,7 @@ async function construirPayloadDesdeAfiliacion(afiliacionId: string): Promise<Co
 
   return {
     schemaVersion: 1,
-    evento: 'CREAR',
+    evento,
     afiliacion: {
       id: af.id,
       estado: af.estado,

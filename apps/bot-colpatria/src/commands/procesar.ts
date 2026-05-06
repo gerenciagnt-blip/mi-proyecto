@@ -10,6 +10,7 @@ import {
   type ColpatriaPayload,
   type ConfigResuelta,
 } from '../lib/payload-form.js';
+import { decidirAccion, reactivarHabilitado } from '../lib/decidir-accion.js';
 import { guardarPdfComprobante, validarUploadsDirOAlertar } from '../lib/storage.js';
 import { createLogger } from '../lib/logger.js';
 import { runWatchdog } from '../lib/watchdog.js';
@@ -145,6 +146,12 @@ export async function procesarCommand(options: {
   let exitOk = 0;
   let exitFail = 0;
 
+  // Feature flag REACTIVAR — leído una sola vez por run.
+  const reactivarEnabled = reactivarHabilitado();
+  if (!reactivarEnabled) {
+    console.log('⚠️  REACTIVAR deshabilitado por flag (COLPATRIA_REACTIVAR_ENABLED=false)');
+  }
+
   // 3. Por empresa, login una vez y procesar sus jobs
   for (const [empresaId, jobsEmpresa] of porEmpresa) {
     const empresa = jobsEmpresa[0]!.empresa;
@@ -240,48 +247,34 @@ export async function procesarCommand(options: {
 
           const campos = prepararCamposIngreso(payload, config);
 
-          // Solo CREAR está implementado. REACTIVAR queda como TODO.
-          if (payload.evento !== 'CREAR') {
-            await marcarFallo(
-              job.id,
-              `Evento "${payload.evento}" no implementado (solo CREAR)`,
-              false,
-              Date.now() - t0,
-            );
-            exitFail++;
-            console.log(`   · job ${job.id.slice(-8)}: evento ${payload.evento} no implementado`);
-            continue;
-          }
-
           // Verificar si el empleado ya existe (form de Consulta)
           const verif = await verificarEmpleado(page, campos.consulta);
-          if (verif.kind === 'ERROR') {
-            // Sesión perdida o error visible del portal
-            if (verif.mensaje?.includes('Sesión expiró')) {
-              throw new Error('SESION_EXPIRADA'); // capturado abajo, fuerza re-login
-            }
-            await marcarFallo(job.id, `BUSCAR falló: ${verif.mensaje}`, true, Date.now() - t0);
-            exitFail++;
-            console.log(`   · job ${job.id.slice(-8)}: BUSCAR error — ${verif.mensaje}`);
-            continue;
+
+          // Sesión expirada interrumpe el bucle de la empresa para
+          // forzar un re-login en el próximo run; el resto de errores
+          // los maneja decidirAccion como retryable.
+          if (verif.kind === 'ERROR' && verif.mensaje?.includes('Sesión expiró')) {
+            throw new Error('SESION_EXPIRADA');
           }
-          if (verif.kind === 'EXISTE') {
-            // El empleado ya está registrado en AXA — caso REACTIVAR
-            // que aún no implementamos. Marcamos FAILED no-retryable.
-            await marcarFallo(
-              job.id,
-              `Empleado ya existe en AXA (ID_OPERACION=${verif.idOperacion}); reactivación no implementada`,
-              false,
-              Date.now() - t0,
-            );
+
+          const decision = decidirAccion(verif, payload.evento, { reactivarEnabled });
+
+          if (decision.kind === 'FALLAR') {
+            await marcarFallo(job.id, decision.mensaje, decision.retryable, Date.now() - t0);
             exitFail++;
-            console.log(`   · job ${job.id.slice(-8)}: ya existía en AXA`);
+            const tag = decision.retryable ? 'RETRY' : 'FAILED';
+            console.log(`   · job ${job.id.slice(-8)}: ${tag} — ${decision.mensaje}`);
             continue;
           }
 
-          // verif.kind === 'NUEVO' — llenamos el form (EPS/AFP vienen
-          // ya en el payload desde Sprint 8.5.A)
+          // decision.kind === 'PROCEDER' — llenamos el form completo.
+          // AXA usa el mismo flujo para CREAR y REACTIVAR; el form viene
+          // pre-cargado cuando ID_OPERACION!=0 y el botón cambia a
+          // "Modificar" (el selector ya cubre ambos casos).
           const res = await llenarYCrearEmpleado(page, campos);
+          if (decision.warnings) {
+            res.warnings.push(...decision.warnings);
+          }
 
           if (res.ok) {
             const warnings = res.warnings.length > 0 ? ` · warnings: ${res.warnings.length}` : '';
@@ -310,14 +303,17 @@ export async function procesarCommand(options: {
               }
             }
 
+            const verbo = decision.modo === 'REACTIVAR' ? 'Reactivado' : 'Creado';
             await marcarOk(
               job.id,
-              `Creado en AXA · URL: ${res.urlFinal}${res.mensaje ? ` · ${res.mensaje}` : ''}${warnings}${pdfPath ? ' · pdf:✓' : ''}`,
+              `${verbo} en AXA · URL: ${res.urlFinal}${res.mensaje ? ` · ${res.mensaje}` : ''}${warnings}${pdfPath ? ' · pdf:✓' : ''}`,
               Date.now() - t0,
               pdfPath,
             );
             exitOk++;
-            console.log(`   · job ${job.id.slice(-8)}: ✅ creado${pdfPath ? ' (con PDF)' : ''}`);
+            console.log(
+              `   · job ${job.id.slice(-8)}: ✅ ${verbo.toLowerCase()}${pdfPath ? ' (con PDF)' : ''}`,
+            );
           } else {
             await marcarFallo(
               job.id,
