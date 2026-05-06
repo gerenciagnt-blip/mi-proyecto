@@ -424,10 +424,8 @@ model Empresa {
    * Tipo de ocupación default (depende de GrupoOcupacion).
    */
   colpatriaTipoOcupacionDefault    String?
-  /// @deprecated El bot quema ModalidadTrabajo="01" (Presencial). Campo
-  /// retenido en BD para no perder datos viejos. UI lo ignora.
-  colpatriaModalidadTrabajoDefault String?
-  // TareaAltoRiesgo: hardcoded "0000001"=No aplica en el bot.
+  // ModalidadTrabajo y TareaAltoRiesgo son hardcoded en el bot
+  // ("01"=Presencial, "0000001"=No aplica) — sin campo configurable.
 
   // Relaciones de "permitidos" (Fase 1.5.3)
   nivelesPermitidos     EmpresaNivelRiesgo[]
@@ -885,10 +883,6 @@ model Afiliacion {
   // configuran ni en empresa ni en afiliación.
   /// Cargo del cotizante en la empresa. Ej: "Operario", "Asesor".
   cargo       String?
-  /// @deprecated El bot quema TipoSalario="1" (Básico). Campo retenido
-  /// en BD para no perder datos viejos. UI lo ignora. Se removerá en
-  /// una migración futura cuando esté limpio.
-  tipoSalario String? @default("BASICO")
 
   // Entidades SGSS asignadas (EntidadSgss filtrada por tipo)
   epsId String?
