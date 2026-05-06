@@ -183,6 +183,20 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Administrativo',
     rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
   },
+  // Módulo Reporte AT — el aliado radica desde Administrativo, soporte
+  // gestiona desde la bandeja paralela `soporte.reporte_at`.
+  {
+    key: 'admin.reporte_at',
+    label: 'Reporte AT',
+    grupo: 'Administrativo',
+    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
+  },
+  {
+    key: 'soporte.reporte_at',
+    label: 'Reporte AT',
+    grupo: 'Soporte',
+    rolesAplica: STAFF,
+  },
 ] as const;
 
 /** Agrupa los módulos por su campo `grupo` preservando el orden. */

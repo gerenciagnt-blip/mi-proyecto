@@ -27,6 +27,7 @@ import {
   Activity,
   Bot,
   Scale,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -171,6 +172,12 @@ const NAV: NavItem[] = [
         icon: DollarSign,
         modulo: 'soporte.finanzas.cobro_aliados',
       },
+      {
+        label: 'Reporte AT',
+        href: '/admin/soporte/reporte-at',
+        icon: ClipboardList,
+        modulo: 'soporte.reporte_at',
+      },
     ],
   },
   { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive, modulo: 'base_datos' },
@@ -196,6 +203,12 @@ const NAV: NavItem[] = [
         href: '/admin/administrativo/incapacidades',
         icon: FileText,
         modulo: 'admin.incapacidades',
+      },
+      {
+        label: 'Reporte AT',
+        href: '/admin/administrativo/reporte-at',
+        icon: ClipboardList,
+        modulo: 'admin.reporte_at',
       },
     ],
   },

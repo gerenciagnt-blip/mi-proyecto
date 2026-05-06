@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Briefcase, Wallet, HeartPulse, ArrowRight } from 'lucide-react';
+import { Briefcase, Wallet, HeartPulse, ClipboardList, ArrowRight } from 'lucide-react';
 import { requirePermiso } from '@/lib/auth-helpers';
 
 export const metadata = { title: 'Administrativo — Sistema PILA' };
@@ -20,6 +20,13 @@ export default async function AdministrativoPage() {
       label: 'Incapacidades',
       description: 'Radica una incapacidad y consulta el histórico de estados.',
       tone: 'text-emerald-700 bg-emerald-50',
+    },
+    {
+      href: '/admin/administrativo/reporte-at',
+      icon: ClipboardList,
+      label: 'Reporte AT',
+      description: 'Radica accidentes e incidentes de trabajo y haz seguimiento del caso.',
+      tone: 'text-rose-700 bg-rose-50',
     },
   ];
 

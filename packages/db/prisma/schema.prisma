@@ -220,6 +220,7 @@ model Sucursal {
   carterasAsignadas    CarteraDetallado[]
   incapacidades        Incapacidad[]
   soportesAfiliacion   SoporteAfiliacion[]
+  reportesAt           ReporteAccidenteTrabajo[]
 
   // Finanzas
   /**
@@ -297,6 +298,8 @@ model User {
   pqrsDocsUser            PqrsDocumento[]              @relation("PqrsDocUser")
   efipayTrxIniciadas      EfipayTransaccion[]          @relation("EfipayTrxIniciadaPor")
   colpatriaCertSolicitados ColpatriaCertificadoJob[]   @relation("ColpatriaCertSolicitante")
+  reportesAtCreados        ReporteAccidenteTrabajo[]   @relation("ReporteATCreator")
+  reportesAtGestionesUser  ReporteATGestion[]          @relation("ReporteATGestionUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -841,6 +844,7 @@ model Cotizante {
   carterasDetallado  CarteraDetallado[]
   incapacidades      Incapacidad[]
   soportesAfiliacion SoporteAfiliacion[]
+  reportesAt         ReporteAccidenteTrabajo[]
   movimientosDetalle MovimientoIncDetalle[]
   municipio          Municipio?             @relation(fields: [municipioId], references: [id], onDelete: SetNull)
   departamento       Departamento?          @relation(fields: [departamentoId], references: [id], onDelete: SetNull)
@@ -2874,4 +2878,151 @@ model EfipayTransaccion {
   @@index([estado])
   @@index([referencia])
   @@map("efipay_transaccion")
+}
+
+// =========================================================================
+// MÓDULO REPORTE INTERNO DE ACCIDENTES E INCIDENTES DE TRABAJO (Reporte AT)
+// El aliado radica un reporte desde /admin/administrativo/reporte-at con
+// los datos del trabajador + hechos + causas. Soporte lo procesa desde
+// /admin/soporte/reporte-at y actualiza el estado. Datos del trabajador
+// guardados como snapshot (texto) para preservar el reporte tal como se
+// radicó aunque el cotizante se actualice después.
+// =========================================================================
+
+enum ReporteATEstado {
+  RADICADO
+  EN_REVISION
+  CERRADO
+  ANULADO
+}
+
+enum ReporteATCausa {
+  IMPRUDENCIA_PROPIA
+  IMPRUDENCIA_OTROS
+  FALTA_INSTRUCCIONES
+  POCA_EXPERIENCIA
+  MEDIDAS_INADECUADAS
+  RIESGOS_PROPIOS
+  OTROS
+}
+
+enum ReporteATAccionadaPor {
+  SOPORTE
+  ALIADO
+}
+
+/**
+ * Radicación interna de accidente / incidente de trabajo. El formulario
+ * lo diligencia el aliado (Administrativo) y soporte gestiona los
+ * estados. `tipoDocumento` se guarda como String para no acoplarse al
+ * enum global TipoDocumento (el formato AT acepta CC/CE/PEP/PPT/TI).
+ * `partesCuerpo` se guarda como JSON con la forma:
+ *   [{ parte: "Brazo", lateralidad: "DERECHA" | "IZQUIERDA" | "AMBAS" | "NA" }]
+ */
+model ReporteAccidenteTrabajo {
+  id              String   @id @default(cuid())
+  consecutivo     String   @unique // RAT-000001
+  fechaRadicacion DateTime @default(now())
+
+  /** Sucursal dueña del reporte (tenant). */
+  sucursalId  String
+  /** Cotizante afectado — opcional, link por tipoDoc+numDoc al radicar. */
+  cotizanteId String?
+
+  // ===== Datos del accidente =====
+  /** Fecha del accidente (sólo fecha, sin tz). */
+  fechaAccidente        DateTime
+  /** Día de la semana del accidente — derivado al guardar. */
+  diaSemanaAccidente    String?
+  /** Hora del accidente en formato HH:mm (24h). */
+  horaAccidente         String
+  /** Hora de inicio de la jornada laboral del día del accidente. */
+  horaInicioJornada     String
+  /** Lugar (área y sección) donde ocurrió. */
+  lugar                 String
+  ciudadAccidente       String
+  departamentoAccidente String
+
+  // ===== Datos del trabajador (snapshot) =====
+  trabajadorNombre           String
+  trabajadorTipoDoc          String // CC | CE | PEP | PPT | TI
+  trabajadorNumeroDoc        String
+  trabajadorFondoPension     String?
+  trabajadorEps              String?
+  trabajadorCargo            String
+  /** Tiempo de experiencia en el cargo, expresado en meses. */
+  trabajadorExperienciaMeses Int?
+  trabajadorTelefono         String?
+  trabajadorDireccion        String?
+  trabajadorCiudadResidencia String?
+  trabajadorEstadoCivil      String?
+  trabajadorEdad             Int?
+
+  // ===== Empresa o razón social afiliada =====
+  empresaRazonSocial String
+  empresaNit         String
+
+  // ===== Hechos =====
+  hechosQueOcurrio  String
+  hechosCuandoDonde String
+  hechosComoOcurrio String
+
+  // ===== Causas marcadas por el aliado =====
+  causas      ReporteATCausa[]
+  causasOtros String?
+
+  /** Partes del cuerpo afectadas con su lateralidad. JSON. */
+  partesCuerpo Json
+
+  // ===== Responsable(s) del reporte =====
+  responsableNombre    String
+  responsableTelefono  String
+  responsableCorreo    String
+
+  responsable2Nombre   String?
+  responsable2Telefono String?
+  responsable2Correo   String?
+
+  /** Correo del trabajador para notificación / firma. */
+  trabajadorCorreoFirma String?
+
+  /** Fecha en que el aliado elaboró el reporte (puede diferir del radicado). */
+  fechaElaboracion DateTime
+
+  estado        ReporteATEstado @default(RADICADO)
+  observaciones String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  sucursal  Sucursal           @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cotizante Cotizante?         @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
+  createdBy User?              @relation("ReporteATCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  gestiones ReporteATGestion[]
+
+  @@index([sucursalId])
+  @@index([cotizanteId])
+  @@index([estado])
+  @@index([fechaRadicacion])
+  @@index([sucursalId, estado, fechaRadicacion(sort: Desc)])
+  @@map("reporte_at")
+}
+
+/** Bitácora de gestiones (cambios de estado, observaciones) sobre un reporte AT. */
+model ReporteATGestion {
+  id           String                @id @default(cuid())
+  reporteAtId  String
+  accionadaPor ReporteATAccionadaPor
+  nuevoEstado  ReporteATEstado?
+  descripcion  String
+  userId       String?
+  userName     String?
+  createdAt    DateTime              @default(now())
+
+  reporteAt ReporteAccidenteTrabajo @relation(fields: [reporteAtId], references: [id], onDelete: Cascade)
+  user      User?                   @relation("ReporteATGestionUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([reporteAtId])
+  @@index([userId])
+  @@map("reporte_at_gestion")
 }

@@ -1,5 +1,13 @@
 import Link from 'next/link';
-import { LifeBuoy, Wallet, HeartPulse, FileText, DollarSign, ArrowRight } from 'lucide-react';
+import {
+  LifeBuoy,
+  Wallet,
+  HeartPulse,
+  FileText,
+  DollarSign,
+  ClipboardList,
+  ArrowRight,
+} from 'lucide-react';
 import { requirePermiso } from '@/lib/auth-helpers';
 
 export const metadata = { title: 'Soporte — Sistema PILA' };
@@ -34,6 +42,13 @@ export default async function SoportePage() {
       label: 'Finanzas',
       description: 'Cobros a aliados + movimientos bancarios + detalle pagos.',
       tone: 'text-amber-700 bg-amber-50',
+    },
+    {
+      href: '/admin/soporte/reporte-at',
+      icon: ClipboardList,
+      label: 'Reporte AT',
+      description: 'Bandeja de accidentes/incidentes de trabajo radicados por los aliados.',
+      tone: 'text-rose-700 bg-rose-50',
     },
   ];
 
