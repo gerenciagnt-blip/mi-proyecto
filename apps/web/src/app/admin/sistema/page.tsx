@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { requirePermiso } from '@/lib/auth-helpers';
+import { AutoRefresh } from '@/components/admin/auto-refresh';
 import {
   chequearBD,
   chequearColpatria,
@@ -80,14 +81,17 @@ export default async function SistemaPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
-          <Activity className="h-6 w-6 text-brand-blue" />
-          Estado del sistema
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Salud de la base de datos, jobs programados y uploads. Solo visible para ADMIN.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+            <Activity className="h-6 w-6 text-brand-blue" />
+            Estado del sistema
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Salud de la base de datos, jobs programados y uploads. Solo visible para ADMIN.
+          </p>
+        </div>
+        <AutoRefresh intervalMs={30000} label="Auto-actualiza cada 30s" />
       </header>
 
       {/* ====== BASE DE DATOS ====== */}
