@@ -43,10 +43,11 @@ module.exports = {
     upload: {
       // En CI guardamos los reportes en filesystem para que el step
       // `Upload Lighthouse reports as artifact` los suba a GitHub
-      // (retención 14 días). El config base (`lighthouse.config.js`)
-      // sigue usando temporary-public-storage para el flujo manual.
+      // (retención 14 días). Usamos un outputDir distinto del default
+      // de lhci (`.lighthouseci/`) para evitar que el internal cleanup
+      // del autorun los borre antes del upload-artifact.
       target: 'filesystem',
-      outputDir: '.lighthouseci',
+      outputDir: './.lhci-reports',
       reportFilenamePattern: '%%PATHNAME%%-%%DATETIME%%.report.%%EXTENSION%%',
     },
     assert: {
