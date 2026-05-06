@@ -63,6 +63,7 @@ export function EditCodigoAxaRow({
     <div className="flex items-center gap-1">
       <input
         type="text"
+        aria-label={`Código AXA de ${nombre}`}
         value={valor}
         onChange={(e) => setValor(e.target.value)}
         onBlur={guardar}
