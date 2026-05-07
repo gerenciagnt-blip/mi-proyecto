@@ -571,6 +571,29 @@ Sirve un documento adjunto de una solicitud **Soporte · Afiliaciones**
 
 ---
 
+### 17b. `GET /api/reporte-at/[id]/documentos/[docId]` (v2.0)
+
+**Archivo:** `apps/web/src/app/api/reporte-at/[id]/documentos/[docId]/route.ts`
+
+Sirve un documento adjunto a un **Reporte AT** (FURAT u otro soporte
+operativo cargado por Soporte al gestionar el caso). El aliado **NO**
+descarga estos archivos; son operativos del staff.
+
+**Auth:** `requirePermiso('soporte.reporte_at')`. Aliado obtiene `403`
+implícito vía la guard.
+
+**Validaciones:**
+
+- Pertenencia (`docId.reporteAtId === id`).
+- **Retención 30 días** (`eliminado === true` → `410` con mensaje "30 días").
+- Anti-traversal estándar.
+
+**Headers de respuesta:** `Content-Type: <archivoMime>`,
+`Content-Disposition: attachment; filename="<archivoNombreOriginal>"`,
+`Cache-Control: no-store`.
+
+---
+
 ### 18. `GET /api/transacciones/cartera/excel`
 
 **Archivo:** `apps/web/src/app/api/transacciones/cartera/excel/route.ts`

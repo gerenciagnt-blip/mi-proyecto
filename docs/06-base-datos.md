@@ -542,6 +542,51 @@ Mismo formato que `IncapacidadDocumento` (retención 120d). `accionadaPor: Sopor
 
 Bitácora análoga con enum `SoporteAfAccionadaPor` (incluye `BOT`).
 
+#### `ReporteAccidenteTrabajo` → `reporte_at` (v2.0)
+
+Radicación interna de accidente / incidente de trabajo. Consecutivo
+`RAT-######` desde la secuencia Postgres `reporte_at_consecutivo_seq`.
+El aliado lo radica desde `/admin/administrativo/reporte-at` (modal
+con auto-arrastre de los datos del cotizante por tipo+nº doc); soporte
+gestiona el estado desde `/admin/soporte/reporte-at`.
+
+Campos clave: `sucursalId`, `cotizanteId?` (opcional, link por tipo+nº
+doc cuando es CC/CE/TI), `fechaAccidente`, `diaSemanaAccidente`
+(derivado), `horaAccidente`, `horaInicioJornada`, `lugar`,
+`ciudadAccidente`, `departamentoAccidente`, snapshot completo del
+trabajador (nombre, tipoDoc string que acepta `CC|CE|PEP|PPT|TI`,
+nºDoc, fondo pensión, EPS, cargo, experiencia en meses, teléfono,
+dirección, ciudad residencia, estado civil, edad), empresa (razón
+social + NIT), tres bloques de hechos (qué / cuándo y dónde / cómo),
+`causas: ReporteATCausa[]` + `causasOtros?`, `partesCuerpo: Json`
+(`[{ parte, lateralidad }]`), responsables (1 obligatorio + 1
+opcional), correo del trabajador para firma, `fechaElaboracion`,
+`estado: ReporteATEstado @default(RADICADO)`.
+
+Índices: `[sucursalId]`, `[cotizanteId]`, `[estado]`, `[fechaRadicacion]`,
+compuesto `[sucursalId, estado, fechaRadicacion(sort: Desc)]`.
+
+#### `ReporteATDocumento` → `reporte_at_documentos` (v2.0)
+
+Adjunto con retención **30 días**. Patrón idéntico a
+`IncapacidadDocumento` pero más simple (sin `confidencial`).
+
+| Campo                                                                               | Tipo                      | Notas                               |
+| ----------------------------------------------------------------------------------- | ------------------------- | ----------------------------------- |
+| `reporteAtId`                                                                       | `String`                  | FK Cascade                          |
+| `tipo`                                                                              | `ReporteATDocumentoTipo`  | `FURAT \| OTRO`                     |
+| `archivoPath`, `archivoHash`, `archivoMime`, `archivoSize`, `archivoNombreOriginal` | mixto                     | hash sha-256 hex                    |
+| `eliminado`                                                                         | `Boolean @default(false)` | Día 31: archivo borrado, fila queda |
+| `eliminadoEn`                                                                       | `DateTime?`               |                                     |
+| `userId?`                                                                           | `String?`                 | Sólo soporte sube documentos        |
+
+Índices: `[reporteAtId]`, `[tipo]`, `[eliminado]`, `[userId]`.
+
+#### `ReporteATGestion` → `reporte_at_gestion` (v2.0)
+
+Bitácora con `accionadaPor: ReporteATAccionadaPor` (`SOPORTE | ALIADO`),
+`nuevoEstado: ReporteATEstado?`, `descripcion`, `userId?`, `userName?`.
+
 ### 8.3.8 Dominio FINANZAS
 
 #### `CobroAliado` → `cobro_aliado`
@@ -779,13 +824,15 @@ Consecutivos secuenciales (`CMP-######`, `PLN-######`, `CC-######`, `MI-######`,
 
 ### 8.7.1 Documentos
 
-| Tabla                                                 | Vida en disco | Acción al expirar                                                                                                            | Workflow              |
-| ----------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| `incapacidad_documentos`                              | 120 días      | Borrar archivo físico, marcar `eliminado=true` + `eliminadoEn`. El registro queda como evidencia (hash, mime, size, nombre). | `retention-daily.yml` |
-| `soporte_afiliacion_documentos`                       | 120 días      | Igual que incapacidad.                                                                                                       | `retention-daily.yml` |
-| `cobro_aliado_documento` / `movimiento_det_documento` | 120 días      | Igual política.                                                                                                              | `retention-daily.yml` |
-| `colpatria_afiliacion_jobs.pdfPath`                   | **3 días**    | Borrar PDF, marcar `pdfArchivedAt`. Lecturas posteriores → HTTP 410 Gone.                                                    | `retention-daily.yml` |
-| `colpatria_afiliacion_jobs.screenshotsPaths`          | 3 días        | Igual.                                                                                                                       | `retention-daily.yml` |
+| Tabla                                                 | Vida en disco       | Acción al expirar                                                                                                            | Workflow              |
+| ----------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `incapacidad_documentos` (regulares)                  | 120 días            | Borrar archivo físico, marcar `eliminado=true` + `eliminadoEn`. El registro queda como evidencia (hash, mime, size, nombre). | `retention-daily.yml` |
+| `incapacidad_documentos` (`confidencial=true`)        | **180 días** (v2.0) | Igual política, plazo extendido por procesos legales en curso (DPP, tutelas, desacatos).                                     | `retention-daily.yml` |
+| `soporte_afiliacion_documentos`                       | 120 días            | Igual que incapacidad regular.                                                                                               | `retention-daily.yml` |
+| `cobro_aliado_documento` / `movimiento_det_documento` | 120 días            | Igual política.                                                                                                              | `retention-daily.yml` |
+| `reporte_at_documentos` (FURAT y otros)               | **30 días** (v2.0)  | Soporte operativo de corta duración. Lecturas posteriores → HTTP 410 Gone.                                                   | `retention-daily.yml` |
+| `colpatria_afiliacion_jobs.pdfPath`                   | **3 días**          | Borrar PDF, marcar `pdfArchivedAt`. Lecturas posteriores → HTTP 410 Gone.                                                    | `retention-daily.yml` |
+| `colpatria_afiliacion_jobs.screenshotsPaths`          | 3 días              | Igual.                                                                                                                       | `retention-daily.yml` |
 
 ### 8.7.2 Bitácora y datos
 

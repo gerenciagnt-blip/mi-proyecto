@@ -234,14 +234,24 @@ Los workflows comparten una validación común en cada job: el secret `DATABASE_
 - **Timeout**: 8 min.
 - **On-failure**: el siguiente cron (15 min después) reintenta automáticamente.
 
-### `retention-daily.yml` — Retención 120d
+### `retention-daily.yml` — Retención por bucket (v2.0)
 
 - **Cron**: `0 4 * * *` → 04:00 UTC = 23:00 Colombia del día anterior, todos los días.
-- **Workflow_dispatch**: input `dry` (true/false) para solo contar sin borrar.
-- **Hace**: borra/anonimiza incapacidades y `soporte-af` con más de 120 días de antigüedad. Borra archivos físicos del filesystem y registros en BD.
+- **Workflow_dispatch**: input `dry` (true/false) para solo contar sin borrar; input `module` para acotar a un bucket (`incapacidades` / `soporte-af` / `reporte-at` / `all`).
+- **Hace**: aplica retención **por bucket** (regla declarativa en `apps/cli/src/commands/retention-run.ts`):
+
+  | Bucket                                            |    Días | Notas                                                         |
+  | ------------------------------------------------- | ------: | ------------------------------------------------------------- |
+  | `incapacidad_documentos` con `confidencial=false` |     120 | Documentos médicos / administrativos del flujo regular.       |
+  | `incapacidad_documentos` con `confidencial=true`  | **180** | **v2.0** — extendido por procesos legales (DPP, tutelas).     |
+  | `soporte_afiliacion_documentos`                   |     120 | Sin cambios.                                                  |
+  | `reporte_at_documentos`                           |  **30** | **v2.0** — soporte operativo de corta duración (FURAT, etc.). |
+
+  Para cada vencido: borra el archivo físico bajo `UPLOADS_DIR`, marca `eliminado=true` + `eliminadoEn` en BD. El registro queda como evidencia (hash, mime, size, nombre).
+
 - **Env**: `DATABASE_URL`, `UPLOADS_DIR`.
 - **Timeout**: 10 min.
-- **On-failure**: la limpieza se aplaza un día. No hay impacto regulatorio mientras no se acumulen muchos días seguidos.
+- **On-failure**: la limpieza se aplaza un día. No hay impacto regulatorio mientras no se acumulen muchos días seguidos. El comando se puede correr manualmente con `pnpm cli retention:run [--dry] [--module ...]`.
 
 ### `auditoria-purge-monthly.yml` — Purga bitácora
 

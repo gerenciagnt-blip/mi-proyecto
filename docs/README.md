@@ -1,7 +1,10 @@
 # Sistema PILA — Documentación Técnica
 
 > Documentación de nivel **enterprise / due diligence** del Sistema PILA.
-> Generada el 2026-04-28 — última versión validada contra `master @ 3c4325f`.
+>
+> **Versión actual: 2.0.0** (07-may-2026). Generación inicial: 28-abr-2026.
+> Para el detalle de cambios entre versiones, ver
+> [`CHANGELOG.md`](CHANGELOG.md).
 >
 > Uso: cualquier equipo que entre nuevo (auditor, arquitecto, desarrollador,
 > operador) puede entender, mantener, escalar o reimplementar el sistema
@@ -68,24 +71,25 @@
 ~30.000 líneas de Apps Script legacy a un monorepo TypeScript moderno
 y unificado.
 
-| Aspecto       | Valor                                                                    |
-| ------------- | ------------------------------------------------------------------------ |
-| Arquitectura  | Monorepo pnpm (3 apps + 2 packages)                                      |
-| Stack web     | Next.js 15.1 App Router · React 19 · TailwindCSS 4 · TypeScript estricto |
-| BD            | PostgreSQL 16 (Neon) · Prisma 6.19 · 50+ modelos · 63 migraciones        |
-| Auth          | NextAuth v5 + bcrypt(12) + RBAC con `RolCustom` (matriz módulo × acción) |
-| Bot RPA       | Playwright + Pino + Commander (Colpatria ARL — 1500–2100 afil/mes)       |
-| CLI admin     | 15 comandos (admin-create, seeds, migraciones, sync, retención)          |
-| Workflows     | 12 GitHub Actions (CI + crons operativos)                                |
-| Tests         | ~368 tests Vitest + suite k6/Lighthouse                                  |
-| Observability | Sentry (web + bot) + pino estructurado                                   |
-| Crypto        | AES-256-GCM scrypt KDF (credenciales Colpatria)                          |
-| Storage       | Filesystem `UPLOADS_DIR` absoluto + S3 backup BD                         |
+| Aspecto       | Valor                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Arquitectura  | Monorepo pnpm (3 apps + 2 packages)                                                                              |
+| Stack web     | Next.js 15.1 App Router · React 19 · TailwindCSS 4 · TypeScript estricto                                         |
+| BD            | PostgreSQL 16 (Neon) · Prisma 6.19 · 53+ modelos · 69 migraciones · cliente con `output` custom                  |
+| Auth          | NextAuth v5 + bcrypt(12) + RBAC con `RolCustom` (matriz módulo × acción) + `requirePermiso` page-guard           |
+| Bot RPA       | Playwright + Pino + Commander (Colpatria ARL — 1500–2100 afil/mes; flujos NUEVA, REACTIVAR, certificado vigente) |
+| CLI admin     | 15 comandos (admin-create, seeds, migraciones, sync, retención por bucket, scrape-codigos-axa)                   |
+| Workflows     | 12 GitHub Actions (CI + crons operativos + k6/Lighthouse)                                                        |
+| Tests         | 362 tests Vitest + suite k6/Lighthouse                                                                           |
+| Observability | Sentry (web + bot) + pino estructurado                                                                           |
+| Crypto        | AES-256-GCM scrypt KDF (credenciales Colpatria)                                                                  |
+| Storage       | Filesystem `UPLOADS_DIR` absoluto + S3 backup BD · retención por bucket (30/120/180 días)                        |
 
-**Estado**: **production-ready** para los módulos core (afiliaciones,
-PILA, cartera, incapacidades, jurídico, bot Colpatria). Pendientes
-declarados: notificaciones email/SMS (4.4/4.5), Carné AXA (8.6),
-REACTIVAR en bot, catálogo EPS/AFP completo.
+**Estado (v2.0)**: **production-ready** para los módulos core
+(afiliaciones, PILA, cartera, incapacidades, jurídico, bot Colpatria,
+**Reporte AT**). Pendientes declarados: notificaciones email/SMS
+(Sprints 4.4 / 4.5 — bloqueados por credenciales Resend / Twilio),
+tests E2E Playwright web (sprint aparte).
 
 ---
 
@@ -127,9 +131,12 @@ secciones afectadas.
 
 ## Versionado de la documentación
 
-| Fecha      | Commit    | Cambios                                         |
-| ---------- | --------- | ----------------------------------------------- |
-| 2026-04-28 | `3c4325f` | Generación inicial completa de las 11 secciones |
+Detalle completo en [`CHANGELOG.md`](CHANGELOG.md).
+
+| Versión | Fecha      | Commit base | Cambios                                                                                                                                 |
+| ------- | ---------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.0.0   | 2026-05-07 | (master)    | Reporte AT, permisos granulares en toda la app admin, retención por bucket, fix Prisma client, hardening seguridad, landing actualizada |
+| 1.0.0   | 2026-04-28 | `3c4325f`   | Generación inicial completa de las 11 secciones                                                                                         |
 
 ---
 
