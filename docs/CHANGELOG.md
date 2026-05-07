@@ -12,9 +12,8 @@ Segundo release mayor. Consolida los sprints abril–mayo de 2026:
 permisos granulares en toda la app admin, módulo Reporte AT (radicación
 e investigación de accidentes de trabajo), retención de archivos por
 bucket, hardening de seguridad (CSP enforce, rate-limit IP, k6/LH en
-CI), y refactor del cliente Prisma para resolver el bug Windows + pnpm
-
-- Next 15.
+CI) y refactor del cliente Prisma para resolver el bug Windows / pnpm
+/ Next 15.
 
 ### Highlights
 
@@ -143,8 +142,8 @@ CI), y refactor del cliente Prisma para resolver el bug Windows + pnpm
   descarga del PDF "Imprimir datos básicos" via network capture
   con firma binaria `%PDF-`.
 - `commands/scrape-codigos-axa.ts`: poblado automático del catálogo
-  EPS/AFP con `codigoAxa` (28 EPS + 5 AFP) usando matching stopword
-  - estricto en duplicados.
+  EPS/AFP con `codigoAxa` (28 EPS + 5 AFP) usando matching por
+  stopword fuzzy (estricto cuando hay duplicados — no rompe el bot).
 
 #### CLI (`apps/cli`)
 
