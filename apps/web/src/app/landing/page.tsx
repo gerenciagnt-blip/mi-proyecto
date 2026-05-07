@@ -22,6 +22,7 @@ import {
   Plus,
   Minus,
   MessageCircle,
+  ClipboardList,
 } from 'lucide-react';
 import { waUrl, WA_MENSAJES } from './_components/whatsapp';
 import { WhatsappFloat } from './_components/whatsapp-float';
@@ -442,6 +443,13 @@ function Servicios() {
       description:
         'Cuando una incapacidad se complica, nuestro equipo legal toma el caso. Documentos confidenciales (derecho de petición, tutela, desacato, resolución) protegidos por permisos granulares.',
     },
+    {
+      icon: ClipboardList,
+      tone: 'amber' as const,
+      title: 'Gestión de AT',
+      description:
+        'Radicación e investigación de accidentes de trabajo, documentación del caso (FURAT y soportes) y programación de actividades personalizadas según las necesidades de cada cliente.',
+    },
   ];
 
   return (
@@ -453,8 +461,8 @@ function Servicios() {
           description="Sin saltar entre 5 portales distintos ni perseguir a los operadores. Centralizado y automatizado."
         />
 
-        {/* 5 servicios — grid 3 cols en lg+: 3 arriba, 2 abajo. La fila
-            inferior queda alineada a la izquierda (patrón estándar). */}
+        {/* 6 servicios — grid 3 cols en lg+ (2 filas de 3). En sm queda
+            como 2×3, en xs como columna única. */}
         <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
             <ServicioCard key={item.title} {...item} />
@@ -472,7 +480,7 @@ function ServicioCard({
   description,
 }: {
   icon: typeof FileSpreadsheet;
-  tone: 'blue' | 'turquoise' | 'green' | 'indigo' | 'rose';
+  tone: 'blue' | 'turquoise' | 'green' | 'indigo' | 'rose' | 'amber';
   title: string;
   description: string;
 }) {
@@ -482,6 +490,7 @@ function ServicioCard({
     green: 'bg-brand-green/10 text-brand-green',
     indigo: 'bg-indigo-100 text-indigo-700',
     rose: 'bg-rose-100 text-rose-700',
+    amber: 'bg-amber-100 text-amber-700',
   }[tone];
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-brand-blue/30 hover:shadow-card-float">
@@ -902,6 +911,52 @@ function ContactoItem({ icon: Icon, label }: { icon: typeof Mail; label: string 
 // ─────────────────────────────────────────────────────────────
 // FOOTER
 // ─────────────────────────────────────────────────────────────
+// Iconos SVG inline para marcas — lucide 1.8.0 (la versión instalada)
+// no expone Instagram/Facebook porque son marcas registradas. Usamos los
+// glifos oficiales en SVG con currentColor para heredar el tono del
+// botón (estado normal y hover).
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
+
+function FacebookIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+      <path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H8v-2.89h2.44V9.84c0-2.41 1.43-3.74 3.62-3.74 1.05 0 2.15.19 2.15.19v2.36h-1.21c-1.19 0-1.56.74-1.56 1.5V12h2.66l-.43 2.89h-2.23v6.99A10 10 0 0 0 22 12z" />
+    </svg>
+  );
+}
+
+// URLs de redes sociales — actualizar con los handles oficiales de
+// Grupo de Negocios Temporales / Sistema PILA cuando estén definidos.
+const SOCIAL_LINKS = [
+  {
+    label: 'Instagram',
+    href: 'https://www.instagram.com/sistemapila',
+    Icon: InstagramIcon,
+  },
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/sistemapila',
+    Icon: FacebookIcon,
+  },
+];
+
 function Footer() {
   const year = new Date().getFullYear();
   return (
@@ -923,6 +978,26 @@ function Footer() {
               automática a ARL, incapacidades, cartera y soporte jurídico — hecha para empresas del
               sector de la seguridad social e independientes que buscan simplicidad y trazabilidad.
             </p>
+
+            {/* Redes sociales */}
+            <div className="mt-6">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Síguenos</p>
+              <ul className="mt-3 flex items-center gap-2">
+                {SOCIAL_LINKS.map(({ label, href, Icon }) => (
+                  <li key={label}>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Sistema PILA en ${label}`}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-brand-blue hover:bg-brand-blue hover:text-white"
+                    >
+                      <Icon className="h-4 w-4" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:col-span-7">
@@ -933,6 +1008,7 @@ function Footer() {
                 { label: 'Afiliación a ARL', href: '#servicios' },
                 { label: 'Cartera', href: '#servicios' },
                 { label: 'Jurídico', href: '#servicios' },
+                { label: 'Gestión de AT', href: '#servicios' },
               ]}
             />
             <FooterColumn

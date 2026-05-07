@@ -3,13 +3,21 @@
 /**
  * Modales legales: Términos de uso, Política de privacidad, Habeas Data.
  *
- * Contenidos base estándar para SaaS colombiano (Ley 1581 de 2012,
- * Decreto 1377 de 2013, Resolución 2388 de 2016). DRAFT — revisar con
- * abogado especialista en protección de datos antes del lanzamiento
- * público.
+ * Textos oficiales validados por el área jurídica y vigentes desde el
+ * 5 de mayo de 2026 (Ley 1581 de 2012 + Decreto 1377 de 2013 + demás
+ * normatividad colombiana de protección de datos personales).
  *
- * Owner: Grupo de Negocios Temporales SAS — Pereira, Colombia.
- * Contacto: gerencia.gnt@gmail.com
+ * Datos canónicos del responsable
+ * --------------------------------
+ *   Razón social: Grupo de Negocios Temporales SAS
+ *   NIT: 901647065-4
+ *   Correo: protecciondedatos@gntemporales.com
+ *   Horario: lunes a viernes, 8:00–12:00 y 14:00–18:00
+ *   Domicilio: Calle 19 N° 6-60 Piso 2, Pereira, Risaralda
+ *
+ * Cualquier cambio en estos datos se debe hacer en las constantes que
+ * siguen — los textos legales referencian las constantes, no copias
+ * literales.
  */
 
 import { useState } from 'react';
@@ -18,14 +26,14 @@ import { Dialog } from '@/components/ui/dialog';
 type LegalDoc = 'terminos' | 'privacidad' | 'habeas-data';
 
 const RAZON_SOCIAL = 'Grupo de Negocios Temporales SAS';
-const CIUDAD = 'Pereira, Colombia';
-const EMAIL = 'gerencia.gnt@gmail.com';
-const FECHA_VIGENCIA = 'Mayo de 2026';
-const NIT = '[NIT a completar]';
-const MATRICULA = '[Matrícula CCP a completar]';
-const DIRECCION_FISICA = '[Dirección física en Pereira a completar]';
-const WEBSITE_URL = '[URL del sitio web a completar]';
+const CIUDAD = 'Pereira, Risaralda';
+/** Único correo oficial — protección de datos, derechos del titular, PQRS, soporte legal. */
+const EMAIL = 'protecciondedatos@gntemporales.com';
+const FECHA_VIGENCIA = '5 de mayo de 2026';
+const NIT = '901647065-4';
+const DIRECCION_FISICA = 'Calle 19 N° 6-60 Piso 2';
 const NOMBRE_PLATAFORMA = 'Sistema PILA';
+const HORARIO = 'lunes a viernes, 8:00 a.m. a 12:00 m. y de 2:00 p.m. a 6:00 p.m.';
 
 const LEGAL_DOCS: Record<LegalDoc, { title: string; subtitle: string; sections: Section[] }> = {
   terminos: {
@@ -36,7 +44,7 @@ const LEGAL_DOCS: Record<LegalDoc, { title: string; subtitle: string; sections: 
         heading: '1. Identificación del prestador y aceptación',
         body: `Los presentes Términos y condiciones de uso (en adelante, los "Términos") regulan el acceso y la utilización de la plataforma ${NOMBRE_PLATAFORMA} (en adelante, la "Plataforma") y de los servicios complementarios prestados a través de la misma.
 
-El prestador del servicio es ${RAZON_SOCIAL}, sociedad por acciones simplificada constituida bajo las leyes de la República de Colombia, identificada con NIT ${NIT}, inscrita en el Registro Mercantil de la Cámara de Comercio de Pereira bajo la matrícula ${MATRICULA}, con domicilio principal en ${DIRECCION_FISICA}, ${CIUDAD}, sitio web ${WEBSITE_URL} y correo electrónico de contacto ${EMAIL} (en adelante, "${RAZON_SOCIAL}", "nosotros" o el "Prestador").
+El prestador del servicio es ${RAZON_SOCIAL}, sociedad por acciones simplificada constituida bajo las leyes de la República de Colombia, identificada con NIT ${NIT}, inscrita en el Registro Mercantil de la Cámara de Comercio de Pereira, con domicilio principal en ${DIRECCION_FISICA}, ${CIUDAD}, y correo electrónico de contacto ${EMAIL} (en adelante, "${RAZON_SOCIAL}", "nosotros" o el "Prestador").
 
 Al registrarse, acceder o utilizar la Plataforma de cualquier forma, el Usuario declara que: (i) ha leído íntegramente, comprende y acepta sin reservas estos Términos, la Política de privacidad y la Autorización de tratamiento de datos personales; (ii) cuenta con plena capacidad legal para contratar conforme al artículo 1502 del Código Civil colombiano y, cuando actúa en nombre de una persona jurídica, está debidamente facultado para obligarla; (iii) los datos suministrados son veraces, exactos y actualizados. Si el Usuario no está de acuerdo con cualquiera de estas disposiciones, deberá abstenerse de registrarse y de usar la Plataforma.`,
       },
@@ -251,10 +259,9 @@ Acuerdo íntegro. Estos Términos, junto con la Política de privacidad, la Auto
         heading: '17. Contacto',
         body: `${RAZON_SOCIAL}
 NIT: ${NIT}
-Matrícula mercantil: ${MATRICULA}
 Domicilio: ${DIRECCION_FISICA}, ${CIUDAD}
 Correo electrónico: ${EMAIL}
-Sitio web: ${WEBSITE_URL}`,
+Horario de atención: ${HORARIO}`,
       },
     ],
   },
@@ -264,199 +271,269 @@ Sitio web: ${WEBSITE_URL}`,
     subtitle: `Vigencia: ${FECHA_VIGENCIA} · ${RAZON_SOCIAL}`,
     sections: [
       {
-        heading: '1. Identificación del Responsable del Tratamiento',
-        body: `Razón social: ${RAZON_SOCIAL}.
-NIT: ${NIT}.
-Matrícula mercantil: ${MATRICULA} (Cámara de Comercio de Pereira).
-Domicilio: ${DIRECCION_FISICA}, ${CIUDAD}.
-Correo electrónico para protección de datos: ${EMAIL}.
-Sitio web: ${WEBSITE_URL}.
+        heading: '1. Presentación',
+        body: `La presente política se define de conformidad con la entrada en vigencia de la Ley Estatutaria 1581 de 2012, la cual tiene por objeto dictar las disposiciones generales para la protección de datos personales y desarrollar el derecho constitucional que tienen todas las personas de conocer, actualizar y rectificar la información que se haya recogido sobre ellos en bases de datos o archivos, así como el derecho a la información.
 
-${RAZON_SOCIAL} (en adelante, el "Responsable") actúa como Responsable del Tratamiento de los datos personales recolectados a través de la plataforma ${NOMBRE_PLATAFORMA} (la "Plataforma"). Cuando el cliente sea una empresa que carga datos de sus propios cotizantes, ${RAZON_SOCIAL} podrá actuar como Encargado del Tratamiento, en cuyo caso se suscribirán los acuerdos de transmisión correspondientes.`,
+Teniendo en cuenta lo establecido en la normatividad colombiana, la empresa ${RAZON_SOCIAL}, y/o las entidades que pertenezcan o llegaren a pertenecer a su grupo empresarial, teniendo en cuenta su condición de responsable del tratamiento de datos y con el fin de brindar las garantías necesarias para salvaguardar la información de la comunidad, se permite presentar la política de tratamientos en materia de protección de datos personales, en aras de dar efectivo cumplimiento a dicha normatividad y en especial para la atención de consultas y reclamos acerca del tratamiento de datos de carácter personal que recoja y maneje.
+
+En virtud de lo anterior, dentro del deber legal y corporativo de ${RAZON_SOCIAL}, de proteger el derecho a la privacidad de las personas, así como la facultad de conocer, actualizar o solicitar la información que sobre ellas se archive en bases de datos, ha diseñado la presente política en la cual se describe y explica el tratamiento de la información personal a la que tiene acceso a través de nuestro sitio web, correo electrónico, información física, mensajes de texto, mensaje de voz, App, llamadas telefónicas, medios físicos o electrónicos, actuales o que en el futuro se desarrollen como otras comunicaciones enviadas así como por intermedio de terceros que participan en nuestra relación comercial o legal con todos nuestros clientes, empleados, proveedores, aliados estratégicos y vinculados.
+
+La presente se irá ajustando en la medida en que se vaya reglamentando la normatividad aplicable a la materia y entren en vigencia nuevas disposiciones.
+
+Los términos y condiciones expresados a continuación, regulan el uso de este sitio web y los cuales se han puesto a su servicio. Cuando ingresa y usa nuestra Plataforma, adquiere de forma automática la calidad de "Usuario". En virtud de lo anterior, el Usuario entiende que el uso de la presente herramienta significa una aceptación de este Aviso Legal, así como de las condiciones generales de uso. En cualquier momento y sin obligación de notificarlo con anterioridad, ${RAZON_SOCIAL} puede editar, cambiar, renovar, agregar o retirar cualquier parte o la totalidad de los términos y condiciones de la Plataforma. Por eso es su responsabilidad como Usuario, verificar la información contenida en los términos y condiciones del sitio, siempre que vaya a hacer uso de alguno de sus contenidos o servicios.`,
       },
       {
-        heading: '2. Marco normativo aplicable',
+        heading:
+          '2. Identificación del responsable y/o encargado del tratamiento de datos personales',
+        body: `Razón social: ${RAZON_SOCIAL}.
+NIT: ${NIT}.
+Correo electrónico: ${EMAIL}.
+Horario de atención presencial: ${HORARIO}.
+Domicilio principal y dirección de notificación judicial: ${DIRECCION_FISICA}, ${CIUDAD}.
+
+En adelante, el "Responsable" actúa como Responsable del Tratamiento de los datos personales recolectados a través de la plataforma ${NOMBRE_PLATAFORMA} (la "Plataforma"). Cuando el cliente sea una empresa que carga datos de sus propios cotizantes, ${RAZON_SOCIAL} podrá actuar como Encargado del Tratamiento, en cuyo caso se suscribirán los acuerdos de transmisión correspondientes.`,
+      },
+      {
+        heading: '3. Aviso legal',
+        body: `El Usuario, al consentir en cualquiera de los contratos que se perfeccionan al realizar transacciones, declara bajo la gravedad de juramento, que sus ingresos provienen de actividades lícitas, que no se encuentra con registro negativo en listados de prevención de lavado de activos nacionales o internacionales, que no se encuentra dentro de una de las dos categorías de lavado de activos (conversión o movimiento) y que en consecuencia, se obliga a responder frente a ${RAZON_SOCIAL}, por todos los perjuicios que se llegaren a causar como consecuencia de esta afirmación, en igual sentido responderá ante terceros.
+
+Declara igualmente, que sus conductas se ajustan a la Ley y a la ética y, en consecuencia, se obliga a implementar las medidas tendientes a evitar que sus operaciones puedan ser utilizadas con o sin su consentimiento y conocimiento como instrumentos para el ocultamiento, manejo, inversión o aprovechamiento en cualquier forma de dinero u otros bienes provenientes de actividades delictivas, o para dar apariencia de legalidad a estas actividades.
+
+En el mismo sentido, se compromete a actuar dentro del marco legal vigente en Colombia, dando cumplimiento a todos los procedimientos, trámites y obligaciones contemplados en la Ley y demás normas pertinentes y que cualquier evidencia de que estos principios no se cumplen o puedan estar en entredicho será causal suficiente para resolver, a criterio de la Parte cumplida, el contrato que resulte de su aceptación.`,
+      },
+      {
+        heading: '4. Marco normativo aplicable',
         body: `Esta Política de tratamiento de datos personales (la "Política") se expide conforme a:
 
-• Constitución Política de Colombia, artículo 15 (derecho a la intimidad y al habeas data).
-• Ley 1581 de 2012 — Régimen general de protección de datos personales.
-• Decreto 1377 de 2013 — Reglamentación parcial de la Ley 1581 de 2012.
-• Decreto 1074 de 2015 — Decreto Único Reglamentario del Sector Comercio, Industria y Turismo (Libro 2, Parte 2, Título 2, Capítulo 25).
-• Ley 1266 de 2008 — Habeas data financiero, crediticio y comercial (cuando aplique).
-• Ley 1480 de 2011 — Estatuto del Consumidor.
-• Ley 527 de 1999 — Comercio electrónico.
-• Resolución 2388 de 2016 del Ministerio de Salud y Protección Social — PILA.
-• Decreto 1273 de 2018 — Pago mes vencido de aportes de independientes.
+• Constitución Política de Colombia.
+• Ley 1581 de 2012.
+• Decreto 1377 de 2013.
+• Decreto 1074 de 2015.
+• Ley 1266 de 2008.
+• Ley 1480 de 2011.
+• Ley 527 de 1999.
+• Resolución 2388 de 2016.
+• Decreto 1273 de 2018.
 • Circulares y conceptos de la Superintendencia de Industria y Comercio (SIC).`,
       },
       {
-        heading: '3. Definiciones',
-        body: `Se adoptan las definiciones del artículo 3 de la Ley 1581 de 2012 y del artículo 3 del Decreto 1377 de 2013, en particular: Autorización, Aviso de privacidad, Base de datos, Dato personal, Dato público, Dato semiprivado, Dato privado, Dato sensible, Encargado del Tratamiento, Responsable del Tratamiento, Titular, Tratamiento y Transmisión.`,
+        heading: '5. Definiciones',
+        body: `A continuación, se relacionan las siguientes definiciones para una comprensión adecuada de la presente política:
+
+• Autorización: consentimiento previo, expreso e informado del Titular del dato para llevar a cabo el Tratamiento. Esta puede ser (i) escrita; (ii) verbal o; (iii) conductas inequívocas que permitan concluir de forma razonable que el Titular aceptó el Tratamiento de sus datos.
+
+• Base de Datos: conjunto organizado de Datos Personales que sean objeto de Tratamiento, electrónico o no, cualquiera que fuere la modalidad de su formación, almacenamiento, organización y acceso.
+
+• Consulta: solicitud del Titular del Dato Personal, de las personas autorizadas por éste, o las autorizadas por ley, para conocer la información que reposa sobre él en las Bases de Datos de la EMPRESA.
+
+• Dato Personal: cualquier información vinculada o que pueda asociarse a una o varias personas naturales, determinadas o determinables.
+
+• Dato Personal Privado: dato que por su naturaleza íntima o reservada sólo es relevante para el Titular. Por ejemplo: los papeles o libros de los comerciantes y documentos privados.
+
+• Dato Personal Público: dato calificado como tal, según los mandatos de la ley o de la Constitución Política y todos aquellos que no sean semiprivados, privados o sensibles. Por ejemplo: los datos contenidos en documentos públicos, registros públicos, gacetas y boletines oficiales y sentencias judiciales debidamente ejecutoriadas que no estén sometidos a reserva, los relativos al estado civil de las personas, a su profesión u oficio y a su calidad de comerciante o de servidor público. Son públicos los Datos Personales existentes en el registro mercantil de las Cámaras de Comercio (artículo 26 del Código de Comercio). Asimismo, son datos públicos, los que, en virtud de una decisión del Titular o de un mandato legal, se encuentren en archivos de libre acceso y consulta. Estos datos pueden ser obtenidos y ofrecidos sin reserva alguna y sin importar si hacen alusión a información general, privada o personal.
+
+• Dato personal semiprivado: dato que no tiene naturaleza íntima, reservada, ni pública y cuyo conocimiento o divulgación puede interesar no sólo a su Titular sino a cierto sector o grupo de personas, o a la sociedad en general. Por ejemplo: el dato referente al cumplimiento e incumplimiento de las obligaciones financieras o los datos relativos a las relaciones con las entidades de la seguridad social.
+
+• Dato personal sensible: dato que afecta la intimidad de la persona o cuyo uso indebido puede generar su discriminación. Por ejemplo: aquellos que revelen el origen racial o étnico, la orientación política, las convicciones religiosas o filosóficas, la pertenencia a sindicatos, organizaciones sociales, de derechos humanos o que promueva intereses de cualquier partido político o que garanticen los derechos y garantías de partidos políticos de oposición, datos relativos a la salud, a la vida sexual y los datos biométricos (huellas dactilares), entre otros.
+
+• Encargado: persona natural o jurídica que realiza el Tratamiento de datos por cuenta del responsable del Tratamiento.
+
+• Autorizado: personas que bajo responsabilidad de la EMPRESA o sus Encargados pueden realizar Tratamiento de Datos Personales en virtud de la Autorización otorgada por el Titular.
+
+• Prueba de la autorización: los responsables deberán conservar prueba de la autorización otorgada por los Titulares de datos personales para el Tratamiento de los mismos.
+
+• Revocatoria de la autorización y/o supresión del dato: los Titulares podrán en todo momento solicitar al responsable o encargado la supresión de sus datos personales y/o revocar la autorización otorgada para el Tratamiento de los mismos, mediante la presentación de un reclamo, de acuerdo con lo establecido en el artículo 15 de la Ley 1581 de 2012.
+
+• Reclamo: es la solicitud del Titular del dato o las personas autorizadas por éste o por la ley para corregir, actualizar o suprimir sus Datos Personales o cuando adviertan que existe un presunto incumplimiento del régimen de protección de datos, según el artículo 15 de la Ley 1581 de 2012.
+
+• Responsable: persona natural o jurídica, pública o privada, que por sí misma o en asocio con otros, decida sobre la base de datos y/o el Tratamiento de los datos.
+
+• Titular del dato: persona natural cuyos datos personales sean objeto de Tratamiento.
+
+• Tratamiento: cualquier operación o conjunto de operaciones sobre Datos Personales como, la recolección, el almacenamiento, el uso, la circulación, transferencia, transmisión, actualización o supresión de los Datos Personales, entre otros. El Tratamiento puede ser nacional (dentro de Colombia) o internacional (fuera de Colombia).
+
+• Transmisión: implica el Tratamiento de datos personales que implica la comunicación de los mismos dentro o fuera del territorio de la República de Colombia cuando tenga por objeto la realización de un Tratamiento por el Encargado por cuenta del responsable.
+
+• Transferencia: implica el Tratamiento de Datos Personales que tiene lugar cuando el responsable y/o Encargado del Tratamiento de Datos Personales, envía los Datos Personales a un receptor, que a su vez es Responsable del Tratamiento y se encuentra dentro o fuera del país.
+
+• Requisito de Procedibilidad: paso previo que debe surtir el Titular antes de interponer una queja ante la Superintendencia de Industria y Comercio. Este consiste en una reclamación directa al Encargado Responsable de sus Datos Personales.
+
+• Incidente de seguridad: se refiere al acceso, intento de acceso, uso, divulgación, modificación o destrucción no autorizada de información; un impedimento en la operación normal de las redes, sistemas o recursos informáticos; o una violación a la política de seguridad de la información.`,
       },
       {
-        heading: '4. Categorías de datos personales tratados',
+        heading: '6. Principios para el tratamiento de datos personales',
+        body: `En el desarrollo, interpretación y aplicación de la presente Política, se aplicarán de manera armónica e integral los siguientes principios:
+
+Relacionados con la recolección de datos personales.
+
+• Principio de Libertad: salvo norma legal en contrario, la recolección de los datos sólo puede ejercerse con la autorización previa, expresa e informada del Titular. Los Datos Personales no podrán ser obtenidos o divulgados sin el previo consentimiento del Titular, o en ausencia de mandato legal o judicial que releve el consentimiento. Se deberá informar al Titular del dato de manera clara, suficiente y previa acerca de la finalidad de la información suministrada y por tanto, no podrán recopilarse datos sin la clara especificación acerca de la finalidad de los mismos.
+
+• Principio de Limitación de la Recolección: sólo deben recolectarse los Datos Personales que sean estrictamente necesarios para el cumplimiento de las finalidades del Tratamiento, de tal forma que se encuentra prohibido el registro y divulgación de datos que no guarden estrecha relación con el objetivo del Tratamiento. En consecuencia, debe hacerse todo lo razonablemente posible para limitar el procesamiento de Datos Personales al mínimo necesario. Es decir, los datos deberán ser: (i) adecuados, (ii) pertinentes y (iii) acordes con las finalidades para las cuales fueron previstos.
+
+• Principio de legalidad en materia de Tratamiento de datos: el Tratamiento a que se refiere la Ley 1581, es una actividad reglada que debe sujetarse a lo establecido en ella y en las demás disposiciones que la desarrollen.
+
+Relacionados con el uso de datos personales.
+
+• Principio de Finalidad: el Tratamiento debe obedecer a una finalidad legítima de acuerdo con la Constitución y la Ley, la cual debe ser informada al Titular de forma previa, clara y suficiente. No podrán recopilarse datos sin una finalidad específica.
+
+• Principio de Temporalidad: los Datos Personales se conservarán únicamente por el tiempo razonable y necesario para cumplir la finalidad del Tratamiento y las exigencias legales o instrucciones de las autoridades de vigilancia y control u otras autoridades competentes. Los datos serán conservados cuando ello sea necesario para el cumplimiento de una obligación legal o contractual. Para determinar el término del Tratamiento se considerarán las normas aplicables a cada finalidad y los aspectos administrativos, contables, fiscales, jurídicos e históricos de la información.
+
+Relacionados con la calidad de la información.
+
+• Principio de Veracidad o Calidad: la información sujeta a Tratamiento debe ser veraz, completa, exacta, actualizada, comprobable y comprensible. Se prohíbe el Tratamiento de datos parciales, incompletos, fraccionados o que induzcan a error. Se deberán adoptar medidas razonables para asegurar que los datos sean precisos y suficientes y, cuando así lo solicite el Titular o cuando la EMPRESA lo determine, sean actualizados, rectificados o suprimidos en caso de ser procedente.
+
+Relacionados con la protección, el acceso y circulación de datos personales.
+
+• Principio de Seguridad: cada persona vinculada con la EMPRESA deberá cumplir las medidas técnicas, humanas y administrativas que establezca la misma para otorgar seguridad a los Datos Personales evitando su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento.
+
+• Principio de Transparencia: en el Tratamiento debe garantizarse el derecho del Titular a obtener en cualquier momento y sin restricciones, información acerca de la existencia de datos que le conciernan.
+
+• Principio de Acceso y Circulación Restringida: sólo se permitirá acceso a los Datos Personales a las siguientes personas: (i) al Titular del dato; (ii) a las personas autorizadas por el Titular del dato; (iii) a las personas que por mandato legal u orden judicial sean autorizadas para conocer la información del Titular del dato.
+
+• Principio de Confidencialidad: todas las personas que intervengan en el Tratamiento de Datos Personales que no tengan la naturaleza de públicos están obligadas a garantizar la reserva de la información, inclusive después de finalizada su relación con alguna de las labores que comprende el Tratamiento, pudiendo sólo realizar suministro o comunicación de Datos Personales cuando ello corresponda al desarrollo de las actividades autorizadas en la ley. Todo nuevo proyecto al interior de la EMPRESA, que implique el Tratamiento de Datos Personales deberá ser consultado con el Oficial de Protección de Datos, que es la persona encargada de asegurar el cumplimiento de esta Política y de las medidas necesarias para mantener la confidencialidad del Dato Personal.`,
+      },
+      {
+        heading: '7. Categorías de datos personales tratados',
         body: `${RAZON_SOCIAL} trata las siguientes categorías de datos personales, recolectados directamente del Titular o por intermedio del Aportante:
 
-(a) Datos de identificación: tipo y número de documento, nombres y apellidos, firma, fotografía cuando se cargue.
+• Datos de identificación: tipo y número de documento, nombres y apellidos, firma, fotografía cuando se cargue.
 
-(b) Datos de contacto: correo electrónico, teléfono fijo o móvil, dirección de residencia o de notificaciones.
+• Datos de contacto: correo electrónico, teléfono fijo o móvil, dirección de residencia o de notificaciones.
 
-(c) Datos socio-demográficos: fecha y lugar de nacimiento, género, nacionalidad, estado civil, nivel educativo, composición familiar cuando sea necesario para beneficios de CCF.
+• Datos socio-demográficos: fecha y lugar de nacimiento, género, nacionalidad, estado civil, nivel educativo, composición familiar cuando sea necesario para beneficios de CCF.
 
-(d) Datos laborales y de seguridad social: cargo, salario o ingreso base de cotización (IBC), modalidad de afiliación, fechas de ingreso/retiro, novedades, EPS, AFP, ARL, CCF, número de afiliación.
+• Datos laborales y de seguridad social: cargo, salario o ingreso base de cotización (IBC), modalidad de afiliación, fechas de ingreso/retiro, novedades, EPS, AFP, ARL, CCF, número de afiliación.
 
-(e) Datos financieros y de pago: información bancaria para débitos o consignaciones, datos de facturación, historial de pagos. NO almacenamos PAN completo ni CVV de tarjetas; los pagos con tarjeta se procesan a través de pasarelas certificadas PCI-DSS.
+• Datos financieros y de pago: información bancaria para débitos o consignaciones, datos de facturación, historial de pagos. NO almacenamos PAN completo ni CVV de tarjetas; los pagos con tarjeta se procesan a través de pasarelas certificadas PCI-DSS.
 
-(f) DATOS SENSIBLES (artículo 5 Ley 1581 de 2012): información médica y de salud asociada a incapacidades, licencias de maternidad/paternidad, calificaciones de origen y pérdida de capacidad laboral, soportes médicos cargados al expediente de incapacidades, certificados de discapacidad. Adicionalmente, datos asociados al flujo jurídico (peticiones, tutelas, desacatos, resoluciones) cuando contengan información sensible.
+• DATOS SENSIBLES (artículo 5 Ley 1581 de 2012): información médica y de salud asociada a incapacidades, licencias de maternidad/paternidad, calificaciones de origen y pérdida de capacidad laboral, soportes médicos cargados al expediente de incapacidades, certificados de discapacidad. Adicionalmente, datos asociados al flujo jurídico (peticiones, tutelas, desacatos, resoluciones) cuando contengan información sensible.
 
-(g) Datos técnicos y de uso: dirección IP, identificadores de dispositivo, navegador, sistema operativo, logs de actividad, bitácora completa de operaciones críticas, cookies estrictamente necesarias y, previa autorización, cookies analíticas.
+• Datos técnicos y de uso: dirección IP, identificadores de dispositivo, navegador, sistema operativo, logs de actividad, bitácora completa de operaciones críticas, cookies estrictamente necesarias y, previa autorización, cookies analíticas.
 
-(h) Datos de menores de edad: solo cuando sean indispensables para la afiliación a salud (beneficiarios) o para el reconocimiento de prestaciones, con autorización del representante legal.`,
+• Datos de menores de edad: solo cuando sean indispensables para la afiliación a salud (beneficiarios) o para el reconocimiento de prestaciones, con autorización del representante legal.`,
       },
       {
-        heading: '5. Finalidades del tratamiento',
-        body: `Los datos personales se tratan para las siguientes finalidades, agrupadas por categoría:
+        heading: '8. Deberes de la empresa cuando obra como Responsable',
+        body: `La EMPRESA está obligada a cumplir los deberes impuestos por la ley. Por ende, debe obrar de tal forma que cumpla con los siguientes deberes:
+
+Respecto del Titular del dato.
+
+• Garantizar al Titular, en todo tiempo, el pleno y efectivo ejercicio de los derechos consagrados en esta Política.
+
+Respecto de la calidad, seguridad y confidencialidad de los Datos Personales.
+
+• Observar los principios de veracidad, calidad, seguridad y confidencialidad en los términos establecidos en esta Política.
+• Conservar la información bajo las condiciones de seguridad necesarias para impedir su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento.
+• Actualizar la información cuando sea necesario.
+• Rectificar los Datos Personales cuando ello sea procedente.
+
+Respecto del Tratamiento a través de un Encargado.
+
+• Suministrar al Encargado del Tratamiento únicamente los Datos Personales cuyo tratamiento esté previamente autorizado.
+• Garantizar que la información que se suministre al Encargado del Tratamiento sea veraz, completa, exacta, actualizada, comprobable y comprensible.
+• Comunicar de forma oportuna al Encargado del Tratamiento, todas las novedades respecto de los datos que previamente le haya suministrado y adoptar las demás medidas necesarias para que la información suministrada a este se mantenga actualizada.
+• Informar de manera oportuna al Encargado del Tratamiento las rectificaciones realizadas sobre los Datos Personales para que éste proceda a realizar los ajustes pertinentes.
+• Exigir al Encargado del Tratamiento en todo momento, el respeto a las condiciones de seguridad y privacidad de la información del Titular.
+• Informar al Encargado del Tratamiento cuando determinada información se encuentra en discusión por parte del Titular, una vez se haya presentado la reclamación y no haya finalizado el trámite respectivo.
+
+Respecto de la Superintendencia de Industria y Comercio.
+
+• Informarle cuando se presenten violaciones a los códigos de seguridad y existan riesgos en la administración de la información de los Titulares.
+• Cumplir las instrucciones y requerimientos que imparta la Superintendencia de Industria y Comercio.`,
+      },
+      {
+        heading: '9. Deberes de la empresa cuando obra como Encargado',
+        body: `En caso de Tratamiento de datos en nombre de otra entidad u organización que sea la responsable del Tratamiento, la EMPRESA deberá cumplir los siguientes deberes:
+
+• Garantizar al Titular, en todo tiempo, el pleno y efectivo ejercicio del derecho de habeas data.
+• Conservar la información bajo las condiciones de seguridad necesarias para impedir su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento.
+• Realizar oportunamente la actualización, rectificación o supresión de los datos.
+• Actualizar la información reportada por los responsables del Tratamiento dentro de los cinco (5) días hábiles siguientes contados a partir de su recibo.
+• Tramitar las consultas y los reclamos formulados por los Titulares en los términos señalados en la presente Política.
+• Abstenerse de circular información que esté siendo controvertida por el Titular y cuyo bloqueo haya sido ordenado por la Superintendencia de Industria y Comercio.
+• Permitir el acceso a la información únicamente a las personas autorizadas por el Titular o facultadas por la ley para dicho efecto.
+• Informar a la Superintendencia de Industria y Comercio cuando se presenten violaciones a los códigos de seguridad y existan riesgos en la administración de la información de los Titulares.
+• Cumplir las instrucciones y requerimientos que imparta la Superintendencia de Industria y Comercio.`,
+      },
+      {
+        heading: '10. Terceros a quienes va dirigida la política',
+        body: `La presente Política de Tratamiento de Datos Personales está dirigida a:
+
+• Usuarios y/o Asociados.
+• Colaboradores.
+• Contratistas.
+• Clientes Corporativos.
+• Proveedores y aliados comerciales.
+• Encargados de la Información.
+• Cualquier titular de la información, ya sea actuando a nombre propio, o como representante legal, que, con ocasión de las actividades que realice, se encuentre vinculado con ${RAZON_SOCIAL} y se requiera de su información personal para el desarrollo de las mismas.`,
+      },
+      {
+        heading: '11. Responsabilidad limitada',
+        body: `Sin perjuicio de lo consagrado en la legislación colombiana aplicable, ${RAZON_SOCIAL} no asume responsabilidad alguna por daño o perjuicio derivado de la pérdida de información, debido a la presencia de virus informáticos resultados del uso o la imposibilidad de usar el material del aplicativo.`,
+      },
+      {
+        heading:
+          '12. Tratamiento al cual serán sometidos los datos personales y la finalidad del mismo',
+        body: `${RAZON_SOCIAL} realizará el Tratamiento de los Datos Personales de acuerdo con las condiciones establecidas por el Titular, la ley o las entidades públicas para el cumplimiento de las actividades propias de su objeto social como pueden ser la contratación, ejecución y comercialización de los bienes y servicios que ésta ofrece.
+
+El Tratamiento de los Datos Personales se podrá realizar a través de medios físicos, automatizados o digitales de acuerdo con el tipo y forma de recolección de la información.
+
+Finalidades del tratamiento. Los datos personales se tratan para las siguientes finalidades, agrupadas por categoría:
 
 A. Operación del servicio (necesarias para ejecutar el contrato):
-(i) Crear y administrar la cuenta del Usuario.
-(ii) Liquidar, validar, generar, presentar y pagar la PILA conforme a la Resolución 2388 de 2016, a través del Operador Autorizado aliado.
-(iii) Tramitar afiliaciones, novedades y consultas ante Entidades del SGSS.
-(iv) Radicar y hacer seguimiento de incapacidades y licencias.
-(v) Gestionar cartera, recaudo y conciliación.
-(vi) Brindar soporte técnico y operativo.
+• Crear y administrar la cuenta del Usuario.
+• Liquidar, validar, generar, presentar y pagar la PILA conforme a la Resolución 2388 de 2016, a través del Operador Autorizado aliado.
+• Tramitar afiliaciones, novedades y consultas ante Entidades del SGSS.
+• Radicar y hacer seguimiento de incapacidades y licencias.
+• Gestionar cartera, recaudo y conciliación.
+• Brindar soporte técnico y operativo.
 
 B. Cumplimiento de obligaciones legales:
-(vii) Cumplir obligaciones tributarias, contables, comerciales, laborales y de seguridad social.
-(viii) Atender requerimientos de autoridades judiciales y administrativas.
-(ix) Conservar registros para fines probatorios y de auditoría.
+• Cumplir obligaciones tributarias, contables, comerciales, laborales y de seguridad social.
+• Atender requerimientos de autoridades judiciales y administrativas.
+• Conservar registros para fines probatorios y de auditoría.
 
 C. Gestión comercial y mejora del servicio:
-(x) Facturación electrónica y cobranza.
-(xi) Atender PQRs, comunicaciones operativas y notificaciones.
-(xii) Realizar análisis estadísticos, métricas internas y mejorar la calidad del servicio.
+• Facturación electrónica y cobranza.
+• Atender PQRs, comunicaciones operativas y notificaciones.
+• Realizar análisis estadísticos, métricas internas y mejorar la calidad del servicio.
 
 D. Finalidades facultativas (requieren autorización adicional y son revocables):
-(xiii) Envío de comunicaciones comerciales, promocionales o de marketing sobre productos y servicios propios o de aliados.
-(xiv) Estudios de mercado y encuestas de satisfacción.
-(xv) Personalización de contenidos y publicidad.
+• Envío de comunicaciones comerciales, promocionales o de marketing sobre productos y servicios propios o de aliados.
+• Estudios de mercado y encuestas de satisfacción.
+• Personalización de contenidos y publicidad.
 
-E. Tratamiento de datos sensibles (facultativo, ver numeral 7):
-(xvi) Operar el módulo de incapacidades, gestionar soportes médicos y comunicarse con EPS/ARL para el reconocimiento y pago de prestaciones económicas.
-(xvii) Apoyar trámites jurídicos asociados a la seguridad social.
-
-El Titular puede negarse al tratamiento para finalidades facultativas sin que ello afecte la prestación de los servicios principales.`,
+E. Tratamiento de datos sensibles (facultativo):
+• Operar el módulo de incapacidades, gestionar soportes médicos y comunicarse con EPS/ARL para el reconocimiento y pago de prestaciones económicas.`,
       },
       {
-        heading: '6. Bases legales del tratamiento',
-        body: `El tratamiento se realiza, según corresponda, con fundamento en:
-
-(a) Consentimiento previo, expreso e informado del Titular (artículos 9 y 10 Ley 1581 de 2012), recolectado mediante mecanismos verificables (casillas de aceptación, formularios, firma electrónica o aceptación expresa al usar la Plataforma).
-
-(b) Ejecución de un contrato del cual el Titular es parte o gestiones precontractuales realizadas a su solicitud.
-
-(c) Cumplimiento de una obligación legal a cargo del Responsable (deberes tributarios, contables, laborales, del SGSS).
-
-(d) Interés legítimo del Responsable, ponderado frente a los derechos y libertades del Titular, exclusivamente para fines como prevención del fraude, seguridad de la información y mejora del servicio (no aplica a datos sensibles).
-
-(e) Salvaguarda del interés vital del Titular o de un tercero, en situaciones de urgencia médica documentada.
-
-(f) Excepciones legales en que la autorización no es necesaria conforme al artículo 10 de la Ley 1581 de 2012 (información requerida por entidad pública en ejercicio de funciones legales, datos de naturaleza pública, urgencia médica o sanitaria, estudios estadísticos previa anonimización, casos relacionados con el Registro Civil).`,
-      },
-      {
-        heading: '7. Tratamiento de datos sensibles',
-        body: `De conformidad con el artículo 6 de la Ley 1581 de 2012, el tratamiento de datos sensibles está prohibido salvo en los casos que la ley permite. ${RAZON_SOCIAL} solo trata datos sensibles cuando: (i) cuenta con autorización previa, expresa e informada del Titular, salvo causa legal que exima de tal requisito; (ii) el tratamiento es necesario para la operación del módulo de incapacidades o el flujo jurídico; o (iii) se trata de información necesaria para salvaguardar el interés vital del Titular.
-
-Carácter facultativo. La autorización para tratar datos sensibles ES FACULTATIVA. El Titular tiene derecho a no responder preguntas sobre datos sensibles y la negativa no condiciona la prestación de los servicios básicos. Sin embargo, el rechazo a tratar datos sensibles asociados a una incapacidad o a un trámite jurídico podrá impedir, por su propia naturaleza, la operación del módulo respectivo.
-
-Medidas reforzadas. Los datos sensibles están sujetos a controles de acceso granulares, cifrado adicional, registros de auditoría detallados y restricciones de visualización. El acceso se limita al personal estrictamente necesario, bajo deber de confidencialidad reforzado.`,
-      },
-      {
-        heading: '8. Tratamiento de datos de menores de edad',
-        body: `${RAZON_SOCIAL} solo trata datos personales de menores de edad cuando ello sea necesario para finalidades vinculadas a la afiliación al SGSS (por ejemplo, beneficiarios en salud) o al reconocimiento de prestaciones. En estos casos:
-
-(i) El tratamiento responde y respeta el interés superior del niño, niña y adolescente, conforme al artículo 12 del Decreto 1377 de 2013 y a la Sentencia T-260 de 2012 de la Corte Constitucional.
-
-(ii) Se requiere la autorización del representante legal del menor (padre, madre o tutor), quien debe demostrar dicha calidad.
-
-(iii) Se respetan los derechos prevalentes del niño, niña y adolescente y se observa el principio de finalidad.
-
-(iv) ${RAZON_SOCIAL} se abstiene de utilizar datos de menores para fines comerciales, de marketing o de generación de perfiles.`,
-      },
-      {
-        heading: '9. Encargados del tratamiento y transferencias internacionales',
-        body: `Para prestar el servicio, ${RAZON_SOCIAL} comparte datos personales con terceros, en su rol de Encargados o como destinatarios autorizados:
-
-(a) Operador Autorizado de PILA: para la presentación y pago de la planilla. La transmisión es indispensable para la operación del servicio y se realiza bajo los acuerdos suscritos.
-
-(b) Entidades del SGSS (EPS, AFP, ARL, CCF, ICBF, SENA): destinatarias legales de la información reportada en PILA y novedades.
-
-(c) Proveedores de infraestructura cloud, monitoreo y operación tecnológica:
-   • Neon (base de datos PostgreSQL administrada) — servidores ubicados en Estados Unidos.
-   • Sentry (monitoreo de errores) — Estados Unidos / Unión Europea según configuración.
-   • Almacenamiento de copias de seguridad cifradas en Amazon S3 — región que aplique.
-
-Transferencias internacionales. Estados Unidos NO está incluido en el listado de países con nivel adecuado de protección emitido por la SIC. En consecuencia, las transferencias internacionales se amparan en: (i) consentimiento expreso del Titular para esta transferencia; (ii) cláusulas contractuales suscritas con los Encargados internacionales que imponen estándares equivalentes a los exigidos por la Ley 1581 de 2012; (iii) cuando proceda, declaraciones de conformidad y mecanismos certificados de transferencia (SCCs y similares).
-
-(d) Pasarelas de pago y entidades financieras: para el procesamiento de pagos.
-(e) Asesores externos (jurídicos, contables, auditores) sometidos a deber de confidencialidad.
-(f) Autoridades competentes cuando medie requerimiento legal o judicial.
-
-${RAZON_SOCIAL} NO vende, NO alquila ni cede datos personales a terceros con fines comerciales no autorizados.`,
-      },
-      {
-        heading: '10. Medidas de seguridad',
-        body: `${RAZON_SOCIAL} adopta medidas técnicas, administrativas y físicas razonables y proporcionales al tipo y volumen de datos tratados, conforme al principio de seguridad del artículo 4 de la Ley 1581 de 2012:
-
-Medidas técnicas:
-• Cifrado en tránsito mediante TLS 1.2 o superior.
-• Cifrado en reposo de credenciales y datos sensibles con AES-256-GCM.
-• Autenticación con NextAuth y sesiones JWT con expiración corta (15 minutos) y rotación.
-• Bitácora completa de operaciones críticas (auditoría de accesos, modificaciones y consultas a datos sensibles).
-• Monitoreo continuo de errores y eventos de seguridad con Sentry.
-• Copias de seguridad cifradas y replicadas a almacenamiento S3.
-• Hardening de infraestructura, gestión de parches, separación de entornos (desarrollo, pruebas, producción).
-• Política de contraseñas robustas y, cuando aplique, segundo factor de autenticación.
-
-Medidas administrativas:
-• Política de control de acceso por roles (RBAC) con permisos granulares.
-• Acuerdos de confidencialidad con empleados, contratistas y aliados.
-• Capacitación periódica al personal en protección de datos.
-• Procedimientos formales de gestión de incidentes.
-• Designación de responsable interno de protección de datos.
-
-Medidas físicas:
-• Centros de datos de los proveedores cloud con certificaciones internacionales (SOC 2, ISO 27001 o equivalentes) y controles físicos de acceso.
-
-Ningún sistema es absolutamente invulnerable. ${RAZON_SOCIAL} no garantiza la imposibilidad absoluta de incidentes, pero se obliga a mantener un nivel de seguridad razonable y a actuar con diligencia ante cualquier evento.`,
-      },
-      {
-        heading: '11. Tiempo de conservación',
+        heading: '13. Tiempo de conservación',
         body: `Los datos personales se conservan únicamente por el tiempo razonable y necesario para cumplir las finalidades del tratamiento y las obligaciones legales aplicables, conforme a los siguientes criterios:
 
-(a) Datos contables, tributarios y de facturación: diez (10) años, conforme al artículo 28 de la Ley 962 de 2005 y al artículo 60 del Código de Comercio.
+• Datos contables, tributarios y de facturación: diez (10) años, conforme al artículo 28 de la Ley 962 de 2005 y al artículo 60 del Código de Comercio.
 
-(b) Información laboral y de seguridad social: hasta treinta (30) años conforme a la prescripción de las acciones laborales y a las obligaciones de conservación del SGSS, sin perjuicio de plazos mayores cuando aplique.
+• Información laboral y de seguridad social: hasta treinta (30) años conforme a la prescripción de las acciones laborales y a las obligaciones de conservación del SGSS, sin perjuicio de plazos mayores cuando aplique.
 
-(c) Soportes adjuntos a incapacidades (archivos médicos): se mantienen en disco activo por un máximo de ciento veinte (120) días contados desde su cargue; vencido este plazo, los archivos físicos se eliminan de manera segura, conservándose únicamente el registro estructurado de la incapacidad como evidencia.
+• Soportes adjuntos a incapacidades (archivos médicos): se mantienen en disco activo por un máximo de ciento veinte (120) días contados desde su cargue; vencido este plazo, los archivos físicos se eliminan de manera segura, conservándose únicamente el registro estructurado de la incapacidad como evidencia.
 
-(d) Logs y bitácora de auditoría: hasta cinco (5) años o el plazo legal aplicable, lo que sea mayor.
+• Logs y bitácora de auditoría: hasta cinco (5) años o el plazo legal aplicable, lo que sea mayor.
 
-(e) Datos de marketing y finalidades facultativas: hasta que el Titular revoque la autorización o ejerza derecho de supresión.
+• Datos de marketing y finalidades facultativas: hasta que el Titular revoque la autorización o ejerza derecho de supresión.
 
-(f) Cuentas inactivas: tras doce (12) meses de inactividad, previa notificación, se procede al cierre y a la conservación únicamente de la información que la ley exija mantener.
+• Cuentas inactivas: tras doce (12) meses de inactividad, previa notificación, se procede al cierre y a la conservación únicamente de la información que la ley exija mantener.
 
 Vencidos los plazos de conservación y agotadas las finalidades, los datos se eliminan de forma segura o se anonimizan irreversiblemente.`,
       },
       {
-        heading: '12. Derechos del Titular',
+        heading: '14. Derechos del Titular',
         body: `El Titular tiene los siguientes derechos consagrados en el artículo 8 de la Ley 1581 de 2012 y el artículo 21 del Decreto 1377 de 2013:
 
-(a) Conocer, actualizar y rectificar sus datos personales.
-(b) Solicitar prueba de la autorización otorgada, salvo cuando expresamente se exceptúe.
-(c) Ser informado, previa solicitud, sobre el uso que se ha dado a sus datos.
-(d) Presentar quejas ante la Superintendencia de Industria y Comercio por infracciones a la Ley 1581 de 2012.
-(e) Revocar la autorización y/o solicitar la supresión del dato cuando el tratamiento no respete principios, derechos y garantías constitucionales y legales, salvo deber legal o contractual de permanencia.
-(f) Acceder en forma gratuita a sus datos personales que hayan sido objeto de tratamiento.
+• Conocer, actualizar y rectificar sus datos personales.
+• Solicitar prueba de la autorización otorgada, salvo cuando expresamente se exceptúe.
+• Ser informado, previa solicitud, sobre el uso que se ha dado a sus datos.
+• Presentar quejas ante la Superintendencia de Industria y Comercio por infracciones a la Ley 1581 de 2012.
+• Revocar la autorización y/o solicitar la supresión del dato cuando el tratamiento no respete principios, derechos y garantías constitucionales y legales, salvo deber legal o contractual de permanencia.
+• Acceder en forma gratuita a sus datos personales que hayan sido objeto de tratamiento.
 
 Plazos legales de respuesta:
 • Consultas: máximo diez (10) días hábiles desde su recepción, prorrogables hasta por cinco (5) días hábiles más, comunicando los motivos al Titular.
@@ -465,64 +542,101 @@ Plazos legales de respuesta:
 Si no se cumplen los plazos, el Titular podrá acudir a la SIC.`,
       },
       {
-        heading: '13. Procedimiento para el ejercicio de derechos',
+        heading: '15. Procedimiento para el ejercicio de derechos',
         body: `Para ejercer cualquiera de los derechos consagrados en la Ley 1581 de 2012, el Titular o sus causahabientes podrán presentar consulta o reclamo a través de:
 
 Canal principal: correo electrónico ${EMAIL}.
 Dirección física: ${DIRECCION_FISICA}, ${CIUDAD}.
 
 La solicitud debe contener:
-(i) Nombres y apellidos completos e identificación del Titular.
-(ii) Calidad en la que actúa (titular, representante legal, causahabiente, apoderado).
-(iii) Descripción clara y precisa de los hechos y del derecho que pretende ejercer (acceso, actualización, rectificación, supresión, revocación, prueba de autorización).
-(iv) Datos de contacto para respuesta (correo y/o dirección).
-(v) Documentos que sustenten la solicitud cuando aplique (copia del documento de identidad, poder, registro civil, etc.).
+• Nombres y apellidos completos e identificación del Titular.
+• Calidad en la que actúa (titular, representante legal, causahabiente, apoderado).
+• Descripción clara y precisa de los hechos y del derecho que pretende ejercer (acceso, actualización, rectificación, supresión, revocación, prueba de autorización).
+• Datos de contacto para respuesta (correo y/o dirección).
+• Documentos que sustenten la solicitud cuando aplique (copia del documento de identidad, poder, registro civil, etc.).
 
-Trámite. Si la solicitud está incompleta, ${RAZON_SOCIAL} requerirá al Titular dentro de los cinco (5) días hábiles siguientes a la recepción para que subsane las fallas. Transcurridos dos (2) meses sin que se aporte la información, se entenderá desistida la reclamación.
-
-Si quien recibe el reclamo no es competente para resolverlo, ${RAZON_SOCIAL} dará traslado a quien corresponda en un plazo máximo de dos (2) días hábiles e informará al Titular.`,
+Trámite. Si la solicitud está incompleta, ${RAZON_SOCIAL} requerirá al Titular dentro de los cinco (5) días hábiles siguientes a la recepción para que subsane las fallas. Transcurridos dos (2) meses sin que se aporte la información, se entenderá desistida la reclamación. Si quien recibe el reclamo no es competente para resolverlo, ${RAZON_SOCIAL} dará traslado a quien corresponda en un plazo máximo de dos (2) días hábiles e informará al Titular.`,
       },
       {
-        heading: '14. Cookies y tecnologías similares',
+        heading: '16. Cookies y tecnologías similares',
         body: `La Plataforma utiliza cookies y tecnologías similares con los siguientes alcances:
 
-(a) Cookies estrictamente necesarias: indispensables para el funcionamiento del servicio (autenticación, sesión, balanceo de carga, prevención de fraude). NO requieren consentimiento adicional, pues sin ellas la Plataforma no opera.
+• Cookies estrictamente necesarias: indispensables para el funcionamiento del servicio (autenticación, sesión, balanceo de carga, prevención de fraude). NO requieren consentimiento adicional, pues sin ellas la Plataforma no opera.
 
-(b) Cookies de preferencias: recuerdan la configuración del Usuario (idioma, tema). Se activan tras aceptación.
+• Cookies de preferencias: recuerdan la configuración del Usuario (idioma, tema). Se activan tras aceptación.
 
-(c) Cookies analíticas: permiten medir uso, tráfico y desempeño del servicio. Se activan únicamente con consentimiento del Usuario mediante el banner de cookies. Pueden incluir herramientas como Google Analytics u otras similares con configuración orientada a la privacidad (anonimización de IP).
+• Cookies analíticas: permiten medir uso, tráfico y desempeño del servicio. Se activan únicamente con consentimiento del Usuario mediante el banner de cookies. Pueden incluir herramientas como Google Analytics u otras similares con configuración orientada a la privacidad (anonimización de IP).
 
-(d) Cookies de marketing/publicidad: SOLO se activan tras consentimiento expreso y pueden ser desactivadas en cualquier momento.
+• Cookies de marketing/publicidad: SOLO se activan tras consentimiento expreso y pueden ser desactivadas en cualquier momento.
 
 El Usuario puede gestionar las cookies a través del banner de consentimiento de la Plataforma o de la configuración de su navegador. La desactivación de cookies no estrictamente necesarias no afecta el acceso al servicio, aunque puede limitar funcionalidades.`,
       },
       {
-        heading: '15. Incidentes de seguridad y notificación',
-        body: `${RAZON_SOCIAL} cuenta con un procedimiento formal de gestión de incidentes de seguridad. En caso de violación de los códigos de seguridad o de presentarse riesgos en la administración de la información de los Titulares, el Responsable:
+        heading: '17. Circuito cerrado de televisión',
+        body: `La EMPRESA utiliza circuito cerrado de televisión, instalados en diferentes sitios internos y externos de sus instalaciones y locales. En razón a ello, informa al público en general sobre la existencia de estos mecanismos mediante la difusión en sitios visibles de avisos de zona de video grabado.
 
-(i) Activará el plan de respuesta a incidentes para contener, mitigar y remediar el evento.
-(ii) Documentará el incidente, su impacto y las medidas adoptadas.
-(iii) Reportará el incidente a la Superintendencia de Industria y Comercio dentro de los quince (15) días hábiles siguientes al momento en que se detecte la novedad, conforme a la Circular Externa 02 de 2018 y normas concordantes.
-(iv) Notificará a los Titulares afectados, de manera oportuna y comprensible, cuando exista riesgo material para sus derechos.`,
+Las imágenes y sonidos captados, grabados, transmitidos, almacenados, conservados y reproducidos en tiempo real o posterior, se encuentran sujetos a la política de tratamiento de datos personales que puede consultar y estos datos, solo serán utilizados para fines de seguridad, mejoramiento de nuestro servicio y de la experiencia cuando se encuentre dentro de nuestras instalaciones.`,
       },
       {
-        heading: '16. Contacto del responsable de protección de datos',
+        heading: '18. Políticas de seguridad de la información',
+        body: `La EMPRESA adoptará las medidas técnicas, administrativas y humanas necesarias para procurar la seguridad de los Datos Personales a los que les da Tratamiento, protegiendo la confidencialidad, integridad, uso, acceso no autorizado y/o fraudulento a éstos. Para tal fin, ha implementado protocolos de seguridad de obligatorio cumplimiento para todo el Personal que tenga acceso a estos datos y/o a los sistemas de información.
+
+Las políticas internas de seguridad bajo las cuales se conserva la información del Titular para impedir su adulteración, pérdida, consulta, uso o acceso no autorizado o fraudulento son incluidas en el Programa Integral de Gestión de Datos Personales de la EMPRESA.
+
+El Tratamiento de los Datos Personales será desde el inicio del Evento hasta el día en que ${RAZON_SOCIAL} se disuelva y se liquide o hasta que se termine la finalidad para la cual fueron recolectados los Datos Personales.`,
+      },
+      {
+        heading: '19. Política para responder a un incidente de seguridad',
+        body: `Contener el incidente de seguridad y hacer una evaluación preliminar.
+
+Una vez que la empresa tenga conocimiento de la ocurrencia de un incidente de seguridad debe adoptar las medidas inmediatas para limitar esa falla y evitar cualquier compromiso adicional a la información de carácter personal bajo su cuidado. El responsable de atender la falla debe remitirse al documento Plan de Recuperación de Desastres para ejecutar el plan de acción.
+
+Evaluar los riesgos e impactos asociados con el incidente de seguridad.
+
+Identificar y evaluar el nivel de severidad del incidente de seguridad; la probabilidad de daño para los Titulares de la Información; el nivel de riesgo para sus derechos y libertades; y el Tratamiento que se dará a esos riesgos.
+
+Los niveles de riesgo son:
+• Bajo: es improbable que el incidente de seguridad tenga un impacto en las personas, y de generarlo, este sería mínimo.
+• Medio: el incidente de seguridad puede tener un impacto en las personas, pero es poco probable que el impacto sea sustancial.
+• Alto: el incidente de seguridad puede tener un impacto considerable en las personas afectadas.
+• Grave: el incidente de seguridad puede tener un impacto crítico, extenso o peligroso en las personas afectadas.
+
+Identificar los daños para las personas, organizaciones y público en general.
+
+Se debe identificar qué daños podrían resultar del incidente que afecten a las personas, organizaciones y público en general, en aspectos como: riesgo de seguridad física o psicológica, hurto de identidad, suplantación de identidad, pérdida financiera, pérdida reputacional, pérdida de clientes, pérdida de activos, honorarios de terceros, demandas judiciales, riesgo para la seguridad o salud pública.
+
+Notificación a la Superintendencia de Industria y Comercio.
+
+Se debe reportar la ocurrencia del incidente de seguridad ante la SIC sin dilación indebida y a más tardar dentro de los quince (15) días hábiles siguientes al momento en que se detecten y sean puestos en conocimiento de la persona o área encargada de atenderlo. La notificación del incidente de seguridad en Datos Personales debe contener, como mínimo, la información que establece el Registro Nacional de Bases de Datos (RNBD).
+
+Comunicar a los titulares de la información.
+
+El responsable de la protección y tratamiento de datos personales por parte de la EMPRESA debe comunicarse con los Titulares de la información para informarles sobre el incidente de seguridad relacionado con sus Datos Personales y las posibles consecuencias además de proporcionar herramientas a los Titulares para minimizar el daño potencial o causado.
+
+Prevenir futuros incidentes de seguridad en datos personales.
+
+Al finalizar el proceso que mitiga los riesgos asociados con el incidente, se debe hacer una reunión por parte del responsable de la protección y tratamiento de datos personales con la gerencia y demás interesados donde se defina un plan de prevención para evitar futuros eventos que puedan afectar los datos personales que se vieron afectados.`,
+      },
+      {
+        heading: '20. Contacto del responsable de protección de datos',
         body: `${RAZON_SOCIAL} ha designado un área responsable de la atención a peticiones, consultas y reclamos de los Titulares y del cumplimiento de la Ley 1581 de 2012:
 
 Área responsable de protección de datos personales.
 Correo electrónico: ${EMAIL}.
 Dirección física: ${DIRECCION_FISICA}, ${CIUDAD}.
-Horario de atención: lunes a viernes, 8:00 a.m. a 5:00 p.m. (hora de Colombia), salvo festivos.
+Horario de atención: ${HORARIO}.
 
 Autoridad de control. La autoridad competente para conocer reclamos por infracciones a la normatividad de protección de datos personales en Colombia es la Superintendencia de Industria y Comercio (SIC) — www.sic.gov.co.`,
       },
       {
-        heading: '17. Vigencia y modificaciones',
-        body: `Esta Política rige a partir de su publicación en la Plataforma y mantendrá vigencia mientras no sea modificada por ${RAZON_SOCIAL}. Las bases de datos administradas tendrán vigencia indefinida mientras subsistan las finalidades del tratamiento o las obligaciones legales del Responsable.
+        heading: '21. Disposiciones finales',
+        body: `Medidas permanentes. En el tratamiento de datos personales, ${RAZON_SOCIAL}, de manera permanente, verificará en sus procesos, protocolos, procedimientos y políticas, que se garantice el derecho de habeas data a los titulares de la información y que se obtenga con los requisitos de ley, la autorización del titular para el tratamiento de los datos personales.
 
-Cualquier modificación sustancial será comunicada al Titular mediante aviso destacado en la Plataforma o al correo registrado, con al menos quince (15) días calendario de anticipación a su entrada en vigor. Cuando el cambio implique una nueva finalidad o un cambio sustancial en las condiciones del tratamiento, se solicitará nueva autorización.
+Manual interno de políticas y procedimientos para el tratamiento de datos personales. La presente política de tratamiento de datos personales, se articula con el Manual interno de Políticas y Procedimientos para el tratamiento de datos personales, el cual establece los criterios, requisitos y procedimientos para que se haga efectiva la presente política.
 
-Fecha de última actualización: ${FECHA_VIGENCIA}.`,
+Fecha de aprobación de la política y entrada en vigencia. ${RAZON_SOCIAL} se reserva el derecho de modificar su Política de Protección de Datos Personales en cualquier momento, cambio que será informado y publicado oportunamente a través de los medios que disponga para tal fin.
+
+Esta política fue actualizada y aprobada el día cinco (05) de mayo del año dos mil veintiséis (2.026), fecha en la que entra en vigencia.`,
       },
     ],
   },
@@ -533,44 +647,47 @@ Fecha de última actualización: ${FECHA_VIGENCIA}.`,
     sections: [
       {
         heading: '1. Identificación del Responsable',
-        body: `${RAZON_SOCIAL}, sociedad por acciones simplificada, identificada con NIT ${NIT}, inscrita en la Cámara de Comercio de Pereira bajo la matrícula mercantil ${MATRICULA}, con domicilio en ${DIRECCION_FISICA}, ${CIUDAD}, correo electrónico ${EMAIL} y sitio web ${WEBSITE_URL} (en adelante, el "Responsable"), actúa como Responsable del Tratamiento de los datos personales recolectados a través de la plataforma ${NOMBRE_PLATAFORMA}.`,
+        body: `${RAZON_SOCIAL}, sociedad legalmente constituida con NIT ${NIT}, con domicilio principal en ${DIRECCION_FISICA}, ${CIUDAD}, correo electrónico ${EMAIL}, actúa como responsable del Tratamiento de los datos personales recolectados a través de la plataforma ${NOMBRE_PLATAFORMA}.`,
       },
       {
         heading: '2. Manifestación de autorización',
         body: `Yo, en mi calidad de Titular del dato personal o de representante legal del Titular cuando corresponda, declaro que de manera PREVIA, EXPRESA, LIBRE, VOLUNTARIA, INFORMADA E INEQUÍVOCA, autorizo a ${RAZON_SOCIAL} para recolectar, almacenar, consultar, usar, circular, transmitir, transferir, procesar, actualizar, rectificar, suprimir y, en general, dar Tratamiento a los datos personales que he suministrado o suministre en el futuro a través de la Plataforma, sus formularios, canales de atención y cualquier otro medio habilitado, conforme a la Ley 1581 de 2012, el Decreto 1377 de 2013, el Decreto 1074 de 2015 y la Política de tratamiento de datos personales del Responsable, la cual declaro haber leído y comprendido íntegramente.
 
 Esta autorización podrá manifestarse mediante:
-(a) Casilla expresa de aceptación al momento del registro o de la firma electrónica de un documento.
-(b) Aceptación verbal documentada cuando se diligencien formularios asistidos.
-(c) Conductas inequívocas que permitan concluir razonablemente el consentimiento (por ejemplo, completar un formulario habiendo sido informado del aviso de privacidad).
+• Casilla expresa de aceptación al momento del registro o de la firma electrónica de un documento.
+• Aceptación verbal documentada cuando se diligencien formularios asistidos.
+• Conductas inequívocas que permitan concluir razonablemente el consentimiento (por ejemplo, completar un formulario habiendo sido informado del aviso de privacidad).
 
-Cuando aplique, este formato podrá presentarse con casillas separables que permitan al Titular autorizar o rechazar de manera independiente: (a) las finalidades necesarias para la prestación del servicio, (b) el tratamiento de datos sensibles, y (c) las finalidades comerciales y de marketing.`,
+Cuando aplique, este formato podrá presentarse con casillas separables que permitan al Titular autorizar o rechazar de manera independiente:
+• Las finalidades necesarias para la prestación del servicio.
+• El tratamiento de datos sensibles.
+• Las finalidades comerciales y de marketing.`,
       },
       {
         heading: '3. Finalidades específicas autorizadas',
         body: `Autorizo el tratamiento de mis datos personales para las siguientes finalidades:
 
 A. Necesarias para la prestación del servicio:
-(i) Crear y administrar mi cuenta en la Plataforma.
-(ii) Liquidar, validar, generar, presentar y pagar la Planilla Integrada de Liquidación de Aportes (PILA), conforme a la Resolución 2388 de 2016, a través del Operador Autorizado aliado.
-(iii) Tramitar afiliaciones, novedades y consultas ante Entidades del SGSS (EPS, AFP, ARL, CCF, ICBF, SENA).
-(iv) Radicar y hacer seguimiento de incapacidades, licencias y demás prestaciones económicas.
-(v) Gestionar cartera, cobranza, recaudo y conciliación.
-(vi) Apoyar trámites jurídicos asociados (peticiones, tutelas, desacatos, resoluciones) cuando el servicio lo contemple.
-(vii) Atender PQRs y comunicaciones operativas.
+• Crear y administrar mi cuenta en la Plataforma.
+• Liquidar, validar, generar, presentar y pagar la Planilla Integrada de Liquidación de Aportes (PILA), conforme a la Resolución 2388 de 2016, a través del Operador Autorizado aliado.
+• Tramitar afiliaciones, novedades y consultas ante Entidades del SGSS (EPS, AFP, ARL, CCF, ICBF, SENA).
+• Radicar y hacer seguimiento de incapacidades, licencias y demás prestaciones económicas.
+• Gestionar cartera, cobranza, recaudo y conciliación.
+• Apoyar trámites jurídicos asociados (peticiones, tutelas, desacatos, resoluciones) cuando el servicio lo contemple.
+• Atender PQRs y comunicaciones operativas.
 
 B. Cumplimiento de obligaciones legales:
-(viii) Cumplir obligaciones tributarias, contables, comerciales, laborales, mercantiles y de seguridad social.
-(ix) Conservar la información para fines probatorios, de auditoría y de control.
-(x) Atender requerimientos de autoridades judiciales y administrativas competentes.
+• Cumplir obligaciones tributarias, contables, comerciales, laborales, mercantiles y de seguridad social.
+• Conservar la información para fines probatorios, de auditoría y de control.
+• Atender requerimientos de autoridades judiciales y administrativas competentes.
 
 C. Transmisión a terceros estrictamente para los fines anteriores:
-(xi) Operador Autorizado de PILA, Entidades del SGSS, asesores externos sometidos a confidencialidad, proveedores de infraestructura cloud (Neon en Estados Unidos, Sentry, Amazon S3) bajo cláusulas contractuales que garantizan estándares equivalentes a la Ley 1581 de 2012, pasarelas de pago y entidades financieras.
+• Operador Autorizado de PILA, Entidades del SGSS, asesores externos sometidos a confidencialidad, proveedores de infraestructura cloud (Neon en Estados Unidos, Sentry, Amazon S3) bajo cláusulas contractuales que garantizan estándares equivalentes a la Ley 1581 de 2012, pasarelas de pago y entidades financieras.
 
 D. Finalidades FACULTATIVAS (autorización adicional, separable y revocable):
-(xii) Envío de comunicaciones comerciales, promocionales o de marketing sobre productos y servicios propios o de aliados.
-(xiii) Estudios de mercado, encuestas de satisfacción y mejora de la experiencia.
-(xiv) Personalización de contenidos.
+• Envío de comunicaciones comerciales, promocionales o de marketing sobre productos y servicios propios o de aliados.
+• Estudios de mercado, encuestas de satisfacción y mejora de la experiencia.
+• Personalización de contenidos.
 
 El Titular puede negarse a las finalidades facultativas (D) sin que ello afecte la prestación de los servicios principales (A, B y C).`,
       },
@@ -580,7 +697,9 @@ El Titular puede negarse a las finalidades facultativas (D) sin que ello afecte 
 
 En el contexto de ${NOMBRE_PLATAFORMA}, son datos sensibles, entre otros: información médica asociada a incapacidades, certificados médicos, soportes de licencia de maternidad/paternidad, calificaciones de origen y de pérdida de capacidad laboral, información de salud cargada en el flujo jurídico.
 
-Tratamiento facultativo. AUTORIZO de manera expresa el tratamiento de mis datos sensibles para las finalidades descritas. Declaro que esta autorización ES FACULTATIVA Y NO ES REQUISITO PARA EL ACCESO A LOS SERVICIOS BÁSICOS, sin perjuicio de que la negativa pueda hacer técnicamente inviable la prestación de servicios cuyo objeto requiere esos datos (por ejemplo, gestión de incapacidades). Puedo revocar esta autorización en cualquier momento.
+Tratamiento facultativo. AUTORIZO de manera expresa el tratamiento de mis datos sensibles para las finalidades descritas. Declaro que esta autorización ES FACULTATIVA Y NO ES REQUISITO PARA EL ACCESO A LOS SERVICIOS BÁSICOS, sin perjuicio de que la negativa pueda hacer técnicamente inviable la prestación de servicios cuyo objeto requiere esos datos (por ejemplo, gestión de incapacidades).
+
+Puedo revocar esta autorización en cualquier momento.
 
 Garantías. ${RAZON_SOCIAL} aplicará medidas reforzadas de seguridad sobre estos datos (cifrado, control de acceso granular, registros de auditoría) y restringirá su acceso al personal estrictamente necesario, sometido a deber de confidencialidad reforzado.`,
       },
@@ -592,12 +711,12 @@ Garantías. ${RAZON_SOCIAL} aplicará medidas reforzadas de seguridad sobre esto
         heading: '6. Derechos del Titular y procedimiento para ejercerlos',
         body: `Como Titular tengo derecho, conforme al artículo 8 de la Ley 1581 de 2012, a:
 
-(a) Conocer, actualizar y rectificar mis datos personales.
-(b) Solicitar prueba de la autorización otorgada.
-(c) Ser informado del uso que se ha dado a mis datos.
-(d) Presentar quejas ante la Superintendencia de Industria y Comercio.
-(e) Revocar la autorización y/o solicitar la supresión cuando no se respeten principios, derechos y garantías constitucionales y legales.
-(f) Acceder en forma gratuita a mis datos personales.
+• Conocer, actualizar y rectificar mis datos personales.
+• Solicitar prueba de la autorización otorgada.
+• Ser informado del uso que se ha dado a mis datos.
+• Presentar quejas ante la Superintendencia de Industria y Comercio.
+• Revocar la autorización y/o solicitar la supresión cuando no se respeten principios, derechos y garantías constitucionales y legales.
+• Acceder en forma gratuita a mis datos personales.
 
 Procedimiento. Puedo ejercer estos derechos enviando comunicación escrita a:
 
@@ -605,11 +724,11 @@ Correo electrónico: ${EMAIL}.
 Dirección física: ${DIRECCION_FISICA}, ${CIUDAD}.
 
 La solicitud debe contener:
-(i) Nombres, apellidos completos e identificación.
-(ii) Calidad en la que actúo (titular, representante, causahabiente, apoderado).
-(iii) Descripción clara del derecho que ejerzo y de los hechos.
-(iv) Datos de contacto para respuesta.
-(v) Documentos de soporte cuando apliquen.
+• Nombres, apellidos completos e identificación.
+• Calidad en la que actúo (titular, representante, causahabiente, apoderado).
+• Descripción clara del derecho que ejerzo y de los hechos.
+• Datos de contacto para respuesta.
+• Documentos de soporte cuando apliquen.
 
 Plazos legales:
 • Consultas: respuesta en máximo diez (10) días hábiles, prorrogables por cinco (5) días hábiles más.
@@ -645,7 +764,6 @@ Conservaré derecho de acceso a esta autorización en cualquier momento, mediant
 NIT: ${NIT}
 Domicilio: ${DIRECCION_FISICA}, ${CIUDAD}
 Correo: ${EMAIL}
-Sitio web: ${WEBSITE_URL}
 
 Autoridad de control: Superintendencia de Industria y Comercio — www.sic.gov.co.`,
       },
@@ -697,12 +815,6 @@ export function LegalLinks() {
                 <p className="mt-2 whitespace-pre-line">{s.body}</p>
               </div>
             ))}
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800">
-              <strong>Nota:</strong> Este documento es una versión inicial alineada con la
-              normatividad colombiana vigente (Ley 1581 de 2012, Decreto 1377 de 2013, Resolución
-              2388 de 2016). Para producción, recomendamos validación por abogado especialista en
-              protección de datos personales y derecho de seguridad social.
-            </div>
           </div>
         </Dialog>
       )}
