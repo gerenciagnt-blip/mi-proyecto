@@ -635,8 +635,8 @@ async function AliadoHome({ sp }: { sp: SP }) {
             documentos son deseables.
           </li>
           <li>
-            • Los documentos de incapacidad se conservan 120 días en el sistema; después queda el
-            registro como evidencia.
+            • Los documentos de incapacidad se conservan 120 días (180 días los del flujo jurídico
+            confidencial); después queda el registro como evidencia.
           </li>
         </ul>
       </section>

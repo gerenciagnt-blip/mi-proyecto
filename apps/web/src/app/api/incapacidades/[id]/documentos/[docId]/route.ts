@@ -44,8 +44,9 @@ export async function GET(
     return NextResponse.json({ error: 'Documento no encontrado' }, { status: 404 });
   }
   if (doc.eliminado) {
+    const dias = doc.confidencial ? 180 : 120;
     return NextResponse.json(
-      { error: 'Archivo ya fue eliminado por retención (120 días).' },
+      { error: `Archivo ya fue eliminado por retención (${dias} días).` },
       { status: 410 },
     );
   }

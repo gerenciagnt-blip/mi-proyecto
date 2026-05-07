@@ -300,6 +300,7 @@ model User {
   colpatriaCertSolicitados ColpatriaCertificadoJob[]   @relation("ColpatriaCertSolicitante")
   reportesAtCreados        ReporteAccidenteTrabajo[]   @relation("ReporteATCreator")
   reportesAtGestionesUser  ReporteATGestion[]          @relation("ReporteATGestionUser")
+  reportesAtDocsUser       ReporteATDocumento[]        @relation("ReporteATDocumentoUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -2995,10 +2996,11 @@ model ReporteAccidenteTrabajo {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  sucursal  Sucursal           @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  cotizante Cotizante?         @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
-  createdBy User?              @relation("ReporteATCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  gestiones ReporteATGestion[]
+  sucursal   Sucursal             @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  cotizante  Cotizante?           @relation(fields: [cotizanteId], references: [id], onDelete: SetNull)
+  createdBy  User?                @relation("ReporteATCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  gestiones  ReporteATGestion[]
+  documentos ReporteATDocumento[]
 
   @@index([sucursalId])
   @@index([cotizanteId])
@@ -3006,6 +3008,48 @@ model ReporteAccidenteTrabajo {
   @@index([fechaRadicacion])
   @@index([sucursalId, estado, fechaRadicacion(sort: Desc)])
   @@map("reporte_at")
+}
+
+/**
+ * Tipos de documento adjunto en un reporte AT. FURAT (Formato Único de
+ * Reporte de Accidente de Trabajo) es el más común — soporte lo carga
+ * cuando la ARL emite el formato oficial. La enum es plana para permitir
+ * extender después (FURIPS, dictamen, etc.) sin migración estructural.
+ */
+enum ReporteATDocumentoTipo {
+  FURAT
+  OTRO
+}
+
+/**
+ * Documento adjunto a un reporte AT. Política de retención corta:
+ * 30 días desde createdAt, después se borra el archivo físico y queda
+ * el registro como evidencia (`eliminado=true`). El soporte FURAT es
+ * operativo, no requiere conservación a largo plazo.
+ */
+model ReporteATDocumento {
+  id                    String                 @id @default(cuid())
+  reporteAtId           String
+  tipo                  ReporteATDocumentoTipo
+  archivoPath           String // relativo a UPLOADS_DIR
+  archivoHash           String // sha-256 hex
+  archivoMime           String
+  archivoSize           Int
+  archivoNombreOriginal String
+  /** `true` cuando el archivo físico ya fue eliminado por retención (30 días). */
+  eliminado             Boolean                @default(false)
+  eliminadoEn           DateTime?
+  userId                String?
+  createdAt             DateTime               @default(now())
+
+  reporteAt ReporteAccidenteTrabajo @relation(fields: [reporteAtId], references: [id], onDelete: Cascade)
+  user      User?                   @relation("ReporteATDocumentoUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([reporteAtId])
+  @@index([tipo])
+  @@index([eliminado])
+  @@index([userId])
+  @@map("reporte_at_documentos")
 }
 
 /** Bitácora de gestiones (cambios de estado, observaciones) sobre un reporte AT. */

@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { ReporteATCausa, ReporteATEstado } from '@pila/db';
+
+// IMPORTANTE: este archivo se importa desde Client Components — NO debe
+// hacer imports runtime de `@pila/db` (Prisma) porque arrastra al cliente
+// Prisma al bundle del navegador. Los valores de los enums se replican
+// como tuplas literales `as const` para que el shape sea idéntico al
+// enum del schema sin acoplar a Prisma en runtime.
 
 /** Lateralidad de las partes del cuerpo afectadas. */
 export const LATERALIDADES = ['DERECHA', 'IZQUIERDA', 'AMBAS', 'NA'] as const;
@@ -24,7 +29,11 @@ export const TIPO_DOC_AT_LABEL: Record<TipoDocAT, string> = {
   TI: 'Tarjeta de Identidad',
 };
 
-export const ESTADO_LABEL: Record<ReporteATEstado, string> = {
+/** Estados del reporte AT (mismas claves que el enum Prisma `ReporteATEstado`). */
+export const ESTADOS_REPORTE_AT = ['RADICADO', 'EN_REVISION', 'CERRADO', 'ANULADO'] as const;
+export type ReporteATEstadoLit = (typeof ESTADOS_REPORTE_AT)[number];
+
+export const ESTADO_LABEL: Record<ReporteATEstadoLit, string> = {
   RADICADO: 'Radicado',
   EN_REVISION: 'En revisión',
   CERRADO: 'Cerrado',
@@ -32,14 +41,26 @@ export const ESTADO_LABEL: Record<ReporteATEstado, string> = {
 };
 
 /** Color (Tailwind) para los chips de estado. */
-export const ESTADO_TONE: Record<ReporteATEstado, string> = {
+export const ESTADO_TONE: Record<ReporteATEstadoLit, string> = {
   RADICADO: 'bg-sky-50 text-sky-700 ring-sky-200',
   EN_REVISION: 'bg-amber-50 text-amber-700 ring-amber-200',
   CERRADO: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   ANULADO: 'bg-slate-100 text-slate-600 ring-slate-200',
 };
 
-export const CAUSA_LABEL: Record<ReporteATCausa, string> = {
+/** Causas del reporte AT (mismas claves que el enum Prisma `ReporteATCausa`). */
+export const CAUSAS_REPORTE_AT = [
+  'IMPRUDENCIA_PROPIA',
+  'IMPRUDENCIA_OTROS',
+  'FALTA_INSTRUCCIONES',
+  'POCA_EXPERIENCIA',
+  'MEDIDAS_INADECUADAS',
+  'RIESGOS_PROPIOS',
+  'OTROS',
+] as const;
+export type ReporteATCausaLit = (typeof CAUSAS_REPORTE_AT)[number];
+
+export const CAUSA_LABEL: Record<ReporteATCausaLit, string> = {
   IMPRUDENCIA_PROPIA: 'Imprudencia propia',
   IMPRUDENCIA_OTROS: 'Imprudencia de otros',
   FALTA_INSTRUCCIONES: 'Falta de instrucciones',
@@ -91,7 +112,7 @@ export const crearReporteAtSchema = z
     hechosCuandoDonde: z.string().trim().min(5).max(4000),
     hechosComoOcurrio: z.string().trim().min(5).max(4000),
 
-    causas: z.array(z.nativeEnum(ReporteATCausa)).default([]),
+    causas: z.array(z.enum(CAUSAS_REPORTE_AT)).default([]),
     causasOtros: z.string().trim().max(500).optional().or(z.literal('')),
 
     partesCuerpo: z.array(partesCuerpoItemSchema).min(1, 'Indica al menos una parte del cuerpo'),
@@ -121,7 +142,7 @@ export const crearReporteAtSchema = z
     fechaElaboracion: z.coerce.date(),
   })
   .superRefine((d, ctx) => {
-    if (d.causas.includes('OTROS' as ReporteATCausa) && !d.causasOtros?.trim()) {
+    if (d.causas.includes('OTROS') && !d.causasOtros?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['causasOtros'],
@@ -135,7 +156,7 @@ export type CrearReporteAtInput = z.infer<typeof crearReporteAtSchema>;
 /** Schema para cambiar el estado desde Soporte (con observación obligatoria). */
 export const cambiarEstadoReporteAtSchema = z.object({
   reporteAtId: z.string().min(1),
-  nuevoEstado: z.nativeEnum(ReporteATEstado),
+  nuevoEstado: z.enum(ESTADOS_REPORTE_AT),
   descripcion: z.string().trim().min(3).max(2000),
 });
 export type CambiarEstadoReporteAtInput = z.infer<typeof cambiarEstadoReporteAtSchema>;

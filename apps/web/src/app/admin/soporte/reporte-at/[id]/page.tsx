@@ -5,6 +5,7 @@ import { prisma } from '@pila/db';
 import { requirePermiso } from '@/lib/auth-helpers';
 import { ReporteAtDetalleCard } from '@/app/admin/administrativo/reporte-at/_components/detalle-card';
 import { ReporteAtTimeline } from '@/app/admin/administrativo/reporte-at/_components/timeline';
+import { ReporteAtDocumentosList } from '@/app/admin/administrativo/reporte-at/_components/documentos-list';
 import { CambiarEstadoReporteAtForm } from './cambiar-estado-form';
 
 export const metadata = { title: 'Reporte AT · Soporte — Sistema PILA' };
@@ -33,9 +34,33 @@ export default async function ReporteAtDetalleSoportePage({
           createdAt: true,
         },
       },
+      documentos: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          tipo: true,
+          archivoNombreOriginal: true,
+          archivoSize: true,
+          eliminado: true,
+          eliminadoEn: true,
+          createdAt: true,
+          user: { select: { name: true } },
+        },
+      },
     },
   });
   if (!reporte) notFound();
+
+  const documentos = reporte.documentos.map((d) => ({
+    id: d.id,
+    tipo: d.tipo,
+    archivoNombreOriginal: d.archivoNombreOriginal,
+    archivoSize: d.archivoSize,
+    eliminado: d.eliminado,
+    eliminadoEn: d.eliminadoEn,
+    createdAt: d.createdAt,
+    userName: d.user?.name ?? null,
+  }));
 
   return (
     <div className="space-y-6">
@@ -50,6 +75,8 @@ export default async function ReporteAtDetalleSoportePage({
       <ReporteAtDetalleCard r={reporte} />
 
       <CambiarEstadoReporteAtForm reporteId={reporte.id} estadoActual={reporte.estado} />
+
+      <ReporteAtDocumentosList reporteAtId={reporte.id} documentos={documentos} />
 
       <ReporteAtTimeline
         reporteId={reporte.id}

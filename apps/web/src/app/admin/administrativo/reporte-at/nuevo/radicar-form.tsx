@@ -2,56 +2,126 @@
 
 import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, AlertTriangle, Plus, Trash2 } from 'lucide-react';
-import { ReporteATCausa } from '@pila/db';
+import { CheckCircle2, AlertTriangle, Plus, Trash2, Search } from 'lucide-react';
+// NOTA: NO importar enums runtime de '@pila/db' — arrastra Prisma al
+// bundle del navegador. Las constantes literales viven en validations.ts.
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
-import { radicarReporteAtAction } from '../actions';
+import { radicarReporteAtAction, buscarCotizanteReporteAtAction } from '../actions';
 import {
   CAUSA_LABEL,
+  CAUSAS_REPORTE_AT,
   LATERALIDADES,
   LATERALIDAD_LABEL,
   TIPOS_DOC_AT,
   TIPO_DOC_AT_LABEL,
   type Lateralidad,
   type PartesCuerpoItem,
+  type ReporteATCausaLit,
   type TipoDocAT,
 } from '@/lib/reporte-at/validations';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
-const CAUSAS_ORDEN = Object.values(ReporteATCausa);
+const CAUSAS_ORDEN = CAUSAS_REPORTE_AT;
 
 export function RadicarReporteAtForm({
   sucursales,
   sucursalIdActual,
   elaboradoPorDefault,
+  onSuccess,
 }: {
   sucursales: Sucursal[];
   sucursalIdActual: string | null;
   elaboradoPorDefault: { nombre: string; correo: string };
+  /**
+   * Callback opcional que se ejecuta al radicar con éxito. Si no se
+   * pasa, se usa el flujo standalone (redirect a la lista). Cuando el
+   * form vive dentro de un modal, el shell pasa esta callback para
+   * cerrar el dialog y refrescar la lista detrás.
+   */
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
+  const [pendingBusqueda, startBusqueda] = useTransition();
 
   const [sucursalId, setSucursalId] = useState(sucursalIdActual ?? '');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Causas (multiselect)
-  const [causasSel, setCausasSel] = useState<Set<ReporteATCausa>>(new Set());
+  const [causasSel, setCausasSel] = useState<Set<ReporteATCausaLit>>(new Set());
   const [causasOtros, setCausasOtros] = useState('');
 
   // Partes del cuerpo
   const [partes, setPartes] = useState<PartesCuerpoItem[]>([{ parte: '', lateralidad: 'NA' }]);
 
-  // Tipo doc — controlado para tener valor por defecto consistente.
+  // Datos del trabajador — controlados para que el auto-arrastre los
+  // pueda rellenar al hallar el cotizante en BD.
   const [tipoDoc, setTipoDoc] = useState<TipoDocAT>('CC');
+  const [numeroDoc, setNumeroDoc] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [cargo, setCargo] = useState('');
+  const [edad, setEdad] = useState('');
+  const [eps, setEps] = useState('');
+  const [fondoPension, setFondoPension] = useState('');
+  const [experienciaMeses, setExperienciaMeses] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [estadoCivil, setEstadoCivil] = useState('');
+  const [ciudadResidencia, setCiudadResidencia] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [empresaRazonSocial, setEmpresaRazonSocial] = useState('');
+  const [empresaNit, setEmpresaNit] = useState('');
 
-  function toggleCausa(c: ReporteATCausa) {
+  /** Mensaje resultado de la búsqueda (info o error). null = sin búsqueda aún. */
+  const [busquedaInfo, setBusquedaInfo] = useState<{ tipo: 'ok' | 'warn'; msg: string } | null>(
+    null,
+  );
+
+  function buscarTrabajador() {
+    setBusquedaInfo(null);
+    if (!numeroDoc.trim()) {
+      setBusquedaInfo({ tipo: 'warn', msg: 'Ingresa el número de documento' });
+      return;
+    }
+    startBusqueda(async () => {
+      const r = await buscarCotizanteReporteAtAction(tipoDoc, numeroDoc);
+      if (!r.found) {
+        setBusquedaInfo({
+          tipo: 'warn',
+          msg: r.error ?? 'No se encontró el cotizante; diligencia manualmente.',
+        });
+        return;
+      }
+      const d = r.found;
+      // Sólo sobreescribe si el campo está vacío — preservamos lo que el
+      // aliado haya empezado a escribir antes de buscar.
+      const orStr = (cur: string, next: string | null) => (cur.trim() ? cur : (next ?? ''));
+      const orNum = (cur: string, next: number | null) =>
+        cur.trim() ? cur : next != null ? String(next) : '';
+      setNombre((c) => orStr(c, d.nombreCompleto));
+      setCargo((c) => orStr(c, d.cargo));
+      setEdad((c) => orNum(c, d.edad));
+      setEps((c) => orStr(c, d.eps));
+      setFondoPension((c) => orStr(c, d.fondoPension));
+      setTelefono((c) => orStr(c, d.telefono));
+      setEstadoCivil((c) => orStr(c, d.estadoCivil));
+      setCiudadResidencia((c) => orStr(c, d.ciudadResidencia));
+      setDireccion((c) => orStr(c, d.direccion));
+      setEmpresaRazonSocial((c) => orStr(c, d.empresaRazonSocial));
+      setEmpresaNit((c) => orStr(c, d.empresaNit));
+      setBusquedaInfo({
+        tipo: 'ok',
+        msg: `Cotizante encontrado: ${d.nombreCompleto}. Ajusta los campos si es necesario.`,
+      });
+    });
+  }
+
+  function toggleCausa(c: ReporteATCausaLit) {
     setCausasSel((prev) => {
       const next = new Set(prev);
       if (next.has(c)) next.delete(c);
@@ -83,7 +153,7 @@ export function RadicarReporteAtForm({
       setError('Indica al menos una parte del cuerpo afectada.');
       return;
     }
-    if (causasSel.has('OTROS' as ReporteATCausa) && !causasOtros.trim()) {
+    if (causasSel.has('OTROS' as ReporteATCausaLit) && !causasOtros.trim()) {
       setError('Especifica la causa cuando seleccionas "Otros".');
       return;
     }
@@ -104,7 +174,12 @@ export function RadicarReporteAtForm({
         return;
       }
       setSuccess(r.mensaje ?? 'Radicado');
-      // Pequeño delay para que el usuario vea el toast antes del redirect.
+      // Modo modal: el shell sabe cómo cerrar/refrescar.
+      if (onSuccess) {
+        setTimeout(() => onSuccess(), 600);
+        return;
+      }
+      // Standalone: redirect a la lista.
       setTimeout(() => {
         router.push('/admin/administrativo/reporte-at');
         router.refresh();
@@ -169,17 +244,12 @@ export function RadicarReporteAtForm({
         </div>
       </Section>
 
-      {/* Datos del trabajador */}
-      <Section title="Datos del trabajador">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Field label="Nombre completo" className="md:col-span-2" required>
-            <Input name="trabajadorNombre" required />
-          </Field>
-          <Field label="Cargo" required>
-            <Input name="trabajadorCargo" required />
-          </Field>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* Datos del trabajador — primero el documento para arrastrar BD */}
+      <Section
+        title="Datos del trabajador"
+        hint="Ingresa el documento y pulsa Buscar para traer los datos del cotizante registrados en la sucursal."
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[180px_1fr_auto]">
           <Field label="Tipo de documento" required>
             <select
               name="trabajadorTipoDoc"
@@ -196,47 +266,145 @@ export function RadicarReporteAtForm({
             </select>
           </Field>
           <Field label="Número de documento" required>
-            <Input name="trabajadorNumeroDoc" required />
+            <Input
+              name="trabajadorNumeroDoc"
+              value={numeroDoc}
+              onChange={(e) => setNumeroDoc(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  buscarTrabajador();
+                }
+              }}
+              required
+            />
           </Field>
-          <Field label="Edad">
-            <Input type="number" name="trabajadorEdad" min={0} max={120} />
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={buscarTrabajador}
+              disabled={pendingBusqueda || !numeroDoc.trim()}
+            >
+              <Search className="mr-1 h-4 w-4" />
+              {pendingBusqueda ? 'Buscando…' : 'Buscar'}
+            </Button>
+          </div>
+        </div>
+
+        {busquedaInfo && (
+          <Alert variant={busquedaInfo.tipo === 'ok' ? 'success' : 'warning'}>
+            {busquedaInfo.tipo === 'ok' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+            )}
+            <span>{busquedaInfo.msg}</span>
+          </Alert>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Field label="Nombre completo" className="md:col-span-2" required>
+            <Input
+              name="trabajadorNombre"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Cargo" required>
+            <Input
+              name="trabajadorCargo"
+              value={cargo}
+              onChange={(e) => setCargo(e.target.value)}
+              required
+            />
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="EPS">
-            <Input name="trabajadorEps" />
+            <Input name="trabajadorEps" value={eps} onChange={(e) => setEps(e.target.value)} />
           </Field>
           <Field label="Fondo de pensión">
-            <Input name="trabajadorFondoPension" />
+            <Input
+              name="trabajadorFondoPension"
+              value={fondoPension}
+              onChange={(e) => setFondoPension(e.target.value)}
+            />
           </Field>
           <Field label="Experiencia en el cargo (meses)">
-            <Input type="number" name="trabajadorExperienciaMeses" min={0} max={720} />
+            <Input
+              type="number"
+              name="trabajadorExperienciaMeses"
+              min={0}
+              max={720}
+              value={experienciaMeses}
+              onChange={(e) => setExperienciaMeses(e.target.value)}
+            />
           </Field>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Teléfono">
-            <Input name="trabajadorTelefono" />
+            <Input
+              name="trabajadorTelefono"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+            />
+          </Field>
+          <Field label="Edad">
+            <Input
+              type="number"
+              name="trabajadorEdad"
+              min={0}
+              max={120}
+              value={edad}
+              onChange={(e) => setEdad(e.target.value)}
+            />
           </Field>
           <Field label="Estado civil">
-            <Input name="trabajadorEstadoCivil" />
-          </Field>
-          <Field label="Ciudad de residencia">
-            <Input name="trabajadorCiudadResidencia" />
+            <Input
+              name="trabajadorEstadoCivil"
+              value={estadoCivil}
+              onChange={(e) => setEstadoCivil(e.target.value)}
+            />
           </Field>
         </div>
-        <Field label="Dirección de residencia">
-          <Input name="trabajadorDireccion" />
-        </Field>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Field label="Ciudad de residencia">
+            <Input
+              name="trabajadorCiudadResidencia"
+              value={ciudadResidencia}
+              onChange={(e) => setCiudadResidencia(e.target.value)}
+            />
+          </Field>
+          <Field label="Dirección de residencia" className="md:col-span-2">
+            <Input
+              name="trabajadorDireccion"
+              value={direccion}
+              onChange={(e) => setDireccion(e.target.value)}
+            />
+          </Field>
+        </div>
       </Section>
 
-      {/* Empresa */}
+      {/* Empresa — también se rellena desde la afiliación activa */}
       <Section title="Empresa o razón social a la que está afiliado">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Razón social" className="md:col-span-2" required>
-            <Input name="empresaRazonSocial" required />
+            <Input
+              name="empresaRazonSocial"
+              value={empresaRazonSocial}
+              onChange={(e) => setEmpresaRazonSocial(e.target.value)}
+              required
+            />
           </Field>
           <Field label="NIT" required>
-            <Input name="empresaNit" required />
+            <Input
+              name="empresaNit"
+              value={empresaNit}
+              onChange={(e) => setEmpresaNit(e.target.value)}
+              required
+            />
           </Field>
         </div>
       </Section>
@@ -273,7 +441,7 @@ export function RadicarReporteAtForm({
             </li>
           ))}
         </ul>
-        {causasSel.has('OTROS' as ReporteATCausa) && (
+        {causasSel.has('OTROS' as ReporteATCausaLit) && (
           <Field label="Especifica" required>
             <Input
               name="causasOtros"

@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ReporteATCausa, ReporteATEstado, prisma } from '@pila/db';
+import { ReporteATCausa, ReporteATDocumentoTipo, ReporteATEstado, prisma } from '@pila/db';
 import { requireAuth, requirePermiso } from '@/lib/auth-helpers';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { puedeAccederModulo } from '@/lib/permisos-runtime';
@@ -9,8 +9,15 @@ import { nextReporteAtConsecutivo } from '@/lib/reporte-at/consecutivo';
 import {
   crearReporteAtSchema,
   diaSemanaEs,
+  ESTADOS_REPORTE_AT,
   type PartesCuerpoItem,
+  type ReporteATEstadoLit,
 } from '@/lib/reporte-at/validations';
+import {
+  guardarDocumentoReporteAt,
+  MIMES_PERMITIDOS_REPORTE_AT,
+  TAMANO_MAX_REPORTE_AT,
+} from '@/lib/reporte-at/storage';
 import { auditarCreate, auditarUpdate } from '@/lib/auditoria';
 
 export type ActionState = {
@@ -20,6 +27,122 @@ export type ActionState = {
   reporteId?: string;
   consecutivo?: string;
 };
+
+// ============ Buscar cotizante (auto-arrastre del formulario) ============
+
+/**
+ * Datos que arrastra el formulario al hallar el cotizante por tipo+nº doc
+ * dentro de la sucursal del aliado. El formulario sigue siendo editable —
+ * estos son sólo defaults pre-cargados, el aliado puede ajustarlos.
+ */
+export type CotizanteReporteAt = {
+  cotizanteId: string;
+  nombreCompleto: string;
+  edad: number | null;
+  estadoCivil: string | null;
+  telefono: string | null;
+  direccion: string | null;
+  ciudadResidencia: string | null;
+  /** Datos derivados de la afiliación ACTIVA más reciente (si existe). */
+  cargo: string | null;
+  eps: string | null;
+  fondoPension: string | null;
+  empresaRazonSocial: string | null;
+  empresaNit: string | null;
+};
+
+function calcularEdad(fechaNacimiento: Date): number {
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - fechaNacimiento.getFullYear();
+  const m = hoy.getMonth() - fechaNacimiento.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < fechaNacimiento.getDate())) edad--;
+  return edad;
+}
+
+/**
+ * Busca un cotizante en la sucursal del usuario por tipoDoc+nº doc y
+ * devuelve los campos que el formulario de Reporte AT puede pre-llenar.
+ * Sólo soporta tipos del catálogo Cotizante (CC, CE, TI). Para PEP/PPT
+ * el aliado tiene que diligenciar manualmente.
+ */
+export async function buscarCotizanteReporteAtAction(
+  tipoDocumento: string,
+  numeroDocumento: string,
+): Promise<{ found: CotizanteReporteAt | null; error?: string }> {
+  await requireAuth();
+  const scope = await getUserScope();
+  if (!scope) return { found: null, error: 'Sesión inválida' };
+
+  const doc = numeroDocumento.trim().toUpperCase();
+  if (!doc) return { found: null, error: 'Ingresa un número de documento' };
+
+  // Sólo CC/CE/TI están en el enum global TipoDocumento del Cotizante.
+  if (!['CC', 'CE', 'TI'].includes(tipoDocumento)) {
+    return {
+      found: null,
+      error: `El tipo "${tipoDocumento}" no se puede buscar; diligencia los datos manualmente.`,
+    };
+  }
+
+  const cotizante = await prisma.cotizante.findFirst({
+    where: {
+      tipoDocumento: tipoDocumento as 'CC' | 'CE' | 'TI',
+      numeroDocumento: doc,
+      ...(scope.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {}),
+    },
+    include: {
+      municipio: { select: { nombre: true } },
+      afiliaciones: {
+        where: { estado: 'ACTIVA' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        include: {
+          empresa: { select: { nombre: true, nit: true } },
+          eps: { select: { nombre: true } },
+          afp: { select: { nombre: true } },
+        },
+      },
+    },
+  });
+
+  if (!cotizante) {
+    return {
+      found: null,
+      error:
+        scope.tipo === 'SUCURSAL'
+          ? 'Cotizante no encontrado en tu sucursal'
+          : 'Cotizante no encontrado',
+    };
+  }
+
+  const nombreCompleto = [
+    cotizante.primerNombre,
+    cotizante.segundoNombre,
+    cotizante.primerApellido,
+    cotizante.segundoApellido,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const af = cotizante.afiliaciones[0] ?? null;
+
+  return {
+    found: {
+      cotizanteId: cotizante.id,
+      nombreCompleto,
+      edad: calcularEdad(cotizante.fechaNacimiento),
+      estadoCivil: cotizante.estadoCivil ?? null,
+      telefono: cotizante.celular ?? cotizante.telefono ?? null,
+      direccion: cotizante.direccion ?? null,
+      ciudadResidencia: cotizante.municipio?.nombre ?? null,
+      cargo: af?.cargo ?? null,
+      eps: af?.eps?.nombre ?? null,
+      fondoPension: af?.afp?.nombre ?? null,
+      empresaRazonSocial: af?.empresa?.nombre ?? null,
+      empresaNit: af?.empresa?.nit ?? null,
+    },
+  };
+}
 
 /**
  * Helper: lee `partesCuerpo` que el form envía como JSON string en un
@@ -248,38 +371,114 @@ export async function radicarReporteAtAction(
   };
 }
 
-// ============ Cambiar estado (Soporte) ============
+// ============ Gestionar (Soporte): cambia estado y/o adjunta soportes ============
 
-export async function cambiarEstadoReporteAtAction(
-  reporteAtId: string,
-  nuevoEstado: ReporteATEstado,
-  descripcion: string,
+/**
+ * Action de gestión de Soporte sobre un reporte AT. Recibe FormData con:
+ *   - reporteAtId (string)
+ *   - nuevoEstado (string del enum)
+ *   - descripcion (string, mín. 3 caracteres)
+ *   - furat (File opcional) — soporte FURAT u otros documentos
+ *   - documentoTipo (opcional, default FURAT)
+ *
+ * Operaciones que ejecuta:
+ *   1. Sube el archivo a UPLOADS_DIR/reporte-at/<id>/... si llega.
+ *   2. Cambia el estado del reporte (rechaza si es el mismo estado).
+ *   3. Crea una gestión en la bitácora con descripción + estado nuevo.
+ *   4. Auditoría del cambio.
+ *
+ * El archivo subido se conserva 30 días y luego se borra del disco.
+ */
+export async function gestionarReporteAtAction(
+  _prev: ActionState,
+  formData: FormData,
 ): Promise<ActionState> {
   const session = await requirePermiso('soporte.reporte_at');
   const userId = session.user.id;
   const userName = session.user.name;
 
+  const reporteAtId = String(formData.get('reporteAtId') ?? '').trim();
+  const nuevoEstadoRaw = String(formData.get('nuevoEstado') ?? '').trim();
+  const descripcion = String(formData.get('descripcion') ?? '');
+  const documentoTipoRaw = String(formData.get('documentoTipo') ?? 'FURAT').trim();
+
+  if (!reporteAtId) return { error: 'Falta el id del reporte' };
+  if (!(ESTADOS_REPORTE_AT as readonly string[]).includes(nuevoEstadoRaw)) {
+    return { error: 'Estado no válido' };
+  }
+  const nuevoEstado = nuevoEstadoRaw as ReporteATEstadoLit;
+  const estadoEnum = nuevoEstado as ReporteATEstado;
   const desc = descripcion.trim();
   if (desc.length < 3) return { error: 'La descripción es obligatoria (mín. 3 caracteres)' };
+
+  const documentoTipo =
+    documentoTipoRaw === 'OTRO' ? ReporteATDocumentoTipo.OTRO : ReporteATDocumentoTipo.FURAT;
 
   const r = await prisma.reporteAccidenteTrabajo.findUnique({
     where: { id: reporteAtId },
     select: { id: true, consecutivo: true, estado: true, sucursalId: true },
   });
   if (!r) return { error: 'Reporte no encontrado' };
-  if (r.estado === nuevoEstado) return { error: `El reporte ya está en estado ${nuevoEstado}` };
+  if (r.estado === estadoEnum) {
+    return { error: `El reporte ya está en estado ${nuevoEstado}` };
+  }
+
+  // Archivo opcional. Validamos antes de tocar la BD.
+  const furatRaw = formData.get('furat');
+  const furat = furatRaw instanceof File && furatRaw.size > 0 ? furatRaw : null;
+  if (furat) {
+    if (furat.size > TAMANO_MAX_REPORTE_AT) {
+      return { error: `El archivo "${furat.name}" supera los 5 MB permitidos.` };
+    }
+    if (
+      !MIMES_PERMITIDOS_REPORTE_AT.includes(
+        furat.type as (typeof MIMES_PERMITIDOS_REPORTE_AT)[number],
+      )
+    ) {
+      return {
+        error: `Tipo de archivo no permitido (${furat.type || 'desconocido'}). Sólo PDF e imágenes.`,
+      };
+    }
+  }
+
+  // Subimos el archivo primero — si falla, no tocamos el estado.
+  if (furat) {
+    try {
+      const buf = Buffer.from(await furat.arrayBuffer());
+      const saved = await guardarDocumentoReporteAt(buf, furat.name, reporteAtId);
+      await prisma.reporteATDocumento.create({
+        data: {
+          reporteAtId,
+          tipo: documentoTipo,
+          archivoPath: saved.path,
+          archivoHash: saved.hash,
+          archivoMime: furat.type,
+          archivoSize: saved.size,
+          archivoNombreOriginal: furat.name,
+          userId,
+        },
+      });
+    } catch (err) {
+      return {
+        error: `No pude guardar el archivo: ${err instanceof Error ? err.message : 'error desconocido'}`,
+      };
+    }
+  }
 
   await prisma.reporteAccidenteTrabajo.update({
     where: { id: reporteAtId },
-    data: { estado: nuevoEstado },
+    data: { estado: estadoEnum },
   });
+
+  const tipoLabel = documentoTipo === ReporteATDocumentoTipo.FURAT ? 'FURAT' : 'documento';
+  const descConArchivo = furat ? `${desc}\n[${tipoLabel} adjunto: ${furat.name}]` : desc;
 
   await prisma.reporteATGestion.create({
     data: {
       reporteAtId,
       accionadaPor: 'SOPORTE',
-      nuevoEstado,
-      descripcion: desc,
+      nuevoEstado: estadoEnum,
+      descripcion: descConArchivo,
       userId,
       userName,
     },
@@ -289,15 +488,21 @@ export async function cambiarEstadoReporteAtAction(
     entidad: 'ReporteAccidenteTrabajo',
     entidadId: reporteAtId,
     entidadSucursalId: r.sucursalId,
-    descripcion: `Reporte AT ${r.consecutivo} ${r.estado} → ${nuevoEstado}`,
+    descripcion: `Reporte AT ${r.consecutivo} ${r.estado} → ${nuevoEstado}${furat ? ` (+${tipoLabel})` : ''}`,
     antes: { estado: r.estado },
-    despues: { estado: nuevoEstado },
+    despues: { estado: nuevoEstado, ...(furat ? { documento: furat.name } : {}) },
   });
 
   revalidatePath('/admin/administrativo/reporte-at');
   revalidatePath('/admin/soporte/reporte-at');
   revalidatePath(`/admin/soporte/reporte-at/${reporteAtId}`);
-  return { ok: true, mensaje: `Estado actualizado a ${nuevoEstado}` };
+  revalidatePath(`/admin/administrativo/reporte-at/${reporteAtId}`);
+  return {
+    ok: true,
+    mensaje: furat
+      ? `Estado actualizado a ${nuevoEstado} con ${tipoLabel} adjunto.`
+      : `Estado actualizado a ${nuevoEstado}`,
+  };
 }
 
 // ============ Gestión / nota desde aliado ============
