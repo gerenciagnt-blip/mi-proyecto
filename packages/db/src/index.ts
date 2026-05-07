@@ -1,4 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+// IMPORTAR DESDE LA RUTA CUSTOM — ver comentario en `prisma/schema.prisma`
+// (output del generator). Usar `@prisma/client` directamente rompe en
+// Windows + pnpm + Next 15 con "Prisma Client could not locate the Query Engine".
+import { PrismaClient } from './generated/client';
 
 /**
  * Tipo del callback opt-in que recibe métricas de cada operación Prisma.
@@ -159,4 +162,4 @@ if (process.env.NODE_ENV !== 'production') {
  */
 export type PilaPrismaClient = typeof prisma;
 
-export * from '@prisma/client';
+export * from './generated/client';

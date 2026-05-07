@@ -1,0 +1,5 @@
+# Cliente Prisma generado — la salida custom del schema (`output =
+# "../src/generated/client"`) es local a cada máquina/CI, contiene el
+# `.dll`/`.so` del query engine específico del runtime y se vuelve a
+# generar al instalar (postinstall) o al ejecutar `pnpm prisma:generate`.
+src/generated/

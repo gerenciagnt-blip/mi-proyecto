@@ -4,6 +4,17 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Custom output dentro del package — Prisma 6 + pnpm + Next 15 + Windows
+  // tienen un bug donde el cliente generado en el path default
+  // (`node_modules/.pnpm/@prisma+client@.../node_modules/.prisma/client/`)
+  // pierde la referencia al `query_engine-windows.dll.node` cuando Webpack
+  // lo bundlea (el `__dirname` se vuelve relativo al bundle, no a la
+  // ubicación real). Con `output` custom el cliente y el `.dll` viven
+  // juntos en `packages/db/src/generated/client/` y el resolver de Prisma
+  // los encuentra siempre.
+  // Importar desde `@pila/db` (re-export en src/index.ts) — nunca desde
+  // `@prisma/client` directamente.
+  output   = "../src/generated/client"
 }
 
 datasource db {
