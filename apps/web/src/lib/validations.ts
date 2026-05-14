@@ -93,6 +93,7 @@ export const RoleEnum = z.enum([
   'SOPORTE',
   'ALIADO_OWNER',
   'ALIADO_USER', // usuario aliado de la sucursal — recibe permisos vía rol personalizado
+  'ASESOR_COMERCIAL', // sub-rol del aliado — ve solo afiliaciones/cartera donde es el asesor
 ]);
 
 /** Staff (ADMIN/SOPORTE) no requieren sucursal — operan cross-tenant. */

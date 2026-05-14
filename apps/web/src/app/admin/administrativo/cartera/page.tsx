@@ -38,12 +38,30 @@ export default async function AdministrativoCarteraPage({
       : undefined;
   const q = sp.q?.trim() ?? '';
 
-  // Scope: sólo líneas asignadas a la sucursal del aliado. STAFF ve todo
-  // pero en general el Administrativo lo opera el aliado; dejamos el scope
-  // abierto para staff por si quieren revisar.
+  // Scope:
+  //   - STAFF: ve todo (en general no opera Administrativo, pero queda abierto).
+  //   - SUCURSAL (aliado): sólo líneas asignadas a su sucursal.
+  //   - ASESOR (sub-rol): líneas de su sucursal Y donde el cotizante tiene
+  //     al menos una afiliación con `asesorComercialId = el suyo`. El
+  //     vínculo viaja por cotizante porque `CarteraDetallado` no tiene FK
+  //     directa a Afiliacion (la línea pertenece al cotizante, no a una
+  //     afiliación particular).
+  //
+  // Nota: si un cotizante tiene dos afiliaciones con asesores distintos,
+  // ambos asesores verán la misma línea. Es conservador y previsible —
+  // se afina si el flujo lo requiere.
   const scope = await getUserScope();
-  const scopeWhere: Prisma.CarteraDetalladoWhereInput =
-    scope?.tipo === 'SUCURSAL' ? { sucursalAsignadaId: scope.sucursalId } : {};
+  let scopeWhere: Prisma.CarteraDetalladoWhereInput = {};
+  if (scope?.tipo === 'SUCURSAL') {
+    scopeWhere = { sucursalAsignadaId: scope.sucursalId };
+  } else if (scope?.tipo === 'ASESOR') {
+    scopeWhere = {
+      sucursalAsignadaId: scope.sucursalId,
+      cotizante: {
+        afiliaciones: { some: { asesorComercialId: scope.asesorComercialId } },
+      },
+    };
+  }
 
   // El módulo Administrativo SÓLO muestra líneas que soporte ya marcó
   // como cartera o mora real (más las pagadas, para historial).

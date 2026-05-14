@@ -7,15 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
+import type { Role } from '@pila/db';
 import { PasswordInput } from '@/components/ui/password-input';
 import { createUserAction, type ActionState } from './actions';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
+// `basedOn` usa `Role` (todos los valores del enum) — la UI muestra solo
+// roles base "tradicionales" porque ASESOR_COMERCIAL se crea desde el
+// catálogo (apps/web/.../catalogos/asesores) con su botón "Crear login";
+// el form de Usuarios no lo expone como opción.
 export type RolCustomOpt = {
   id: string;
   nombre: string;
-  basedOn: 'ADMIN' | 'SOPORTE' | 'ALIADO_OWNER' | 'ALIADO_USER';
+  basedOn: Role;
 };
 
 /** Genera una contraseña aleatoria con 12 caracteres:

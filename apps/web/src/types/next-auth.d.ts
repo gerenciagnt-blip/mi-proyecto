@@ -7,6 +7,10 @@ declare module 'next-auth' {
     role: Role;
     sucursalId: string | null;
     rolCustomId: string | null;
+    // Solo poblado cuando role === 'ASESOR_COMERCIAL'. Apunta al registro
+    // de `AsesorComercial` (catálogo) al que está amarrado el login.
+    // El scope usa este campo para filtrar Afiliaciones/Cartera.
+    asesorComercialId: string | null;
   }
 
   interface Session {
@@ -17,6 +21,7 @@ declare module 'next-auth' {
       role: Role;
       sucursalId: string | null;
       rolCustomId: string | null;
+      asesorComercialId: string | null;
     };
   }
 }
@@ -27,5 +32,6 @@ declare module 'next-auth/jwt' {
     role: Role;
     sucursalId: string | null;
     rolCustomId: string | null;
+    asesorComercialId: string | null;
   }
 }

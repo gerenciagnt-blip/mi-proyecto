@@ -47,13 +47,32 @@ export async function gestionarCarteraAliadoAction(
       estado: true,
       sucursalAsignadaId: true,
       consolidadoId: true,
+      cotizanteId: true,
     },
   });
   if (!linea) return { error: 'Línea no encontrada' };
 
-  // Scope: SUCURSAL sólo gestiona sus líneas.
-  if (scope.tipo === 'SUCURSAL' && linea.sucursalAsignadaId !== scope.sucursalId) {
+  // Scope:
+  //   - SUCURSAL: sólo gestiona líneas de su sucursal.
+  //   - ASESOR: además, sólo si el cotizante tiene al menos una afiliación
+  //     donde él es el asesor (defensa en profundidad — el page ya filtra,
+  //     pero el action puede ser llamado directo desde el cliente).
+  if (
+    (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') &&
+    linea.sucursalAsignadaId !== scope.sucursalId
+  ) {
     return { error: 'No tienes permiso sobre esta línea' };
+  }
+  if (scope.tipo === 'ASESOR') {
+    if (!linea.cotizanteId) return { error: 'No tienes permiso sobre esta línea' };
+    const asesorMatch = await prisma.afiliacion.findFirst({
+      where: {
+        cotizanteId: linea.cotizanteId,
+        asesorComercialId: scope.asesorComercialId,
+      },
+      select: { id: true },
+    });
+    if (!asesorMatch) return { error: 'No tienes permiso sobre esta línea' };
   }
 
   // Estado previo válido: el aliado puede actuar sobre líneas que Soporte

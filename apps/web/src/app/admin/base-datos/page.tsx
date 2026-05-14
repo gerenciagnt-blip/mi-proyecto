@@ -4,7 +4,7 @@ import type { Prisma } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
-import { getUserScope, scopeWhereOpt, scopeWhereViaCotizante } from '@/lib/sucursal-scope';
+import { getUserScope, scopeWhereOpt, scopeWhereAfiliacion } from '@/lib/sucursal-scope';
 import { cargarDuenosPorSucursal } from '@/lib/duenos-sucursal';
 import {
   getTiposCotizanteCached,
@@ -49,19 +49,31 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
     sp.modalidad === 'DEPENDIENTE' || sp.modalidad === 'INDEPENDIENTE' ? sp.modalidad : undefined;
   const q = sp.q?.trim() ?? '';
 
-  // Scope por sucursal: SUCURSAL sólo ve afiliaciones cuyo cotizante
-  // pertenece a su sucursal; STAFF (ADMIN/SOPORTE) ve todo.
+  // Scope por sucursal:
+  //   - STAFF (ADMIN/SOPORTE) ve todo, cross-sucursal.
+  //   - SUCURSAL sólo ve afiliaciones cuyo cotizante pertenece a su sucursal.
+  //   - ASESOR sólo ve afiliaciones donde `asesorComercialId = el suyo`
+  //     (además, indirectamente filtradas por la sucursal del cotizante
+  //     que coincide con la suya).
+  // `scopeWhereAfiliacion()` encapsula los tres casos.
   const scope = await getUserScope();
   const scopeOpt = await scopeWhereOpt();
-  const cotizanteScopeSolo = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
-  const cuentaCobroScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const baseAfiliacionScope = await scopeWhereAfiliacion();
+  const cotizanteScopeSolo =
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? { sucursalId: scope.sucursalId } : {};
+  const cuentaCobroScope =
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? { sucursalId: scope.sucursalId } : {};
 
-  const whereAfiliaciones: Prisma.AfiliacionWhereInput = {};
+  const whereAfiliaciones: Prisma.AfiliacionWhereInput = { ...baseAfiliacionScope };
   if (estadoFilter) whereAfiliaciones.estado = estadoFilter;
   if (modalidadFilter) whereAfiliaciones.modalidad = modalidadFilter;
 
   // Siempre componer el filtro por cotizante (scope + búsqueda de texto).
-  const cotizanteFilters: Prisma.CotizanteWhereInput = { ...cotizanteScopeSolo };
+  // `baseAfiliacionScope.cotizante` ya trae el filtro por sucursalId — lo
+  // expandimos si hay búsqueda de texto adicional.
+  const cotizanteScopeFromAfil =
+    (baseAfiliacionScope.cotizante as Prisma.CotizanteWhereInput | undefined) ?? {};
+  const cotizanteFilters: Prisma.CotizanteWhereInput = { ...cotizanteScopeFromAfil };
   if (q) {
     cotizanteFilters.OR = [
       { numeroDocumento: { contains: q, mode: 'insensitive' } },
@@ -117,18 +129,24 @@ export default async function BaseDatosPage({ searchParams }: { searchParams: Pr
       },
     }),
     prisma.afiliacion.count({
-      where: {
-        estado: 'ACTIVA',
-        ...(Object.keys(cotizanteScopeSolo).length > 0 ? { cotizante: cotizanteScopeSolo } : {}),
-      },
+      where: { ...baseAfiliacionScope, estado: 'ACTIVA' },
     }),
     prisma.afiliacion.count({
-      where: {
-        estado: 'INACTIVA',
-        ...(Object.keys(cotizanteScopeSolo).length > 0 ? { cotizante: cotizanteScopeSolo } : {}),
-      },
+      where: { ...baseAfiliacionScope, estado: 'INACTIVA' },
     }),
-    prisma.cotizante.count({ where: cotizanteScopeSolo }),
+    // Cotizantes únicos visibles para el usuario:
+    //   - STAFF: todos los cotizantes (sin filtro).
+    //   - SUCURSAL: cotizantes de su sucursal.
+    //   - ASESOR: cotizantes con al menos una afiliación donde él es el asesor.
+    prisma.cotizante.count({
+      where:
+        scope?.tipo === 'ASESOR'
+          ? {
+              sucursalId: scope.sucursalId,
+              afiliaciones: { some: { asesorComercialId: scope.asesorComercialId } },
+            }
+          : cotizanteScopeSolo,
+    }),
     prisma.empresa.findMany({
       where: { active: true },
       orderBy: { nombre: 'asc' },

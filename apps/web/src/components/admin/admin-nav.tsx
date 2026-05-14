@@ -28,6 +28,7 @@ import {
   Bot,
   Scale,
   ClipboardList,
+  Star,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -178,9 +179,21 @@ const NAV: NavItem[] = [
         icon: ClipboardList,
         modulo: 'soporte.reporte_at',
       },
+      // Sprint Chat · cierre+rating — dashboard de calificaciones que
+      // los aliados dejan al cerrar conversaciones con staff.
+      {
+        label: 'Calificaciones chat',
+        href: '/admin/soporte/calificaciones-chat',
+        icon: Star,
+        modulo: 'soporte.calificaciones_chat',
+      },
     ],
   },
   { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive, modulo: 'base_datos' },
+  // Sprint Chat interno — la entrada de chat NO está en el nav: vive
+  // como widget flotante global (admin-shell.tsx → ChatWidget) y siempre
+  // está a un click de distancia. La página /admin/chat se conserva
+  // como deep-link, pero no se navega desde el menú lateral.
   {
     label: 'Transacciones',
     href: '/admin/transacciones',
