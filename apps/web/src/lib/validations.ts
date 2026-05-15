@@ -107,10 +107,23 @@ export const UserCreateSchema = z
     role: RoleEnum,
     sucursalId: z.string().nullable(),
     rolCustomId: z.string().nullable().optional(),
+    /**
+     * Sprint Asesor Comercial — requerido cuando `role === ASESOR_COMERCIAL`.
+     * FK al catálogo `AsesorComercial`. Para los demás roles debe ser null.
+     */
+    asesorComercialId: z.string().nullable().optional(),
   })
   .refine((v) => esStaffRole(v.role) || !!v.sucursalId, {
     message: 'Sucursal obligatoria para roles de aliado',
     path: ['sucursalId'],
+  })
+  .refine((v) => v.role !== 'ASESOR_COMERCIAL' || !!v.asesorComercialId, {
+    message: 'Selecciona el asesor del catálogo al que se vincula este login',
+    path: ['asesorComercialId'],
+  })
+  .refine((v) => v.role === 'ASESOR_COMERCIAL' || !v.asesorComercialId, {
+    message: 'asesorComercialId solo aplica al rol ASESOR_COMERCIAL',
+    path: ['asesorComercialId'],
   });
 
 export const UserUpdateSchema = z

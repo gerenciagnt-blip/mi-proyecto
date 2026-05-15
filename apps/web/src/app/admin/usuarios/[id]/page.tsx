@@ -20,6 +20,16 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
         sucursal: {
           select: { id: true, tarifaOrdinario: true, tarifaResolucion: true },
         },
+        // Sprint Asesor Comercial — si el user es ASESOR_COMERCIAL, lo
+        // pasamos al form para mostrar info read-only del catálogo.
+        asesorComercial: {
+          select: {
+            codigo: true,
+            nombre: true,
+            email: true,
+            sucursal: { select: { codigo: true, nombre: true } },
+          },
+        },
       },
     }),
     prisma.sucursal.findMany({
@@ -73,6 +83,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
             sessionUserId={sessionUserId}
             tarifaOrdinario={tarifaOrdinario}
             tarifaResolucion={tarifaResolucion}
+            asesorComercial={user.asesorComercial}
           />
         </section>
 

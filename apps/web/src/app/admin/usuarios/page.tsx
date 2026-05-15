@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   SOPORTE: 'Soporte',
   ALIADO_OWNER: 'Dueño Aliado',
   ALIADO_USER: 'Usuario Aliado',
+  ASESOR_COMERCIAL: 'Asesor Comercial',
 };
 
 type SP = { q?: string; sucursalId?: string };
@@ -39,13 +40,14 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
     ];
   }
 
-  const [usuarios, sucursales, rolesCustom] = await Promise.all([
+  const [usuarios, sucursales, rolesCustom, asesoresSinLogin] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
         sucursal: { select: { codigo: true } },
         rolCustom: { select: { nombre: true } },
+        asesorComercial: { select: { codigo: true, nombre: true } },
         _count: { select: { empresas: true } },
       },
     }),
@@ -59,6 +61,20 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
       orderBy: { nombre: 'asc' },
       select: { id: true, nombre: true, basedOn: true },
     }),
+    // Sprint Asesor Comercial — lista de asesores ACTIVOS que aún no
+    // tienen login. El form de crear usuario sirve esta lista cuando se
+    // elige el rol ASESOR_COMERCIAL.
+    prisma.asesorComercial.findMany({
+      where: { active: true, user: null },
+      orderBy: [{ sucursal: { codigo: 'asc' } }, { codigo: 'asc' }],
+      select: {
+        id: true,
+        codigo: true,
+        nombre: true,
+        email: true,
+        sucursal: { select: { codigo: true, nombre: true } },
+      },
+    }),
   ]);
 
   return (
@@ -70,7 +86,11 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
           </h1>
           <p className="mt-1 text-sm text-slate-500">Usuarios del sistema, roles y sucursales.</p>
         </div>
-        <CreateUserDialog sucursales={sucursales} rolesCustom={rolesCustom} />
+        <CreateUserDialog
+          sucursales={sucursales}
+          rolesCustom={rolesCustom}
+          asesoresSinLogin={asesoresSinLogin}
+        />
       </header>
 
       <UsuariosTabs />
@@ -158,6 +178,14 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
                     <p>{ROLE_LABELS[u.role] ?? u.role}</p>
                     {u.rolCustom && (
                       <p className="mt-0.5 text-[10px] text-brand-blue">{u.rolCustom.nombre}</p>
+                    )}
+                    {u.asesorComercial && (
+                      <p
+                        className="mt-0.5 text-[10px] text-slate-500"
+                        title="Asesor del catálogo al que está vinculado este login"
+                      >
+                        {u.asesorComercial.codigo} · {u.asesorComercial.nombre}
+                      </p>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">

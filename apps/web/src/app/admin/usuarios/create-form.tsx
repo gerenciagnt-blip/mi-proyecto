@@ -13,14 +13,26 @@ import { createUserAction, type ActionState } from './actions';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
-// `basedOn` usa `Role` (todos los valores del enum) — la UI muestra solo
-// roles base "tradicionales" porque ASESOR_COMERCIAL se crea desde el
-// catálogo (apps/web/.../catalogos/asesores) con su botón "Crear login";
-// el form de Usuarios no lo expone como opción.
+// `basedOn` usa `Role` (todos los valores del enum). La UI ya no filtra
+// ASESOR_COMERCIAL como opción para RolCustom porque ese rol también
+// puede tener matriz custom en el futuro.
 export type RolCustomOpt = {
   id: string;
   nombre: string;
   basedOn: Role;
+};
+
+/**
+ * Sprint Asesor Comercial — un asesor del catálogo que aún no tiene
+ * `User` vinculado. Se sirve cuando el form quiere ofrecer crear el
+ * login del rol ASESOR_COMERCIAL.
+ */
+export type AsesorSinLoginOpt = {
+  id: string;
+  codigo: string;
+  nombre: string;
+  email: string | null;
+  sucursal: { codigo: string; nombre: string } | null;
 };
 
 /** Genera una contraseña aleatoria con 12 caracteres:
@@ -47,16 +59,19 @@ function generarPassword(): string {
 export function CreateUserForm({
   sucursales,
   rolesCustom,
+  asesoresSinLogin,
   onSuccess,
 }: {
   sucursales: Sucursal[];
   rolesCustom: RolCustomOpt[];
+  asesoresSinLogin: AsesorSinLoginOpt[];
   onSuccess?: () => void;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createUserAction, {});
   const ref = useRef<HTMLFormElement>(null);
   const [role, setRole] = useState('ALIADO_OWNER');
   const [rolCustomId, setRolCustomId] = useState('');
+  const [asesorComercialId, setAsesorComercialId] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
@@ -65,6 +80,7 @@ export function CreateUserForm({
       ref.current?.reset();
       setRole('ALIADO_OWNER');
       setRolCustomId('');
+      setAsesorComercialId('');
       setPassword('');
       setPasswordConfirm('');
       onSuccess?.();
@@ -76,6 +92,10 @@ export function CreateUserForm({
 
   // Staff (ADMIN / SOPORTE) no requiere sucursal — es cross-tenant.
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
+  // Sprint Asesor Comercial — el rol asesor hereda la sucursal del
+  // catálogo, no se elige en el form.
+  const esAsesor = role === 'ASESOR_COMERCIAL';
+  const asesorElegido = asesoresSinLogin.find((a) => a.id === asesorComercialId) ?? null;
 
   // Validación cliente: coincidencia de contraseñas
   const passwordsMatch =
@@ -167,6 +187,7 @@ export function CreateUserForm({
             onChange={(e) => {
               setRole(e.target.value);
               setRolCustomId(''); // reset rol custom al cambiar nivel
+              setAsesorComercialId(''); // reset asesor al cambiar nivel
             }}
             className="mt-1"
           >
@@ -174,13 +195,63 @@ export function CreateUserForm({
             <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
             <option value="ALIADO_USER">Usuario Aliado</option>
+            <option value="ASESOR_COMERCIAL">Asesor Comercial</option>
           </Select>
           <p className="mt-1 text-[10px] text-slate-500">
             ADMIN y Soporte ven todas las sucursales. Dueño y Usuario Aliado ven solo la suya;
-            asigna un rol personalizado al Usuario Aliado para refinar sus permisos.
+            asigna un rol personalizado al Usuario Aliado para refinar sus permisos. Asesor
+            Comercial es un sub-rol del aliado vinculado al catálogo de asesores.
           </p>
         </div>
-        {!esStaff && (
+        {/* Asesor Comercial: selector de asesor del catálogo (hereda sucursal). */}
+        {esAsesor && (
+          <div>
+            <Label htmlFor="asesorComercialId">
+              Asesor del catálogo <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              id="asesorComercialId"
+              name="asesorComercialId"
+              required
+              value={asesorComercialId}
+              onChange={(e) => setAsesorComercialId(e.target.value)}
+              className="mt-1"
+            >
+              <option value="" disabled>
+                — Seleccionar asesor —
+              </option>
+              {asesoresSinLogin.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.codigo} · {a.nombre}
+                  {a.sucursal ? ` — ${a.sucursal.codigo}` : ' — global'}
+                </option>
+              ))}
+            </Select>
+            {asesoresSinLogin.length === 0 && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                No hay asesores sin login. Crea uno en{' '}
+                <span className="font-medium">Configuración → Asesor comercial</span> primero.
+              </p>
+            )}
+            {asesorElegido && (
+              <p className="mt-1 text-[10px] text-slate-500">
+                La sucursal del login se hereda del catálogo:{' '}
+                <span className="font-medium">
+                  {asesorElegido.sucursal
+                    ? `${asesorElegido.sucursal.codigo} — ${asesorElegido.sucursal.nombre}`
+                    : 'Global (sin sucursal)'}
+                </span>
+                {asesorElegido.email && (
+                  <>
+                    {' · email sugerido: '}
+                    <span className="font-mono">{asesorElegido.email}</span>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+        {!esStaff && !esAsesor && (
           <div>
             <Label htmlFor="sucursalId">
               Sucursal <span className="text-red-500">*</span>
