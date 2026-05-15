@@ -388,7 +388,10 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
       )}
 
       {/* Modal de calificación — aparece automáticamente cuando el aliado
-         abre una conv cerrada y aún no calificó este ciclo. */}
+         abre una conv cerrada y aún no calificó este ciclo. Tiene 3
+         salidas: enviar calificación, "Más tarde" (skip), o "Reabrir
+         sin calificar" (dispara reabrirChat, que cambia el meta.estado
+         y por consecuencia debeCalificar=false → modal se cierra solo). */}
       {mostrarRating && meta && (
         <ModalCalificacion
           conversacionId={conversacionId}
@@ -397,6 +400,15 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
             if (skipeado) marcarSkipeado(conversacionId, meta.ciclo);
             setMostrarRating(false);
             void mutate(['chat:mensajes', conversacionId]);
+          }}
+          onReabrir={() => {
+            // Skip implícito del ciclo actual — sino el modal volvería
+            // a aparecer la próxima vez que esta conv se cierre (sin
+            // que el aliado haya calificado este ciclo). Se reabre
+            // limpio y entra a un ciclo nuevo.
+            marcarSkipeado(conversacionId, meta.ciclo);
+            setMostrarRating(false);
+            reabrirChat();
           }}
         />
       )}
@@ -646,10 +658,22 @@ function ModalCalificacion({
   conversacionId,
   ciclo,
   onClose,
+  onReabrir,
 }: {
   conversacionId: string;
   ciclo: number;
+  /**
+   * Cierra el modal. `skipeado=true` cuando el user pulsó "Más tarde"
+   * (se marca en localStorage para no volver a molestar este ciclo).
+   * Para calificación exitosa o "Reabrir" no skipeamos (la conv cambia
+   * de estado y eso resetea el flujo por sí solo).
+   */
   onClose: (skipeado: boolean) => void;
+  /**
+   * Dispara la reapertura de la conv. El parent maneja la llamada al
+   * server y el cierre del modal por el cambio de meta.estado.
+   */
+  onReabrir: () => void;
 }) {
   const [puntaje, setPuntaje] = useState(0);
   const [hover, setHover] = useState(0);
@@ -751,7 +775,21 @@ function ModalCalificacion({
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // Reabrir: el parent ejecuta la action; el cierre del
+                  // modal se hace por el cambio de meta.estado (debe
+                  // Calificar pasa a false cuando la conv pasa a ABIERTA).
+                  onReabrir();
+                }}
+                disabled={enviando}
+                className="rounded-lg border border-brand-blue/40 bg-white px-3 py-1.5 text-sm font-medium text-brand-blue-dark hover:bg-brand-blue/5"
+                title="Reabrir la conversación sin calificar todavía"
+              >
+                Reabrir sin calificar
+              </button>
               <button
                 type="button"
                 onClick={() => onClose(true)}
