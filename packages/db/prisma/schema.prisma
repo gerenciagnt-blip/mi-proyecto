@@ -2414,6 +2414,14 @@ enum NotificacionTipo {
    * la página manualmente.
    */
   SOPORTE_NOTA_INCAPACIDAD
+  /**
+   * Sprint Chat · notif bandeja — un participante de la conversación
+   * recibió un mensaje y NO lo había abierto en los últimos 2 min
+   * (chat "frío"). Lleva al user al widget abierto en esa conv.
+   * Dedup: no se emite otra notif del mismo (user, conversacion) si
+   * hay una de hace <5 min.
+   */
+  CHAT_MENSAJE_NUEVO
 }
 
 model Notificacion {
