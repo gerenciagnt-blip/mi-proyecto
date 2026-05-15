@@ -4,16 +4,18 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { CreateUserForm, type RolCustomOpt } from './create-form';
+import { CreateUserForm, type RolCustomOpt, type AsesorSinLoginOpt } from './create-form';
 
 type Sucursal = { id: string; codigo: string; nombre: string };
 
 export function CreateUserDialog({
   sucursales,
   rolesCustom,
+  asesoresSinLogin,
 }: {
   sucursales: Sucursal[];
   rolesCustom: RolCustomOpt[];
+  asesoresSinLogin: AsesorSinLoginOpt[];
 }) {
   const [open, setOpen] = useState(false);
 
@@ -34,6 +36,7 @@ export function CreateUserDialog({
         <CreateUserForm
           sucursales={sucursales}
           rolesCustom={rolesCustom}
+          asesoresSinLogin={asesoresSinLogin}
           onSuccess={() => setOpen(false)}
         />
       </Dialog>

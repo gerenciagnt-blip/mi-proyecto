@@ -29,6 +29,13 @@ type RolCustomOpt = {
   basedOn: import('@pila/db').Role;
 };
 
+type AsesorComercialInfo = {
+  codigo: string;
+  nombre: string;
+  email: string | null;
+  sucursal: { codigo: string; nombre: string } | null;
+};
+
 export function EditUserForm({
   user,
   sucursales,
@@ -36,6 +43,7 @@ export function EditUserForm({
   sessionUserId,
   tarifaOrdinario,
   tarifaResolucion,
+  asesorComercial,
 }: {
   user: User;
   sucursales: Sucursal[];
@@ -45,12 +53,22 @@ export function EditUserForm({
   /** Tarifas actuales de la sucursal del aliado (solo ALIADO_OWNER). */
   tarifaOrdinario: number | null;
   tarifaResolucion: number | null;
+  /**
+   * Sprint Asesor Comercial — info del catálogo si el user es ASESOR_COMERCIAL.
+   * Si está presente, se muestra read-only y se bloquea el cambio de rol/sucursal.
+   */
+  asesorComercial: AsesorComercialInfo | null;
 }) {
   const bound = updateUserAction.bind(null, user.id);
   const [state, action, pending] = useActionState<ActionState, FormData>(bound, {});
   const [role, setRole] = useState<Role>(user.role);
   const [rolCustomId, setRolCustomId] = useState<string>(user.rolCustomId ?? '');
   const esSelf = user.id === sessionUserId;
+  // Sprint Asesor Comercial — un user vinculado a un asesor del catálogo
+  // no puede cambiar de rol ni de sucursal desde acá. Para reasignar
+  // hay que borrar el login (en el catálogo) y crear uno nuevo.
+  const esAsesor = user.role === 'ASESOR_COMERCIAL';
+  const bloqueado = esSelf || esAsesor;
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
   const rolesCustomDisponibles = rolesCustom.filter((r) => r.basedOn === role);
 
@@ -62,6 +80,25 @@ export function EditUserForm({
           <span>
             Estás editando tu propio usuario — el rol y la sucursal quedan bloqueados para evitar
             perder tu acceso.
+          </span>
+        </Alert>
+      )}
+      {esAsesor && asesorComercial && (
+        <Alert variant="info">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Este login está vinculado al asesor del catálogo{' '}
+            <span className="font-mono font-semibold">{asesorComercial.codigo}</span>
+            {' · '}
+            {asesorComercial.nombre}
+            {asesorComercial.sucursal && (
+              <>
+                {' '}
+                — sucursal <span className="font-mono">{asesorComercial.sucursal.codigo}</span>
+              </>
+            )}
+            . El rol y la sucursal no se editan acá; para reasignar, borra este login desde el
+            catálogo y crea uno nuevo.
           </span>
         </Alert>
       )}
@@ -85,16 +122,19 @@ export function EditUserForm({
               setRole(e.target.value as Role);
               setRolCustomId(''); // reset al cambiar nivel
             }}
-            disabled={esSelf}
+            disabled={bloqueado}
             className="mt-1"
           >
             <option value="ADMIN">Administrador</option>
             <option value="SOPORTE">Soporte</option>
             <option value="ALIADO_OWNER">Dueño Aliado</option>
             <option value="ALIADO_USER">Usuario Aliado</option>
+            {/* Solo aparece cuando el user YA es asesor — no se "convierte"
+               a asesor desde esta pantalla (eso es flujo del create-form). */}
+            {esAsesor && <option value="ASESOR_COMERCIAL">Asesor Comercial</option>}
           </Select>
         </div>
-        {!esStaff && (
+        {!esStaff && !esAsesor && (
           <div>
             <Label htmlFor="sucursalId">
               Sucursal <span className="text-red-500">*</span>
@@ -104,7 +144,7 @@ export function EditUserForm({
               name="sucursalId"
               required
               defaultValue={user.sucursalId ?? ''}
-              disabled={esSelf}
+              disabled={bloqueado}
               className="mt-1"
             >
               <option value="" disabled>
@@ -189,7 +229,7 @@ export function EditUserForm({
           type="checkbox"
           name="active"
           defaultChecked={user.active}
-          disabled={esSelf}
+          disabled={bloqueado}
           className="h-4 w-4 rounded border-slate-300"
         />
         <span>Usuario activo</span>

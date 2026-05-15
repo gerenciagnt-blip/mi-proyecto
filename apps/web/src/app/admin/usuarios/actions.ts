@@ -20,7 +20,38 @@ export async function createUserAction(
   const role = String(formData.get('role') ?? '');
   const sucursalRaw = String(formData.get('sucursalId') ?? '');
   const rolCustomRaw = String(formData.get('rolCustomId') ?? '');
+  const asesorComercialRaw = String(formData.get('asesorComercialId') ?? '');
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
+  const esAsesor = role === 'ASESOR_COMERCIAL';
+
+  // Sprint Asesor Comercial — para rol ASESOR_COMERCIAL la sucursal se
+  // hereda del catálogo (asesor.sucursalId), no del form. Resolvemos
+  // antes del safeParse para que el schema valide consistencia.
+  let sucursalIdResuelta: string | null;
+  if (esStaff) {
+    sucursalIdResuelta = null;
+  } else if (esAsesor) {
+    if (!asesorComercialRaw) {
+      return {
+        error: 'Selecciona el asesor del catálogo al que se vincula este login',
+      };
+    }
+    const asesor = await prisma.asesorComercial.findUnique({
+      where: { id: asesorComercialRaw },
+      select: { id: true, active: true, sucursalId: true, user: { select: { id: true } } },
+    });
+    if (!asesor) return { error: 'Asesor no encontrado' };
+    if (!asesor.active) {
+      return { error: 'No se puede crear login para un asesor inactivo' };
+    }
+    if (asesor.user) {
+      return { error: 'Este asesor ya tiene un login asociado' };
+    }
+    sucursalIdResuelta = asesor.sucursalId;
+  } else {
+    sucursalIdResuelta = sucursalRaw || null;
+  }
+
   const parsed = UserCreateSchema.safeParse({
     email: String(formData.get('email') ?? '')
       .toLowerCase()
@@ -28,8 +59,9 @@ export async function createUserAction(
     name: titleCase(String(formData.get('name') ?? '').trim()),
     password: String(formData.get('password') ?? ''),
     role,
-    sucursalId: esStaff ? null : sucursalRaw || null,
+    sucursalId: sucursalIdResuelta,
     rolCustomId: rolCustomRaw || null,
+    asesorComercialId: esAsesor ? asesorComercialRaw : null,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };
@@ -63,12 +95,13 @@ export async function createUserAction(
         role: parsed.data.role,
         sucursalId: parsed.data.sucursalId,
         rolCustomId: parsed.data.rolCustomId ?? null,
+        asesorComercialId: parsed.data.asesorComercialId ?? null,
       },
     });
   } catch (e) {
     const msg =
       e instanceof Error && e.message.includes('Unique')
-        ? 'Ya existe un usuario con ese email'
+        ? 'Ya existe un usuario con ese email o el asesor ya tiene login'
         : 'Error al crear usuario';
     return { error: msg };
   }
@@ -105,17 +138,24 @@ export async function updateUserAction(
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) return { error: 'Usuario no existe' };
 
-  // Protección auto-cambio: si se está editando el propio usuario, forzar
-  // rol/sucursal/active a los valores actuales (ignorando el form), para
-  // evitar que se quite su propio acceso por accidente o manipulación.
-  const role = esSelf ? existing.role : String(formData.get('role') ?? '');
-  const sucursalRaw = esSelf
+  // Sprint Asesor Comercial — un user con rol ASESOR_COMERCIAL no puede
+  // cambiar su rol/sucursal/active desde este form. Para reasignar hay
+  // que borrarlo y crearlo de nuevo desde el catálogo. Tratamos esto
+  // igual que el caso `esSelf`: forzamos los valores existentes.
+  const esAsesor = existing.role === 'ASESOR_COMERCIAL';
+  const bloqueado = esSelf || esAsesor;
+
+  // Protección auto-cambio: si se está editando el propio usuario o es
+  // un asesor vinculado al catálogo, forzar rol/sucursal/active a los
+  // valores actuales (ignorando el form), para evitar inconsistencias.
+  const role = bloqueado ? existing.role : String(formData.get('role') ?? '');
+  const sucursalRaw = bloqueado
     ? (existing.sucursalId ?? '')
     : String(formData.get('sucursalId') ?? '');
   const rolCustomRaw = esSelf
     ? (existing.rolCustomId ?? '')
     : String(formData.get('rolCustomId') ?? '');
-  const active = esSelf ? existing.active : formData.get('active') === 'on';
+  const active = bloqueado ? existing.active : formData.get('active') === 'on';
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
 
   const parsed = UserUpdateSchema.safeParse({
