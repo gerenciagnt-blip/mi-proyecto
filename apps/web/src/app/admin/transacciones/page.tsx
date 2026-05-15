@@ -127,6 +127,13 @@ async function asegurarPeriodos(smlv: SmlvConfig): Promise<PeriodoContable[]> {
 
 export default async function TransaccionPage() {
   await requirePermiso('transacciones');
+  // Sprint Asesor — el rol ASESOR_COMERCIAL no crea transacciones. Lo
+  // enviamos a Historial (sí habilitado para él).
+  const __scope = await getUserScope();
+  if (__scope?.tipo === 'ASESOR') {
+    const { redirect } = await import('next/navigation');
+    redirect('/admin/transacciones/historial');
+  }
   const smlvConfig = await prisma.smlvConfig.findUnique({
     where: { id: 'singleton' },
   });

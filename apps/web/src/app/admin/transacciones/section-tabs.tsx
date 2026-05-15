@@ -39,11 +39,19 @@ const TABS: Tab[] = [
   },
 ];
 
-export function SectionTabs() {
+export function SectionTabs({ esAsesor = false }: { esAsesor?: boolean }) {
   const pathname = usePathname() ?? '';
+  // Sprint Asesor — el asesor solo ve Historial y Cartera de cotizantes.
+  // Transacción (crear) y Cuadre de caja son del aliado dueño / staff.
+  const tabsVisibles = esAsesor
+    ? TABS.filter(
+        (t) =>
+          t.href === '/admin/transacciones/historial' || t.href === '/admin/transacciones/cartera',
+      )
+    : TABS;
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-0">
-      {TABS.map((t) => {
+      {tabsVisibles.map((t) => {
         const active = t.match(pathname);
         const Icon = t.icon;
         return (

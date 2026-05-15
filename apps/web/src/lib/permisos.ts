@@ -198,7 +198,11 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Operación',
     rolesAplica: NO_ASESOR,
   },
-  { key: 'transacciones', label: 'Transacciones', grupo: 'Operación', rolesAplica: NO_ASESOR },
+  // `transacciones`: el módulo es accesible para todos los roles, incluido
+  // ASESOR_COMERCIAL — el asesor ve dentro las sub-tabs "Cartera de
+  // cotizantes" e "Historial" filtradas a lo que él gestiona (sus
+  // afiliaciones). NO ve "Transacción" (crear) ni "Cuadre de caja".
+  { key: 'transacciones', label: 'Transacciones', grupo: 'Operación' },
   { key: 'planos', label: 'Planos', grupo: 'Operación', rolesAplica: NO_ASESOR },
   // Sprint 8.6 — Permiso específico para solicitar el certificado de
   // afiliación vigente desde el modal Consultar de cada afiliación. Si
