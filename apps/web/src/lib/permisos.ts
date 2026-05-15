@@ -227,13 +227,13 @@ export const MODULOS: readonly ModuloDef[] = [
   // ========================= Administrativo =========================
   // Solo aliado (la ve scopeada a su sucursal). Staff ve la versión
   // global desde Soporte.
-  // El ASESOR_COMERCIAL ve la cartera filtrada a las afiliaciones donde
-  // él es asesor — su scope mete `WHERE asesorComercialId = el suyo`.
+  // El ASESOR_COMERCIAL NO ve Cartera (se le dio acceso a "Cartera de
+  // cotizantes" en Transacciones, que es la vista propia de su rol).
   {
     key: 'admin.cartera',
     label: 'Cartera',
     grupo: 'Administrativo',
-    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER', 'ASESOR_COMERCIAL'],
+    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
   },
   {
     key: 'admin.incapacidades',
@@ -242,12 +242,13 @@ export const MODULOS: readonly ModuloDef[] = [
     rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
   },
   // Módulo Reporte AT — el aliado radica desde Administrativo, soporte
-  // gestiona desde la bandeja paralela `soporte.reporte_at`.
+  // gestiona desde la bandeja paralela `soporte.reporte_at`. El asesor
+  // también lo ve (filtrado a los reportes AT de su sucursal).
   {
     key: 'admin.reporte_at',
     label: 'Reporte AT',
     grupo: 'Administrativo',
-    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
+    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER', 'ASESOR_COMERCIAL'],
   },
   {
     key: 'soporte.reporte_at',

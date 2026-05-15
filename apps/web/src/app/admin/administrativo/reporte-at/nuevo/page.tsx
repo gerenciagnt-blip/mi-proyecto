@@ -22,7 +22,9 @@ export default async function ReporteAtNuevoPage() {
         })
       : [];
 
-  const sucursalIdActual = scope?.tipo === 'SUCURSAL' ? scope.sucursalId : null;
+  // SUCURSAL y ASESOR heredan sucursalId del scope para pre-poblar el form.
+  const sucursalIdActual =
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? scope.sucursalId : null;
 
   return (
     <div className="space-y-6">

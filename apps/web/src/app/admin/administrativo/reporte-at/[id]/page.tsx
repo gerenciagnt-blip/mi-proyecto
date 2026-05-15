@@ -38,7 +38,10 @@ export default async function ReporteAtDetalleAdministrativoPage({
     },
   });
   if (!reporte) notFound();
-  if (scope.tipo === 'SUCURSAL' && reporte.sucursalId !== scope.sucursalId) {
+  if (
+    (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') &&
+    reporte.sucursalId !== scope.sucursalId
+  ) {
     notFound();
   }
 

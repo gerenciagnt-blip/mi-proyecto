@@ -25,7 +25,8 @@ export default async function ReporteAtNuevoModal() {
           select: { id: true, codigo: true, nombre: true },
         })
       : [];
-  const sucursalIdActual = scope?.tipo === 'SUCURSAL' ? scope.sucursalId : null;
+  const sucursalIdActual =
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? scope.sucursalId : null;
 
   return (
     <RadicarModalShell
