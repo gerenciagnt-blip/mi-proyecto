@@ -18,11 +18,11 @@ import {
   calificarConversacionAction,
 } from './cierre-actions';
 
-// Polling de 3s en mensajes — el chat abierto es lo más interactivo,
-// vale la pena el costo extra para sentir "casi tiempo real". Bajar de
-// 2s entraría en territorio de SSE/WebSocket (push real); 3s es el
-// sweet spot con polling.
-const REFRESH_INTERVAL_MS = 3_000;
+// Sprint Chat · SSE — el push real lo hace EventSource (latencia ~200ms).
+// Este polling sirve como FALLBACK cuando la conexión SSE se cae o el
+// browser tarda en reconectar. Lo subimos a 30s para no duplicar carga
+// con el push.
+const REFRESH_INTERVAL_MS = 30_000;
 
 const MIMES_IMAGEN = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 const TAMANO_MAX = 5 * 1024 * 1024;

@@ -3,8 +3,30 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requirePermiso } from '@/lib/auth-helpers';
+import { publishMany } from '@/lib/chat/bus';
 
 export type ActionState = { error?: string; ok?: boolean };
+
+/**
+ * Sprint Chat · SSE — publica un evento `conv-updated` a todos los
+ * participantes de la conversación. Se usa al cerrar/reabrir/marcar
+ * leído para que los clientes conectados refresquen al instante.
+ * Fire-and-forget.
+ */
+async function publishConvUpdate(conversacionId: string) {
+  try {
+    const participantes = await prisma.conversacionParticipante.findMany({
+      where: { conversacionId },
+      select: { userId: true },
+    });
+    publishMany(
+      participantes.map((p) => p.userId),
+      { tipo: 'conv-updated', conversacionId },
+    );
+  } catch {
+    // best-effort
+  }
+}
 
 /** Inactividad que dispara auto-cierre (30 min). */
 const INACTIVIDAD_MS = 30 * 60 * 1000;
@@ -51,6 +73,7 @@ export async function cerrarConversacionAction(conversacionId: string): Promise<
       cerradaPorInactividad: false,
     },
   });
+  await publishConvUpdate(conversacionId);
   revalidatePath('/admin/chat');
   return { ok: true };
 }
@@ -84,6 +107,7 @@ export async function reabrirConversacionAction(conversacionId: string): Promise
       ciclo: { increment: 1 },
     },
   });
+  await publishConvUpdate(conversacionId);
   revalidatePath('/admin/chat');
   return { ok: true };
 }
