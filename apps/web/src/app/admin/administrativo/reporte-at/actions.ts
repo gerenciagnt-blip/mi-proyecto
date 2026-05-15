@@ -88,7 +88,9 @@ export async function buscarCotizanteReporteAtAction(
     where: {
       tipoDocumento: tipoDocumento as 'CC' | 'CE' | 'TI',
       numeroDocumento: doc,
-      ...(scope.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {}),
+      ...(scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR'
+        ? { sucursalId: scope.sucursalId }
+        : {}),
     },
     include: {
       municipio: { select: { nombre: true } },
@@ -109,7 +111,7 @@ export async function buscarCotizanteReporteAtAction(
     return {
       found: null,
       error:
-        scope.tipo === 'SUCURSAL'
+        scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR'
           ? 'Cotizante no encontrado en tu sucursal'
           : 'Cotizante no encontrado',
     };
@@ -196,10 +198,11 @@ export async function radicarReporteAtAction(
   );
   if (!ok) return { error: 'No tienes permiso sobre el módulo Reporte AT' };
 
-  // Sucursal destino: aliado siempre la suya; staff puede recibirla del
-  // form para registrar a nombre de cualquier sucursal.
+  // Sucursal destino: aliado (SUCURSAL/ASESOR) siempre la suya; staff
+  // puede recibirla del form para registrar a nombre de cualquier sucursal.
   const sucursalIdRaw = String(formData.get('sucursalId') ?? '').trim();
-  const sucursalIdDestino = scope.tipo === 'SUCURSAL' ? scope.sucursalId : sucursalIdRaw || null;
+  const sucursalIdDestino =
+    scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR' ? scope.sucursalId : sucursalIdRaw || null;
   if (!sucursalIdDestino) {
     return { error: 'Selecciona la sucursal a la que pertenece el reporte' };
   }
@@ -526,7 +529,7 @@ export async function gestionAliadoReporteAtAction(
     select: { id: true, sucursalId: true },
   });
   if (!r) return { error: 'Reporte no encontrado' };
-  if (scope.tipo === 'SUCURSAL' && r.sucursalId !== scope.sucursalId) {
+  if ((scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') && r.sucursalId !== scope.sucursalId) {
     return { error: 'No tienes permiso sobre este reporte' };
   }
 

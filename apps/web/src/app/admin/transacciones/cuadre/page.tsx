@@ -46,6 +46,13 @@ function diaAnteriorIso(iso: string): string {
 
 export default async function CuadreCajaPage({ searchParams }: { searchParams: Promise<SP> }) {
   await requirePermiso('transacciones');
+  // Sprint Asesor — el rol ASESOR_COMERCIAL no accede a Cuadre de caja.
+  const { getUserScope } = await import('@/lib/sucursal-scope');
+  const __scope = await getUserScope();
+  if (__scope?.tipo === 'ASESOR') {
+    const { redirect } = await import('next/navigation');
+    redirect('/admin/transacciones/historial');
+  }
   const sp = await searchParams;
   const valid = (s?: string) => (s?.match(/^\d{4}-\d{2}-\d{2}$/) ? s : null);
 

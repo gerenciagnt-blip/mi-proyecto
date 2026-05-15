@@ -81,7 +81,13 @@ export default async function HistorialPage({ searchParams }: { searchParams: Pr
 
   // Scope por sucursal — un comprobante pertenece a la sucursal del
   // cotizante (INDIVIDUAL), cuentaCobro (EMPRESA_CC) o asesor (ASESOR_COMERCIAL).
-  // SUCURSAL: OR entre los 3 (los otros son null y no matchean). STAFF: sin filtro.
+  // - STAFF: sin filtro (ve todo).
+  // - SUCURSAL: OR entre los 3 (los otros son null y no matchean).
+  // - ASESOR: OR entre comprobantes donde:
+  //     (a) el cotizante tiene una afiliación con su asesorComercialId
+  //     (b) el comprobante es agrupación ASESOR_COMERCIAL emitido a él
+  //   El asesor NO ve comprobantes de cuenta de cobro (esos los emite
+  //   el aliado dueño y no tienen relación con la venta del asesor).
   const scope = await getUserScope();
   const scopeOR: Prisma.ComprobanteWhereInput[] =
     scope?.tipo === 'SUCURSAL'
@@ -94,7 +100,16 @@ export default async function HistorialPage({ searchParams }: { searchParams: Pr
             },
           },
         ]
-      : [];
+      : scope?.tipo === 'ASESOR'
+        ? [
+            {
+              cotizante: {
+                afiliaciones: { some: { asesorComercialId: scope.asesorComercialId } },
+              },
+            },
+            { asesorComercialId: scope.asesorComercialId },
+          ]
+        : [];
 
   const textOR: Prisma.ComprobanteWhereInput[] = q
     ? [

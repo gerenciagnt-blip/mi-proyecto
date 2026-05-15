@@ -29,8 +29,11 @@ export default async function ReporteAtAdministrativoPage({
   const q = sp.q?.trim() ?? '';
 
   const scope = await getUserScope();
+  // SUCURSAL y ASESOR comparten filtro por sucursal — el asesor ve los
+  // reportes AT de su sucursal (no se filtra por asesorComercialId
+  // porque el reporte AT lo radica el aliado dueño, no el asesor).
   const scopeWhere: Prisma.ReporteAccidenteTrabajoWhereInput =
-    scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? { sucursalId: scope.sucursalId } : {};
 
   const where: Prisma.ReporteAccidenteTrabajoWhereInput = { ...scopeWhere };
   if (estadoFilter) where.estado = estadoFilter;

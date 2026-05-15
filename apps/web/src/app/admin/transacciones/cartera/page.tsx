@@ -70,11 +70,24 @@ export default async function CarteraPage({ searchParams }: { searchParams: Prom
     );
   }
 
-  // Scope: SUCURSAL ve sólo sus cotizantes; STAFF ve todo.
+  // Scope:
+  //   - STAFF: ve todo.
+  //   - SUCURSAL: solo cotizantes de su sucursal.
+  //   - ASESOR: solo cotizantes con al menos una afiliación donde él es
+  //     el asesor comercial (Sprint Asesor — vista personal).
   const scope = await getUserScope();
-  const cotizanteScope = scope?.tipo === 'SUCURSAL' ? { sucursalId: scope.sucursalId } : {};
+  const cotizanteScope =
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR' ? { sucursalId: scope.sucursalId } : {};
   const comprobanteCotizanteScope =
-    scope?.tipo === 'SUCURSAL' ? { cotizante: { sucursalId: scope.sucursalId } } : {};
+    scope?.tipo === 'SUCURSAL' || scope?.tipo === 'ASESOR'
+      ? { cotizante: { sucursalId: scope.sucursalId } }
+      : {};
+  // Filtro extra para asesor: en `whereCot` exigimos que el cotizante
+  // tenga al menos una afiliación con `asesorComercialId = el suyo`.
+  const filtroAfiliacionesAsesor =
+    scope?.tipo === 'ASESOR'
+      ? { some: { estado: 'ACTIVA' as const, asesorComercialId: scope.asesorComercialId } }
+      : { some: { estado: 'ACTIVA' as const } };
 
   // Cotizantes con MENSUALIDAD procesada y no anulada en el período.
   // Las vinculaciones/afiliaciones NO cuentan — un cotizante puede tener
@@ -94,9 +107,10 @@ export default async function CarteraPage({ searchParams }: { searchParams: Prom
     conFactura.map((c) => c.cotizanteId).filter((x): x is string => x != null),
   );
 
-  // Filtro por nombre/documento + scope por sucursal
+  // Filtro por nombre/documento + scope por sucursal + (para ASESOR)
+  // por asesorComercialId de la afiliación activa.
   const whereCot: Prisma.CotizanteWhereInput = {
-    afiliaciones: { some: { estado: 'ACTIVA' } },
+    afiliaciones: filtroAfiliacionesAsesor,
     id: { notIn: Array.from(facturadosIds) },
     ...cotizanteScope,
   };
