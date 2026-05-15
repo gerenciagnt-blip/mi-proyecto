@@ -175,6 +175,14 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Soporte',
     rolesAplica: STAFF,
   },
+  // Sprint PagoSimple Errores — bandeja de planillas con estado ERROR
+  // en validación (inconsistencias UGPP). Solo staff corrige.
+  {
+    key: 'soporte.planillas_errores',
+    label: 'Planillas con errores PagoSimple',
+    grupo: 'Soporte',
+    rolesAplica: STAFF,
+  },
 
   // ========================= Operación =========================
   // Operación es transversal: aliado y staff la usan.

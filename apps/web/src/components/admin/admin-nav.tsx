@@ -29,6 +29,7 @@ import {
   Scale,
   ClipboardList,
   Star,
+  FileWarning,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -186,6 +187,14 @@ const NAV: NavItem[] = [
         href: '/admin/soporte/calificaciones-chat',
         icon: Star,
         modulo: 'soporte.calificaciones_chat',
+      },
+      // Sprint PagoSimple Errores — bandeja staff de planillas que
+      // fallaron la validación contra el operador.
+      {
+        label: 'Planillas con errores',
+        href: '/admin/soporte/planillas-errores',
+        icon: FileWarning,
+        modulo: 'soporte.planillas_errores',
       },
     ],
   },
