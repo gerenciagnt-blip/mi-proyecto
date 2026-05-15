@@ -105,6 +105,13 @@ export async function reabrirConversacionAction(conversacionId: string): Promise
       cerradaPorUserId: null,
       cerradaPorInactividad: false,
       ciclo: { increment: 1 },
+      // Sprint Chat · fix loop reabrir+auto-cierre — resetea el reloj
+      // de inactividad al instante de reabrir. Sin esto, una conv con
+      // último mensaje hace >30 min se reabría y el siguiente sweep de
+      // `autoCerrarInactivasAction` la volvía a cerrar al instante,
+      // disparando un loop visible: modal calificación → reabrir →
+      // auto-cerrar → modal de nuevo → ...
+      ultimoMensajeAt: new Date(),
     },
   });
   await publishConvUpdate(conversacionId);
