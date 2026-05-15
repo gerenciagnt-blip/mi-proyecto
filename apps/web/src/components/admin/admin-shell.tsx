@@ -10,6 +10,8 @@ import { GlobalSearch } from '@/components/admin/global-search';
 import { MiPerfilButton } from '@/components/admin/mi-perfil-button';
 import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
+import { ChatWidget } from '@/app/admin/chat/chat-widget';
+import { PresenciaHeartbeat } from '@/app/admin/chat/presencia-heartbeat';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'pila.sidebar.open';
@@ -50,6 +52,16 @@ export function AdminShell({
   return (
     <div className="flex min-h-screen bg-slate-50">
       <IdleLogout />
+      {/* Sprint Chat interno — heartbeat invisible + widget flotante.
+          Solo se montan si el user tiene el módulo `chat` accesible
+          (controlado por RolCustom). Heartbeat sin permiso de chat
+          igual no tiene sentido. */}
+      {modulosAccesibles?.includes('chat') && (
+        <>
+          <PresenciaHeartbeat />
+          <ChatWidget />
+        </>
+      )}
       {/* Sidebar — colapsable via transición de width */}
       <aside
         aria-label="Menú principal"

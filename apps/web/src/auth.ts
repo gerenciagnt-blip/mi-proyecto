@@ -82,6 +82,18 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         //    y limpia intentos fallidos previos
         await registrarIntentoExitoso(emailNorm, { id: user.id, name: user.name }, meta);
 
+        // 3. Marcar presencia activa de inmediato — sin esperar al primer
+        //    heartbeat (que tarda hasta 30s). Así el chat ve al user
+        //    como ONLINE en el momento mismo del login.
+        try {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { lastActiveAt: new Date() },
+          });
+        } catch {
+          // best-effort: si falla la presencia el login igual procede
+        }
+
         return {
           id: user.id,
           email: user.email,
@@ -92,6 +104,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           // permisos finos (ej: descargar documentos confidenciales) sin
           // tener que consultar BD en cada request.
           rolCustomId: user.rolCustomId,
+          // Sprint Asesor Comercial — `asesorComercialId` viaja en el JWT
+          // para que el scope filtre Afiliaciones/Cartera sin un round-trip
+          // a BD. Es null para todos los roles excepto ASESOR_COMERCIAL.
+          asesorComercialId: user.asesorComercialId,
         };
       },
     }),

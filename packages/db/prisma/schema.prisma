@@ -31,6 +31,12 @@ enum Role {
   SOPORTE // staff plataforma — mismos permisos base que ADMIN pero con matriz configurable
   ALIADO_OWNER // dueño del aliado — ve toda su sucursal
   ALIADO_USER // sub-usuario del aliado — depende del ALIADO_OWNER, permisos refinados con RolCustom
+  // Asesor comercial con login. Pertenece a una sucursal (la del aliado)
+  // y queda amarrado al registro del catálogo `AsesorComercial` vía
+  // User.asesorComercialId — así heredamos código, comisiones y datos
+  // del catálogo histórico sin duplicar. El scope filtra todo el dominio
+  // (Afiliaciones, Cartera, Dashboard) por `asesorComercialId = el suyo`.
+  ASESOR_COMERCIAL
 }
 
 enum TipoPersona {
@@ -279,12 +285,30 @@ model User {
    * heredando de ALIADO_OWNER o SOPORTE.
    */
   rolCustomId  String?
+  /**
+   * FK al catálogo `AsesorComercial`. Requerido cuando `role = ASESOR_COMERCIAL`
+   * (validado en la app, no en la BD para no romper backfills). El catálogo
+   * sigue vivo y se referencia desde Afiliacion/Comprobante — este campo
+   * solo agrega la capacidad de loguearse "como ese asesor". Un mismo
+   * AsesorComercial puede tener a lo sumo un User asociado (@unique).
+   */
+  asesorComercialId String?  @unique
+  /**
+   * Sprint Chat interno — timestamp del último "heartbeat" del cliente.
+   * Se actualiza cada ~60s mientras el user tenga el panel admin abierto
+   * (via /api/presence/heartbeat). Si `now - lastActiveAt < 2 min` el
+   * user se considera ONLINE para el widget de chat. Es indicativo, no
+   * autoritativo — un crash de tab puede dejarlo "online" hasta que
+   * pase el umbral.
+   */
+  lastActiveAt DateTime?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   sucursal                Sucursal?                    @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   rolCustom               RolCustom?                   @relation(fields: [rolCustomId], references: [id], onDelete: SetNull)
+  asesorComercial         AsesorComercial?             @relation(fields: [asesorComercialId], references: [id], onDelete: SetNull)
   empresas                UsuarioEmpresa[]
   comprobantesCreados     Comprobante[]                @relation("ComprobantesCreados")
   planillasCreadas        Planilla[]                   @relation("PlanillasCreadas")
@@ -312,9 +336,17 @@ model User {
   reportesAtCreados        ReporteAccidenteTrabajo[]   @relation("ReporteATCreator")
   reportesAtGestionesUser  ReporteATGestion[]          @relation("ReporteATGestionUser")
   reportesAtDocsUser       ReporteATDocumento[]        @relation("ReporteATDocumentoUser")
+  // Sprint Chat interno — relaciones inversas hacia el sub-grafo de mensajería.
+  conversacionesCreadas    Conversacion[]              @relation("ConversacionCreator")
+  conversacionParticipante ConversacionParticipante[]  @relation("ConversacionParticipanteUser")
+  mensajesEnviados         Mensaje[]                   @relation("MensajeAutor")
+  // Sprint Chat · cierre+rating
+  conversacionesCerradasPor Conversacion[]              @relation("ConversacionCerradaPor")
+  conversacionCalificaciones ConversacionCalificacion[] @relation("ConversacionCalificacionUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
+  @@index([lastActiveAt(sort: Desc)])
   @@map("users")
 }
 
@@ -727,6 +759,13 @@ model AsesorComercial {
   sucursal     Sucursal?     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
+  /**
+   * User opcional con login asociado a este asesor. 1:1. Si está seteado,
+   * ese user (rol=ASESOR_COMERCIAL) verá las afiliaciones/cartera amarradas
+   * a este registro. Borrar el User libera la relación (SetNull en el lado
+   * de User) — el catálogo nunca se pierde.
+   */
+  user         User?
 
   @@unique([sucursalId, codigo])
   @@index([sucursalId])
@@ -3080,4 +3119,180 @@ model ReporteATGestion {
   @@index([reporteAtId])
   @@index([userId])
   @@map("reporte_at_gestion")
+}
+
+// =================================================================
+// Sprint Chat interno — mensajería entre staff y aliados (DM/grupos).
+// =================================================================
+//
+// Diseño v1:
+//   - DM: 1-a-1 entre dos users. Modelado igual que un grupo con dos
+//     participantes — simplifica queries.
+//   - GRUPO: N usuarios, requiere `nombre`. Cualquiera puede ser ADMIN
+//     del grupo (para invitar/echar miembros) — el creador empieza como
+//     ADMIN; los demás como MIEMBRO.
+//   - Polling: el cliente refresca lista de conversaciones y mensajes de
+//     la activa cada 10-15s. No hay SSE/WS por ahora.
+//   - `lastReadAt` por participante para calcular unread count.
+//   - `ultimoMensajeAt` denormalizado en Conversacion para ordenar la
+//     lista sin un JOIN al último mensaje.
+//
+// Las reglas de quién puede chatear con quién viven en la capa de
+// aplicación (lib/chat/elegibles.ts), no en BD: la matriz cambia con
+// frecuencia (sprint reorg) y no queremos migraciones por eso.
+
+enum ConversacionTipo {
+  DM
+  GRUPO
+}
+
+enum ConversacionParticipanteRol {
+  MIEMBRO
+  ADMIN
+}
+
+/// Sprint Chat · cierre+rating — una conversación puede estar ABIERTA
+/// (composer activo, llegan mensajes) o CERRADA (read-only, dispara
+/// dialog de calificación al participante no-staff). Se cierra por
+/// botón explícito o por inactividad (30 min sin mensajes).
+enum ConversacionEstado {
+  ABIERTA
+  CERRADA
+}
+
+model Conversacion {
+  id              String             @id @default(cuid())
+  tipo            ConversacionTipo
+  /// Requerido en GRUPO, null en DM. Para DMs el cliente arma el título
+  /// con el nombre del otro participante.
+  nombre          String?
+  createdById     String
+  /// Denormalizado: timestamp del último mensaje. Permite ordenar la
+  /// lista de conversaciones por actividad sin JOIN. Lo actualiza la
+  /// server action `enviarMensaje` dentro de la misma transacción.
+  ultimoMensajeAt DateTime?
+  /// Sprint Chat · cierre+rating — estado actual de la conversación.
+  estado          ConversacionEstado @default(ABIERTA)
+  /// Cuándo se cerró (cualquier transición ABIERTA → CERRADA).
+  cerradaAt       DateTime?
+  /// Quién la cerró. NULL cuando el cierre fue por inactividad.
+  cerradaPorUserId String?
+  cerradaPorInactividad Boolean      @default(false)
+  /// Contador de ciclos de cierre. Cada vez que se reabre se incrementa
+  /// (cierre #1, cierre #2, ...). Se usa como clave para que la misma
+  /// conversación pueda recibir múltiples calificaciones a lo largo del
+  /// tiempo — una por aliado por ciclo. v1 arranca en 1 al crear.
+  ciclo           Int                @default(1)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  createdBy        User                        @relation("ConversacionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  cerradaPor       User?                       @relation("ConversacionCerradaPor", fields: [cerradaPorUserId], references: [id], onDelete: SetNull)
+  participantes    ConversacionParticipante[]
+  mensajes         Mensaje[]
+  calificaciones   ConversacionCalificacion[]
+
+  @@index([ultimoMensajeAt(sort: Desc)])
+  @@index([estado, ultimoMensajeAt])
+  @@map("conversaciones")
+}
+
+/// Sprint Chat · calificaciones — el aliado puntea el soporte recibido
+/// al cerrarse la conversación. Solo participan roles NO-STAFF como
+/// "calificadores"; el modelo no fuerza ese check (vive en la app).
+/// La nota es a la conversación entera (si había varios staff, es "al
+/// equipo"); en el dashboard se distribuye al promedio individual.
+model ConversacionCalificacion {
+  id             String   @id @default(cuid())
+  conversacionId String
+  /// User que da la calificación. Debe ser participante NO-STAFF de la
+  /// conversación (validado en la app).
+  userId         String
+  /// Ciclo de la conversación en el momento de calificar. Permite varias
+  /// calificaciones por (conv, user) a lo largo de cierres/reaperturas
+  /// sucesivas.
+  ciclo          Int
+  /// 1-5 estrellas.
+  puntaje        Int
+  comentario     String?
+  createdAt      DateTime @default(now())
+
+  conversacion Conversacion @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  user         User         @relation("ConversacionCalificacionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversacionId, userId, ciclo])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("conversacion_calificaciones")
+}
+
+model ConversacionParticipante {
+  conversacionId String
+  userId         String
+  rolEnConv      ConversacionParticipanteRol @default(MIEMBRO)
+  /// Timestamp del último mensaje que el user marcó como leído. Si es
+  /// null o anterior al `ultimoMensajeAt` de la conversación, hay no
+  /// leídos. La server action `marcarLeido` lo actualiza al `now()`.
+  lastReadAt     DateTime?
+  joinedAt       DateTime                    @default(now())
+
+  conversacion Conversacion @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  user         User         @relation("ConversacionParticipanteUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversacionId, userId])
+  @@index([userId])
+  @@map("conversacion_participantes")
+}
+
+model Mensaje {
+  id             String    @id @default(cuid())
+  conversacionId String
+  autorId        String
+  /// Texto del mensaje. Puede ser vacío si el mensaje solo trae adjuntos
+  /// (la validación de "contenido O adjuntos" vive en la app).
+  contenido      String    @db.Text
+  /// Si el autor edita un mensaje, guardamos el timestamp para mostrar
+  /// "(editado)" en la UI. El contenido viejo se pierde (no hay historial).
+  editadoAt      DateTime?
+  /// Soft-delete: el mensaje se marca borrado pero la fila queda para
+  /// no corromper la conversación. En la UI se muestra como "Mensaje
+  /// borrado". Solo el autor o un ADMIN de la conversación pueden borrar.
+  borradoAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversacion Conversacion       @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  autor        User               @relation("MensajeAutor", fields: [autorId], references: [id], onDelete: Restrict)
+  adjuntos     MensajeAdjunto[]
+
+  @@index([conversacionId, createdAt])
+  @@map("mensajes")
+}
+
+/// Adjuntos del chat — solo imágenes en v1 (jpeg/png/webp/gif). Sigue el
+/// mismo patrón que IncapacidadDocumento/SoporteAfDocumento: el binario
+/// vive en disco bajo UPLOADS_DIR; la BD guarda el path relativo y los
+/// metadatos. La descarga pasa por /api/chat/adjuntos/[id] que chequea
+/// que el actor sea participante de la conversación.
+model MensajeAdjunto {
+  id             String   @id @default(cuid())
+  mensajeId      String
+  archivoPath    String
+  archivoHash    String
+  archivoMime    String
+  archivoNombre  String
+  archivoTamano  Int
+  /// Dimensiones opcionales. Si el cliente las envía (extraídas del File
+  /// antes de subir) las guardamos para que el thumbnail respete aspect
+  /// ratio sin descargar la imagen. Si no, se renderea con tamaño fijo.
+  ancho          Int?
+  alto           Int?
+  /// Soft-delete: análogo a Mensaje.borradoAt. Si está seteado, la
+  /// descarga devuelve 410 Gone.
+  eliminado      DateTime?
+  createdAt      DateTime @default(now())
+
+  mensaje Mensaje @relation(fields: [mensajeId], references: [id], onDelete: Cascade)
+
+  @@index([mensajeId])
+  @@map("mensaje_adjuntos")
 }

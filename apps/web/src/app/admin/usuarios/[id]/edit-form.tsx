@@ -20,10 +20,13 @@ type User = {
 };
 
 type Sucursal = { id: string; codigo: string; nombre: string };
+// Mismo razonamiento que en create-form: ASESOR_COMERCIAL no se gestiona
+// desde acá, pero `basedOn` se tipa abierto al enum para que la query
+// de BD no requiera cast.
 type RolCustomOpt = {
   id: string;
   nombre: string;
-  basedOn: 'ADMIN' | 'SOPORTE' | 'ALIADO_OWNER' | 'ALIADO_USER';
+  basedOn: import('@pila/db').Role;
 };
 
 export function EditUserForm({

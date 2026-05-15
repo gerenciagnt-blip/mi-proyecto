@@ -35,8 +35,13 @@ export type ModuloDef = {
   grupo: string;
   /**
    * Roles del sistema a los que aplica este módulo. Omitido ⇒ aplica
-   * a todos (ADMIN, SOPORTE, ALIADO_OWNER, ALIADO_USER). ADMIN siempre
-   * tiene todo, no se filtra acá.
+   * a todos (ADMIN, SOPORTE, ALIADO_OWNER, ALIADO_USER, ASESOR_COMERCIAL).
+   * ADMIN siempre tiene todo, no se filtra acá.
+   *
+   * Sprint Asesor Comercial — agregamos el rol ASESOR_COMERCIAL. Como
+   * "omitido = todos" ahora incluye al asesor, los módulos que NO deben
+   * aparecerle (catálogos, cuentas de cobro, transacciones, planos) deben
+   * declarar `rolesAplica: NO_ASESOR` o un set más restrictivo.
    */
   rolesAplica?: Role[];
 };
@@ -45,6 +50,13 @@ export type ModuloDef = {
 const STAFF: Role[] = ['ADMIN', 'SOPORTE'];
 /** Solo ADMIN — operaciones internas/sistema. */
 const ADMIN_ONLY: Role[] = ['ADMIN'];
+/**
+ * Roles "tradicionales" (anteriores a ASESOR_COMERCIAL). Usado en módulos
+ * cross-aliado que NO deben aparecer al asesor (catálogos administrativos,
+ * cuentas de cobro, transacciones, planos). El asesor solo gestiona lo
+ * que está amarrado a él como vendedor — no administra el catálogo.
+ */
+const NO_ASESOR: Role[] = ['ADMIN', 'SOPORTE', 'ALIADO_OWNER', 'ALIADO_USER'];
 
 export const MODULOS: readonly ModuloDef[] = [
   // ========================= Configuración =========================
@@ -59,29 +71,40 @@ export const MODULOS: readonly ModuloDef[] = [
     rolesAplica: STAFF,
   },
   // Empresas CC se ve en aliado también (Receipt en el nav sin restricción).
-  { key: 'config.empresas_cc', label: 'Empresas CC' /* visible a todos */, grupo: 'Configuración' },
+  // Excluye al ASESOR_COMERCIAL: no administra el catálogo, solo crea
+  // afiliaciones contra empresas existentes.
+  {
+    key: 'config.empresas_cc',
+    label: 'Empresas CC',
+    grupo: 'Configuración',
+    rolesAplica: NO_ASESOR,
+  },
   {
     key: 'config.catalogos',
     label: 'Parametrización',
     grupo: 'Configuración',
     rolesAplica: STAFF,
   },
-  // Asesor comercial / servicios adicionales / formato comprobante son
-  // catálogos visibles en aliado también (íconos sin restricción de rol).
+  // Catálogos visibles al aliado tradicional pero NO al ASESOR_COMERCIAL —
+  // el asesor no edita el catálogo de asesores ni los servicios/formatos
+  // que cobra. Solo "vende" lo que ya está armado.
   {
     key: 'config.asesores_comerciales',
     label: 'Asesor comercial',
     grupo: 'Configuración',
+    rolesAplica: NO_ASESOR,
   },
   {
     key: 'config.servicios_adicionales',
     label: 'Servicios adicionales',
     grupo: 'Configuración',
+    rolesAplica: NO_ASESOR,
   },
   {
     key: 'config.formato_comprobante',
     label: 'Formato comprobante',
     grupo: 'Configuración',
+    rolesAplica: NO_ASESOR,
   },
   // Bitácora staff + dueño aliado (ALIADO_USER no la ve).
   {
@@ -144,14 +167,31 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Soporte',
     rolesAplica: STAFF,
   },
+  // Sprint Chat · cierre+rating — dashboard de calificaciones que los
+  // aliados dejan al cerrar conversaciones con staff. Solo staff lo ve.
+  {
+    key: 'soporte.calificaciones_chat',
+    label: 'Calificaciones chat',
+    grupo: 'Soporte',
+    rolesAplica: STAFF,
+  },
 
   // ========================= Operación =========================
   // Operación es transversal: aliado y staff la usan.
+  // Para ASESOR_COMERCIAL: SOLO se le abre Dashboard, Base de datos
+  // (afiliaciones, filtradas a las suyas) y Notificaciones. El resto
+  // (Cuentas de cobro, Transacciones, Planos) lo administra el aliado
+  // tradicional.
   { key: 'dashboard_ejecutivo', label: 'Dashboard ejecutivo', grupo: 'Operación' },
   { key: 'base_datos', label: 'Base de datos', grupo: 'Operación' },
-  { key: 'cuentas_cobro', label: 'Cuentas de cobro', grupo: 'Operación' },
-  { key: 'transacciones', label: 'Transacciones', grupo: 'Operación' },
-  { key: 'planos', label: 'Planos', grupo: 'Operación' },
+  {
+    key: 'cuentas_cobro',
+    label: 'Cuentas de cobro',
+    grupo: 'Operación',
+    rolesAplica: NO_ASESOR,
+  },
+  { key: 'transacciones', label: 'Transacciones', grupo: 'Operación', rolesAplica: NO_ASESOR },
+  { key: 'planos', label: 'Planos', grupo: 'Operación', rolesAplica: NO_ASESOR },
   // Sprint 8.6 — Permiso específico para solicitar el certificado de
   // afiliación vigente desde el modal Consultar de cada afiliación. Si
   // se quita, el botón "Certificado vigente" no debería aparecer.
@@ -167,15 +207,21 @@ export const MODULOS: readonly ModuloDef[] = [
   // autenticado ve solo las suyas; el módulo en sí está disponible
   // para todos los roles base.
   { key: 'notificaciones', label: 'Notificaciones', grupo: 'Operación' },
+  // Sprint Chat interno — mensajería staff↔aliados (DM/grupos).
+  // Disponible para todos los roles base; las reglas de "con quién puedo
+  // chatear" viven en lib/chat/elegibles.ts (matriz por rol).
+  { key: 'chat', label: 'Chat interno', grupo: 'Operación' },
 
   // ========================= Administrativo =========================
   // Solo aliado (la ve scopeada a su sucursal). Staff ve la versión
   // global desde Soporte.
+  // El ASESOR_COMERCIAL ve la cartera filtrada a las afiliaciones donde
+  // él es asesor — su scope mete `WHERE asesorComercialId = el suyo`.
   {
     key: 'admin.cartera',
     label: 'Cartera',
     grupo: 'Administrativo',
-    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER'],
+    rolesAplica: ['ALIADO_OWNER', 'ALIADO_USER', 'ASESOR_COMERCIAL'],
   },
   {
     key: 'admin.incapacidades',

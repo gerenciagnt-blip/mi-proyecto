@@ -36,6 +36,7 @@ const ROLE_LABELS: Record<Role, string> = {
   SOPORTE: 'Soporte',
   ALIADO_OWNER: 'Dueño Aliado',
   ALIADO_USER: 'Usuario Aliado',
+  ASESOR_COMERCIAL: 'Asesor Comercial',
 };
 
 export function MiPerfilButton({

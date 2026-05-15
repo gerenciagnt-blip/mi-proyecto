@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@pila/db';
 import { requireAuth } from '@/lib/auth-helpers';
-import { getUserScope } from '@/lib/sucursal-scope';
+import { getUserScope, resolverAsesorComercialEnCreacion } from '@/lib/sucursal-scope';
 import { registrarAuditoria, calcularDiff } from '@/lib/auditoria';
 import { CotizanteSchema, AfiliacionSchema } from '@/lib/validations';
 import { titleCase, sentenceCase } from '@/lib/text';
@@ -443,7 +443,11 @@ export async function createAfiliacionAction(
   if (!scope) return { error: 'Sesión inválida' };
 
   let sucursalIdCotizante: string | null;
-  if (scope.tipo === 'SUCURSAL') {
+  // SUCURSAL y ASESOR comparten flujo: la sucursal del cotizante es la del
+  // login. Sprint Asesor Comercial — el helper `resolverAsesorComercialEnCreacion`
+  // (más abajo, dentro de la transacción) además fuerza el asesorComercialId
+  // al del propio asesor.
+  if (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') {
     sucursalIdCotizante = scope.sucursalId;
     // Validar que la cuenta de cobro elegida (si la hay) pertenece a mi sucursal.
     if (afParsed.data.cuentaCobroId) {
@@ -511,12 +515,19 @@ export async function createAfiliacionAction(
         select: { id: true },
       });
 
+      // Sprint Asesor Comercial — si el rol es ASESOR_COMERCIAL, el helper
+      // fuerza `asesorComercialId` al suyo (ignora lo que llegó del form).
+      // Para los demás roles deja pasar el valor parseado.
+      const asesorComercialIdResuelto = await resolverAsesorComercialEnCreacion(
+        afParsed.data.asesorComercialId,
+      );
+
       const dataAfiliacion = {
         cotizanteId: cotizante.id,
         modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
         empresaId: normalized.empresaId,
         cuentaCobroId: afParsed.data.cuentaCobroId,
-        asesorComercialId: afParsed.data.asesorComercialId,
+        asesorComercialId: asesorComercialIdResuelto,
         planSgssId: normalized.planSgssId,
         actividadEconomicaId: normalized.actividadEconomicaId,
         tipoCotizanteId: normalized.tipoCotizanteId,
@@ -635,14 +646,24 @@ export async function updateAfiliacionAction(
   });
   if (!existing) return { error: 'Afiliación no encontrada' };
 
-  // Scope: un usuario SUCURSAL sólo puede editar afiliaciones cuyo cotizante
-  // pertenece a su sucursal. STAFF puede editar cualquiera.
+  // Scope:
+  //   - STAFF (ADMIN/SOPORTE): puede editar cualquiera.
+  //   - SUCURSAL (aliado): solo afiliaciones de su sucursal.
+  //   - ASESOR (sub-rol del aliado): solo afiliaciones de su sucursal Y
+  //     donde `asesorComercialId = el suyo` (defensa en profundidad por si
+  //     el cliente intentó saltarse el filtro de la UI con un id ajeno).
   const scope = await getUserScope();
   if (!scope) return { error: 'Sesión inválida' };
-  if (scope.tipo === 'SUCURSAL' && existing.cotizante.sucursalId !== scope.sucursalId) {
+  if (
+    (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') &&
+    existing.cotizante.sucursalId !== scope.sucursalId
+  ) {
     return { error: 'No tienes permiso sobre esta afiliación' };
   }
-  if (scope.tipo === 'SUCURSAL' && afParsed.data.cuentaCobroId) {
+  if (scope.tipo === 'ASESOR' && existing.asesorComercialId !== scope.asesorComercialId) {
+    return { error: 'No tienes permiso sobre esta afiliación' };
+  }
+  if ((scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') && afParsed.data.cuentaCobroId) {
     const cc = await prisma.cuentaCobro.findUnique({
       where: { id: afParsed.data.cuentaCobroId },
       select: { sucursalId: true },
@@ -696,6 +717,13 @@ export async function updateAfiliacionAction(
   const serviciosPrev = existing.serviciosAdicionales.map((s) => s.servicioAdicionalId).sort();
   const serviciosNew = [...serviciosIds].sort();
 
+  // Sprint Asesor Comercial — si el rol es ASESOR_COMERCIAL, el helper
+  // fuerza `asesorComercialId` al suyo (ignora lo que llegó del form),
+  // evitando que reasigne la afiliación a otro asesor.
+  const asesorComercialIdResueltoEdit = await resolverAsesorComercialEnCreacion(
+    afParsed.data.asesorComercialId,
+  );
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.afiliacion.update({
@@ -704,7 +732,7 @@ export async function updateAfiliacionAction(
           modalidad: normalized.modalidad as 'DEPENDIENTE' | 'INDEPENDIENTE',
           empresaId: normalized.empresaId,
           cuentaCobroId: afParsed.data.cuentaCobroId,
-          asesorComercialId: afParsed.data.asesorComercialId,
+          asesorComercialId: asesorComercialIdResueltoEdit,
           planSgssId: normalized.planSgssId,
           actividadEconomicaId: normalized.actividadEconomicaId,
           tipoCotizanteId: normalized.tipoCotizanteId,
@@ -818,13 +846,20 @@ export async function listarSoportesPorAfiliacionAction(afiliacionId: string) {
   const af = await prisma.afiliacion.findUnique({
     where: { id: afiliacionId },
     select: {
+      asesorComercialId: true,
       cotizante: { select: { sucursalId: true } },
       planSgss: { select: { incluyeArl: true } },
       empresa: { select: { colpatriaActivo: true } },
     },
   });
   if (!af) return { error: 'Afiliación no encontrada' as const };
-  if (scope.tipo === 'SUCURSAL' && af.cotizante.sucursalId !== scope.sucursalId) {
+  if (
+    (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') &&
+    af.cotizante.sucursalId !== scope.sucursalId
+  ) {
+    return { error: 'Sin permiso' as const };
+  }
+  if (scope.tipo === 'ASESOR' && af.asesorComercialId !== scope.asesorComercialId) {
     return { error: 'Sin permiso' as const };
   }
 
@@ -939,10 +974,17 @@ export async function toggleEstadoAfiliacionAction(afiliacionId: string) {
   });
   if (!a) return;
 
-  // Scope: SUCURSAL sólo sobre sus cotizantes.
+  // Scope: SUCURSAL sólo sobre sus cotizantes. ASESOR además debe ser el
+  // asesor comercial de la afiliación (defensa en profundidad).
   const scope = await getUserScope();
   if (!scope) return;
-  if (scope.tipo === 'SUCURSAL' && a.cotizante.sucursalId !== scope.sucursalId) {
+  if (
+    (scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') &&
+    a.cotizante.sucursalId !== scope.sucursalId
+  ) {
+    return;
+  }
+  if (scope.tipo === 'ASESOR' && a.asesorComercialId !== scope.asesorComercialId) {
     return;
   }
 

@@ -4,6 +4,7 @@ import { requirePermiso } from '@/lib/auth-helpers';
 import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
 import { CreateAsesorForm } from './create-form';
 import { toggleAsesorAction } from './actions';
+import { CrearLoginButton } from './crear-login-button';
 
 export const metadata = { title: 'Asesores comerciales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,12 @@ export default async function AsesoresPage() {
     prisma.asesorComercial.findMany({
       where,
       orderBy: [{ sucursalId: 'asc' }, { codigo: 'asc' }],
-      include: { sucursal: { select: { codigo: true, nombre: true } } },
+      include: {
+        sucursal: { select: { codigo: true, nombre: true } },
+        // Sprint Asesor Comercial — para mostrar el chip "Con login" y
+        // ocultar el botón "Crear login" cuando ya existe el User asociado.
+        user: { select: { id: true, email: true, active: true } },
+      },
     }),
     scope?.tipo === 'STAFF'
       ? prisma.sucursal.findMany({
@@ -58,6 +64,7 @@ export default async function AsesoresPage() {
               <th className="px-4 py-2">Sucursal</th>
               <th className="px-4 py-2">Correo</th>
               <th className="px-4 py-2">Teléfono</th>
+              <th className="px-4 py-2">Login</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -65,7 +72,7 @@ export default async function AsesoresPage() {
           <tbody className="divide-y divide-slate-100">
             {asesores.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay asesores
                 </td>
               </tr>
@@ -85,6 +92,24 @@ export default async function AsesoresPage() {
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-500">{a.email ?? '—'}</td>
                 <td className="px-4 py-3 text-xs text-slate-500">{a.telefono ?? '—'}</td>
+                <td className="px-4 py-3 text-xs">
+                  {a.user ? (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                        a.user.active
+                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          : 'bg-slate-100 text-slate-600 ring-slate-200'
+                      }`}
+                      title={a.user.email}
+                    >
+                      {a.user.active ? '🟢 Con login' : '⚪ Login inactivo'}
+                    </span>
+                  ) : esStaff ? (
+                    <CrearLoginButton asesorId={a.id} />
+                  ) : (
+                    <span className="text-[10px] text-slate-400">Sin login</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
