@@ -1,6 +1,14 @@
 # Claude Code — archivos locales, no compartir
 .claude/settings.local.json
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+# Directorio de skills/agents del IDE local (vacío en el repo, se llena
+# en cada máquina con su propia config).
+.agents/
+
+# n8n-as-code — cache de contexto runtime (se regenera al arrancar).
+# La documentación versionada vive en AGENTS.md y .github/agents/.
+.n8nac/
 
 # Código legado de Apps Script — ignorar hasta auditar secretos
 legacy-appscript/
