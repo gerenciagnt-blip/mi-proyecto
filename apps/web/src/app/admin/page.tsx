@@ -23,6 +23,7 @@ import { auth } from '@/auth';
 import { getUserScope } from '@/lib/sucursal-scope';
 import { esStaff } from '@/lib/auth-helpers';
 import { cargarKpis } from '@/lib/dashboard/kpis';
+import { cargarKpisAsesor } from '@/lib/dashboard/kpis-asesor';
 import { cargarAlertasInactividad } from '@/lib/alertas/inactividad';
 import { Alert } from '@/components/ui/alert';
 import { CobrosPendientesBanner } from './cobros-pendientes-banner';
@@ -80,6 +81,13 @@ export default async function AdminHomePage({ searchParams }: { searchParams: Pr
 
   if (esStaff(session.user.role)) {
     return <StaffHome sp={sp} />;
+  }
+  // Sprint Asesor Comercial — branch propia con KPIs personales del asesor
+  // (mis afiliaciones, mi cartera, mi recuperación). Distinto del aliado
+  // general porque la sucursal del aliado puede tener varios asesores y
+  // cada uno solo debe ver lo suyo.
+  if (session.user.role === 'ASESOR_COMERCIAL') {
+    return <AsesorHome sp={sp} />;
   }
   return <AliadoHome sp={sp} />;
 }
@@ -637,6 +645,200 @@ async function AliadoHome({ sp }: { sp: SP }) {
           <li>
             • Los documentos de incapacidad se conservan 120 días (180 días los del flujo jurídico
             confidencial); después queda el registro como evidencia.
+          </li>
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+// ============================================================================
+// ASESOR COMERCIAL — Dashboard personal
+// ============================================================================
+
+/**
+ * Sprint Asesor Comercial — el asesor ve KPIs SOLO de lo que él gestiona
+ * (afiliaciones donde es el asesor, cartera de sus cotizantes). No ve
+ * KPIs cross-sucursal ni de otros asesores de la misma sucursal.
+ */
+async function AsesorHome({ sp }: { sp: SP }) {
+  const scope = await getUserScope();
+  if (!scope || scope.tipo !== 'ASESOR') return null;
+
+  const { anio, mes } = parsePeriodo(sp);
+  const [kpis, sucursal, miAsesor] = await Promise.all([
+    cargarKpisAsesor({
+      asesorComercialId: scope.asesorComercialId,
+      sucursalId: scope.sucursalId,
+      anio,
+      mes,
+    }),
+    prisma.sucursal.findUnique({
+      where: { id: scope.sucursalId },
+      select: { codigo: true, nombre: true },
+    }),
+    prisma.asesorComercial.findUnique({
+      where: { id: scope.asesorComercialId },
+      select: { codigo: true, nombre: true },
+    }),
+  ]);
+
+  const labelPeriodo = `${MESES[mes - 1]} ${anio}`;
+
+  const accesosRapidos = [
+    { href: '/admin/base-datos', label: 'Nueva afiliación', icon: FolderArchive },
+    { href: '/admin/administrativo/cartera', label: 'Mi cartera', icon: Wallet },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="flex items-center gap-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
+          <LayoutDashboard className="h-6 w-6 text-brand-blue" />
+          Inicio · {miAsesor?.codigo ?? ''} {miAsesor?.nombre ?? ''}
+        </h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Sucursal{' '}
+          <span className="font-medium">
+            {sucursal ? `${sucursal.codigo} — ${sucursal.nombre}` : '—'}
+          </span>{' '}
+          · período <span className="font-medium">{labelPeriodo}</span>
+        </p>
+      </header>
+
+      {/* Filtros (solo Año/Mes — el asesor no elige sucursal). */}
+      <section className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 text-xs">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Año</span>
+          <form method="GET" action="/admin">
+            <input type="hidden" name="mes" value={mes} />
+            <AutoSubmitSelect
+              name="anio"
+              defaultValue={anio}
+              className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs"
+            >
+              {[anio - 2, anio - 1, anio, anio + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </AutoSubmitSelect>
+          </form>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500">Mes</span>
+          <form method="GET" action="/admin">
+            <input type="hidden" name="anio" value={anio} />
+            <AutoSubmitSelect
+              name="mes"
+              defaultValue={mes}
+              className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs"
+            >
+              {MESES.map((m, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {m}
+                </option>
+              ))}
+            </AutoSubmitSelect>
+          </form>
+        </label>
+      </section>
+
+      {/* KPIs estado actual del asesor */}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Lo mío hoy
+        </h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCard
+            label="Mis cotizantes"
+            valor={kpis.misCotizantes}
+            icon={Users}
+            tone="primary"
+            sub={`${kpis.misAfiliacionesActivas} afiliaciones activas`}
+          />
+          <KpiCard
+            label="Afiliaciones activas"
+            valor={kpis.misAfiliacionesActivas}
+            icon={UserCheck}
+            tone="default"
+          />
+          <KpiCard
+            label="Cartera pendiente"
+            valor={kpis.miCarteraPendienteValor}
+            icon={AlertCircle}
+            formato="cop"
+            tone={kpis.miCarteraPendienteValor > 0 ? 'danger' : 'success'}
+            sub="MORA_REAL + CARTERA_REAL"
+          />
+          <KpiCard
+            label="Nuevas afiliaciones"
+            valor={kpis.misAfiliacionesNuevas.actual}
+            deltaPct={kpis.misAfiliacionesNuevas.deltaPct}
+            icon={FileText}
+            tone="success"
+            sub={labelPeriodo}
+          />
+        </div>
+      </section>
+
+      {/* Actividad del período */}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Mi actividad del período
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <KpiCard
+            label="Cartera recuperada"
+            valor={kpis.miCarteraRecuperadaValor.actual}
+            deltaPct={kpis.miCarteraRecuperadaValor.deltaPct}
+            icon={CheckCircle2}
+            formato="cop"
+            tone="success"
+            sub="Líneas que mis cotizantes pasaron a PAGADA"
+          />
+          <KpiCard
+            label="Total cotizantes"
+            valor={kpis.misCotizantes}
+            icon={Users}
+            sub="Únicos asociados a tus afiliaciones"
+          />
+        </div>
+      </section>
+
+      {/* Accesos rápidos */}
+      <section>
+        <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Accesos rápidos
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {accesosRapidos.map((a) => {
+            const Icon = a.icon;
+            return (
+              <Link
+                key={a.href}
+                href={a.href}
+                className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-blue hover:text-brand-blue-dark hover:shadow-brand"
+              >
+                <Icon className="h-4 w-4 text-slate-400 group-hover:text-brand-blue" />
+                <span className="flex-1 text-xs font-medium">{a.label}</span>
+                <ArrowRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-brand-blue" />
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-700">
+        <p className="font-medium">Tips</p>
+        <ul className="mt-1 space-y-1 text-xs">
+          <li>
+            • Crea afiliaciones desde <span className="font-medium">Base de datos</span> — se te
+            asignan automáticamente.
+          </li>
+          <li>
+            • Revisa periódicamente <span className="font-medium">Cartera</span> para identificar
+            cotizantes con mora y gestionar el pago.
           </li>
         </ul>
       </section>
