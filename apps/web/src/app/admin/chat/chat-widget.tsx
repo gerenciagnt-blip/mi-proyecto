@@ -12,13 +12,13 @@ import {
 import { listarUsuariosOnlineAction, type UsuarioOnline } from './presencia-actions';
 import { PanelConversacion } from './panel-conversacion';
 
-// Mismo intervalo que el sidebar interno (4s) — mantenemos al widget en
-// línea con el contador general de no leídos.
-const CONV_REFRESH_MS = 4_000;
-// Presencia: 8s (la mitad del valor anterior). El umbral de "online" en
-// el server sigue siendo 2 min — bajar más el refresh no agrega valor
-// porque el heartbeat del otro user es cada 30s.
-const PRESENCIA_REFRESH_MS = 8_000;
+// Sprint Chat · SSE — el push real llega por EventSource. Polling como
+// fallback (30s) para resincronizar si la conexión SSE se cae.
+const CONV_REFRESH_MS = 30_000;
+// Presencia: 15s. No tiene SSE porque el bus solo cubre eventos de chat,
+// no de heartbeat de otros users. Es razonable polear esto a 15s — el
+// umbral de "online" del server es 2 min de todas formas.
+const PRESENCIA_REFRESH_MS = 15_000;
 
 const ROLE_LABEL: Record<string, string> = {
   ADMIN: 'Administrador',

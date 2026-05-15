@@ -13,6 +13,7 @@ import {
 } from '@/lib/chat/storage';
 import { autoCerrarInactivasAction } from './cierre-actions';
 import { emitirNotificacion } from '@/lib/notificaciones';
+import { publishMany } from '@/lib/chat/bus';
 
 /**
  * Sprint Chat · notif bandeja — umbral en ms para considerar a un
@@ -487,6 +488,23 @@ export async function enviarMensajeAction(
     });
     return m;
   });
+
+  // Sprint Chat · SSE — publicar al bus para empujar el evento a todos
+  // los participantes conectados por SSE. Fire-and-forget. Si no hay
+  // subscriptores en esta instancia, no hace nada — el polling SWR
+  // (cada 8s) garantiza el fallback eventual.
+  try {
+    const todosParticipantes = await prisma.conversacionParticipante.findMany({
+      where: { conversacionId },
+      select: { userId: true },
+    });
+    publishMany(
+      todosParticipantes.map((p) => p.userId),
+      { tipo: 'mensaje', conversacionId },
+    );
+  } catch {
+    // no rompemos el envío por un fallo del bus
+  }
 
   // Sprint Chat · notif bandeja — emitimos `CHAT_MENSAJE_NUEVO` a los
   // participantes destinatarios que NO han abierto la conversación en

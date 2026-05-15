@@ -12,6 +12,7 @@ import { IdleLogout } from '@/components/auth/idle-logout';
 import { LogoutButton } from '@/app/dashboard/logout-button';
 import { ChatWidget } from '@/app/admin/chat/chat-widget';
 import { PresenciaHeartbeat } from '@/app/admin/chat/presencia-heartbeat';
+import { ChatEventsProvider } from '@/app/admin/chat/chat-events-provider';
 import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'pila.sidebar.open';
@@ -59,6 +60,11 @@ export function AdminShell({
       {modulosAccesibles?.includes('chat') && (
         <>
           <PresenciaHeartbeat />
+          {/* Sprint Chat · SSE — conexión persistente que recibe push del
+              server con eventos del chat. Mantiene el polling SWR como
+              fallback con intervalos largos (ver conversaciones-sidebar
+              y panel-conversacion). */}
+          <ChatEventsProvider />
           <ChatWidget />
         </>
       )}

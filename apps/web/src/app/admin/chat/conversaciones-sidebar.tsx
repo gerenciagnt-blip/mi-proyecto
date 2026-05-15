@@ -4,10 +4,10 @@ import useSWR from 'swr';
 import { cn } from '@/lib/utils';
 import { listarConversacionesAction, type ConversacionListItem } from './actions';
 
-// Polling de 4s: el badge de no leídos debe reaccionar rápido en la
-// barra lateral. 4s es ~2x el polling de mensajes — la consistencia
-// eventual entre "lista" y "panel" no se nota en uso normal.
-const REFRESH_INTERVAL_MS = 4_000;
+// Sprint Chat · SSE — fallback. El push real llega por EventSource y
+// dispara `mutate('chat:conversaciones')` al instante. Mantenemos un
+// polling largo (30s) para resincronizar si el SSE se desconecta.
+const REFRESH_INTERVAL_MS = 30_000;
 
 async function fetchConvs(): Promise<ConversacionListItem[]> {
   const r = await listarConversacionesAction();
