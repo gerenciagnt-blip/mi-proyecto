@@ -1,94 +1,83 @@
 /**
- * Sprint Chat · SSE — bus in-memory para pub/sub de eventos del chat.
+ * Sprint Chat · SSE — bus pub/sub abstracto con dos transports:
  *
- * Las server actions del chat (`enviarMensaje`, `marcarLeido`, `cerrar`,
- * `reabrir`) publican eventos por `userId`; el route handler
- * `/api/chat/stream` se suscribe para cada cliente conectado y reenvía
- * por SSE.
+ *   - **MemoryChatBus** (default): pub/sub in-process. Funciona en
+ *     desarrollo y producción de UNA sola instancia.
+ *   - **RedisChatBus** (opt-in via `REDIS_URL`): pub/sub vía Redis
+ *     (Upstash, DO Managed, Redis Cloud, self-hosted). Sirve para
+ *     multi-instancia — todos los workers ven los mismos eventos.
  *
- * Diseño:
- *   - In-memory por instancia. Si la app corre con >1 instancia, un
- *     mensaje creado en instance A no llega a clientes en instance B.
- *     **Mitigación**: el cliente conserva polling SWR cada 30s como
- *     fallback, así el peor caso es "no llega instant" pero llega en
- *     <30s.
- *   - Cuando escalemos a Redis, sustituir las funciones export por la
- *     misma API encima de `redis.publish/subscribe`.
- *   - `globalThis` para sobrevivir HMR de Next dev — sino cada reload
- *     pierde subscriptores y los streams se cuelgan.
+ * La API pública (`subscribe`, `publish`, `publishMany`, `debugStats`)
+ * es la misma sin importar el transport. Los callers (server actions,
+ * route handlers) no saben cuál se usa — el factory `getChatBus()`
+ * decide al primer uso según `process.env.REDIS_URL`.
+ *
+ * Para activar Redis en prod:
+ *   1. Aprovisionar instancia (Upstash gratis cubre el flujo interno).
+ *   2. Setear `REDIS_URL=rediss://default:<token>@<host>:<port>` en el
+ *      App Platform / Vercel env vars.
+ *   3. Reiniciar el servicio. No requiere cambios de código.
  */
 
-export type ChatEvent =
-  | { tipo: 'mensaje'; conversacionId: string }
-  | { tipo: 'conv-updated'; conversacionId: string }
-  | { tipo: 'presencia' };
+import type { ChatBus, ChatEvent, Subscriber } from './bus-types';
+import { getMemoryChatBus } from './bus-memory';
+import { getRedisChatBus } from './bus-redis';
 
-type Subscriber = (ev: ChatEvent) => void;
+export type { ChatBus, ChatEvent, Subscriber } from './bus-types';
 
-type Bus = {
-  subs: Map<string, Set<Subscriber>>;
-};
-
-const globalForBus = globalThis as unknown as { __pilaChatBus?: Bus };
-
-function getBus(): Bus {
-  if (!globalForBus.__pilaChatBus) {
-    globalForBus.__pilaChatBus = { subs: new Map() };
-  }
-  return globalForBus.__pilaChatBus;
-}
+const globalForFactory = globalThis as unknown as { __pilaChatBus?: ChatBus };
 
 /**
- * Suscribe al user al bus. Devuelve la función de unsubscribe para
- * llamar cuando el stream se cierre.
+ * Resuelve el bus a usar:
+ *   - Si `REDIS_URL` está seteado → instancia `RedisChatBus` (que abre
+ *     2 conexiones a Redis al primer uso). Si Redis está caído, los
+ *     callbacks del cliente ioredis loguean error pero el factory NO
+ *     falla — los publish quedan encolados hasta que reconecte.
+ *   - Si no → `MemoryChatBus` (sin dependencia de Redis).
+ *
+ * Aunque ambas implementaciones se importan estáticamente, el código
+ * de `ioredis` solo se EJECUTA cuando entramos a `getRedisChatBus()`.
+ * El costo es un import resuelto en el bundle del server (sin impacto
+ * en el cliente).
+ *
+ * Cacheado en `globalThis` para sobrevivir HMR de Next dev — sino cada
+ * recarga pierde subscriptores y los streams quedan colgando.
  */
-export function subscribe(userId: string, cb: Subscriber): () => void {
-  const bus = getBus();
-  let set = bus.subs.get(userId);
-  if (!set) {
-    set = new Set();
-    bus.subs.set(userId, set);
-  }
-  set.add(cb);
-  return () => {
-    const s = bus.subs.get(userId);
-    if (!s) return;
-    s.delete(cb);
-    if (s.size === 0) bus.subs.delete(userId);
-  };
-}
+export function getChatBus(): ChatBus {
+  if (globalForFactory.__pilaChatBus) return globalForFactory.__pilaChatBus;
 
-/**
- * Publica un evento al user. Fire-and-forget — si no hay subscriptores
- * (user sin sesiones abiertas), no hace nada.
- */
-export function publish(userId: string, ev: ChatEvent): void {
-  const subs = getBus().subs.get(userId);
-  if (!subs || subs.size === 0) return;
-  for (const cb of subs) {
+  if (process.env.REDIS_URL) {
     try {
-      cb(ev);
-    } catch {
-      // Silenciar: un subscriber roto no debe afectar a los demás.
+      globalForFactory.__pilaChatBus = getRedisChatBus(process.env.REDIS_URL);
+      return globalForFactory.__pilaChatBus;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[chat-bus] REDIS_URL seteado pero RedisChatBus falló al iniciar, usando MemoryChatBus.',
+        e instanceof Error ? e.message : e,
+      );
     }
   }
+
+  globalForFactory.__pilaChatBus = getMemoryChatBus();
+  return globalForFactory.__pilaChatBus;
 }
 
-/**
- * Publica el mismo evento a múltiples users de una sola pasada. Útil
- * para mensajes que afectan a todos los participantes de una conv.
- */
+// ============ API pública (delegada al bus activo) ============
+
+export function subscribe(userId: string, cb: Subscriber): () => void {
+  return getChatBus().subscribe(userId, cb);
+}
+
+export function publish(userId: string, ev: ChatEvent): void {
+  getChatBus().publish(userId, ev);
+}
+
 export function publishMany(userIds: string[], ev: ChatEvent): void {
-  for (const uid of userIds) publish(uid, ev);
+  getChatBus().publishMany(userIds, ev);
 }
 
-/**
- * Cantidad de subscriptores activos. Usado por el endpoint de health
- * para diagnosticar fugas.
- */
-export function debugStats(): { users: number; totalSubs: number } {
-  const bus = getBus();
-  let total = 0;
-  for (const s of bus.subs.values()) total += s.size;
-  return { users: bus.subs.size, totalSubs: total };
+export function debugStats(): { users: number; totalSubs: number; transport: string } {
+  const bus = getChatBus();
+  return { ...bus.debugStats(), transport: bus.transport };
 }
