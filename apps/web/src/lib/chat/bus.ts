@@ -21,6 +21,7 @@
 
 import type { ChatBus, ChatEvent, Subscriber } from './bus-types';
 import { getMemoryChatBus } from './bus-memory';
+import { getRedisChatBus } from './bus-redis';
 
 export type { ChatBus, ChatEvent, Subscriber } from './bus-types';
 
@@ -28,10 +29,16 @@ const globalForFactory = globalThis as unknown as { __pilaChatBus?: ChatBus };
 
 /**
  * Resuelve el bus a usar:
- *   - Si `REDIS_URL` está seteado → carga dinámicamente `bus-redis.ts`
- *     y devuelve `RedisChatBus`. Si la carga falla (módulo ausente o
- *     URL inválida), hace fallback a memory + log de warning.
- *   - Si no → `MemoryChatBus`.
+ *   - Si `REDIS_URL` está seteado → instancia `RedisChatBus` (que abre
+ *     2 conexiones a Redis al primer uso). Si Redis está caído, los
+ *     callbacks del cliente ioredis loguean error pero el factory NO
+ *     falla — los publish quedan encolados hasta que reconecte.
+ *   - Si no → `MemoryChatBus` (sin dependencia de Redis).
+ *
+ * Aunque ambas implementaciones se importan estáticamente, el código
+ * de `ioredis` solo se EJECUTA cuando entramos a `getRedisChatBus()`.
+ * El costo es un import resuelto en el bundle del server (sin impacto
+ * en el cliente).
  *
  * Cacheado en `globalThis` para sobrevivir HMR de Next dev — sino cada
  * recarga pierde subscriptores y los streams quedan colgando.
@@ -41,17 +48,12 @@ export function getChatBus(): ChatBus {
 
   if (process.env.REDIS_URL) {
     try {
-      // Dynamic require para evitar cargar `ioredis` en producciones que
-      // no usan Redis (tree-shaking no funciona sobre require dinámico
-      // de runtime, pero el módulo no se evalúa si no llegamos acá).
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getRedisChatBus } = require('./bus-redis') as typeof import('./bus-redis');
       globalForFactory.__pilaChatBus = getRedisChatBus(process.env.REDIS_URL);
       return globalForFactory.__pilaChatBus;
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(
-        '[chat-bus] REDIS_URL seteado pero no se pudo cargar RedisChatBus, usando MemoryChatBus.',
+        '[chat-bus] REDIS_URL seteado pero RedisChatBus falló al iniciar, usando MemoryChatBus.',
         e instanceof Error ? e.message : e,
       );
     }
