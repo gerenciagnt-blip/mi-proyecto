@@ -12,6 +12,20 @@ import {
   guardarAdjuntoChat,
 } from '@/lib/chat/storage';
 import { autoCerrarInactivasAction } from './cierre-actions';
+import { emitirNotificacion } from '@/lib/notificaciones';
+
+/**
+ * Sprint Chat · notif bandeja — umbral en ms para considerar a un
+ * participante "frío" (no ha leído en X tiempo y por tanto se le emite
+ * notificación al recibir un mensaje nuevo).
+ */
+const UMBRAL_FRIO_MS = 2 * 60 * 1000; // 2 min
+
+/**
+ * Ventana para dedup de notificaciones de chat: no se emite otra notif
+ * para el mismo (user, conversacion) si hay una de hace <DEDUP_MS.
+ */
+const DEDUP_MS = 5 * 60 * 1000; // 5 min
 
 export type ActionState = { error?: string; ok?: boolean };
 
@@ -474,6 +488,19 @@ export async function enviarMensajeAction(
     return m;
   });
 
+  // Sprint Chat · notif bandeja — emitimos `CHAT_MENSAJE_NUEVO` a los
+  // participantes destinatarios que NO han abierto la conversación en
+  // los últimos 2 min (chat "frío"). Dedup natural: si ya hay una notif
+  // del mismo (user, conv) en los últimos 5 min, no creamos otra.
+  // Fire-and-forget: si falla, el mensaje ya está creado.
+  void emitirNotificacionesChat({
+    conversacionId,
+    autorId: userId,
+    autorNombre: mensaje.autor.name,
+    contenidoPreview: contenido || `📷 ${archivos.length} imagen${archivos.length > 1 ? 'es' : ''}`,
+    ahora,
+  }).catch(() => {});
+
   revalidatePath('/admin/chat');
   return {
     ok: true,
@@ -649,4 +676,71 @@ export async function buscarUsuariosElegiblesAction(
       sucursalCodigo: u.sucursal?.codigo ?? null,
     })),
   };
+}
+
+// ============ Notificaciones bandeja (chat "frío") ============
+
+/**
+ * Sprint Chat · notif bandeja — emite `CHAT_MENSAJE_NUEVO` a cada
+ * participante destinatario que está "frío" (no leyó la conversación
+ * en los últimos 2 min). Dedup de 5 min por (user, conv).
+ *
+ * Helper interno — invocado fire-and-forget desde `enviarMensajeAction`.
+ * Errores se silencian; el mensaje ya está creado y la sidebar va a
+ * mostrar el badge igual aunque la notif falle.
+ */
+async function emitirNotificacionesChat(params: {
+  conversacionId: string;
+  autorId: string;
+  autorNombre: string;
+  contenidoPreview: string;
+  ahora: Date;
+}) {
+  const { conversacionId, autorId, autorNombre, contenidoPreview, ahora } = params;
+  const corteFrio = new Date(ahora.getTime() - UMBRAL_FRIO_MS);
+  const corteDedup = new Date(ahora.getTime() - DEDUP_MS);
+
+  // Participantes que NO son el autor y están "fríos".
+  const candidatos = await prisma.conversacionParticipante.findMany({
+    where: {
+      conversacionId,
+      userId: { not: autorId },
+      OR: [{ lastReadAt: null }, { lastReadAt: { lt: corteFrio } }],
+    },
+    select: { userId: true },
+  });
+  if (candidatos.length === 0) return;
+
+  // Para cada candidato, chequeo dedup y emito si aplica.
+  const titulo = `Nuevo mensaje de ${autorNombre}`;
+  const mensaje =
+    contenidoPreview.length > 120 ? `${contenidoPreview.slice(0, 117)}…` : contenidoPreview;
+
+  // Nota: hacemos las consultas en serie para no pisar el rate-limit
+  // accidentalmente. El N suele ser <10 — costo despreciable.
+  for (const p of candidatos) {
+    const reciente = await prisma.notificacion.findFirst({
+      where: {
+        tipo: 'CHAT_MENSAJE_NUEVO',
+        destinoUserId: p.userId,
+        createdAt: { gt: corteDedup },
+        metadatos: {
+          path: ['conversacionId'],
+          equals: conversacionId,
+        },
+      },
+      select: { id: true },
+    });
+    if (reciente) continue;
+
+    await emitirNotificacion({
+      tipo: 'CHAT_MENSAJE_NUEVO',
+      destinoUserId: p.userId,
+      titulo,
+      mensaje,
+      // Deep-link al widget de chat con la conv pre-abierta.
+      href: `/admin?chatconv=${conversacionId}`,
+      metadatos: { conversacionId },
+    });
+  }
 }
