@@ -91,6 +91,12 @@ export async function buscarCotizanteReporteAtAction(
       ...(scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR'
         ? { sucursalId: scope.sucursalId }
         : {}),
+      // Sprint Asesor — además de la sucursal, el asesor solo encuentra
+      // cotizantes que tienen al menos una afiliación con su asesorId.
+      // Sino podría radicar un reporte AT de un cotizante que no es suyo.
+      ...(scope.tipo === 'ASESOR'
+        ? { afiliaciones: { some: { asesorComercialId: scope.asesorComercialId } } }
+        : {}),
     },
     include: {
       municipio: { select: { nombre: true } },
@@ -111,9 +117,11 @@ export async function buscarCotizanteReporteAtAction(
     return {
       found: null,
       error:
-        scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR'
-          ? 'Cotizante no encontrado en tu sucursal'
-          : 'Cotizante no encontrado',
+        scope.tipo === 'ASESOR'
+          ? 'Cotizante no encontrado entre los que gestionas'
+          : scope.tipo === 'SUCURSAL'
+            ? 'Cotizante no encontrado en tu sucursal'
+            : 'Cotizante no encontrado',
     };
   }
 
@@ -526,11 +534,23 @@ export async function gestionAliadoReporteAtAction(
 
   const r = await prisma.reporteAccidenteTrabajo.findUnique({
     where: { id: reporteAtId },
-    select: { id: true, sucursalId: true },
+    select: {
+      id: true,
+      sucursalId: true,
+      // Sprint Asesor — necesitamos las afiliaciones del cotizante para
+      // validar que el asesor tiene relación con él.
+      cotizante: { select: { afiliaciones: { select: { asesorComercialId: true } } } },
+    },
   });
   if (!r) return { error: 'Reporte no encontrado' };
   if ((scope.tipo === 'SUCURSAL' || scope.tipo === 'ASESOR') && r.sucursalId !== scope.sucursalId) {
     return { error: 'No tienes permiso sobre este reporte' };
+  }
+  if (scope.tipo === 'ASESOR') {
+    const matchAsesor =
+      r.cotizante?.afiliaciones.some((a) => a.asesorComercialId === scope.asesorComercialId) ??
+      false;
+    if (!matchAsesor) return { error: 'No tienes permiso sobre este reporte' };
   }
 
   await prisma.reporteATGestion.create({

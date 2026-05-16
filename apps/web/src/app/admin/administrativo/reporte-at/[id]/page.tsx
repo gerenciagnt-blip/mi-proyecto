@@ -24,6 +24,14 @@ export default async function ReporteAtDetalleAdministrativoPage({
     where: { id },
     include: {
       sucursal: { select: { codigo: true, nombre: true } },
+      // Sprint Asesor — incluimos las afiliaciones del cotizante para
+      // validar (cuando rol=ASESOR) que al menos una tiene su asesorId.
+      cotizante: {
+        select: {
+          id: true,
+          afiliaciones: { select: { asesorComercialId: true } },
+        },
+      },
       gestiones: {
         orderBy: { createdAt: 'desc' },
         select: {
@@ -43,6 +51,16 @@ export default async function ReporteAtDetalleAdministrativoPage({
     reporte.sucursalId !== scope.sucursalId
   ) {
     notFound();
+  }
+  // Sprint Asesor — el asesor solo accede a reportes cuyo cotizante
+  // tenga al menos una afiliación con su asesorComercialId. Reportes
+  // sin cotizante linkeado o de otros asesores son not-found.
+  if (scope.tipo === 'ASESOR') {
+    const matchAsesor =
+      reporte.cotizante?.afiliaciones.some(
+        (a) => a.asesorComercialId === scope.asesorComercialId,
+      ) ?? false;
+    if (!matchAsesor) notFound();
   }
 
   return (
