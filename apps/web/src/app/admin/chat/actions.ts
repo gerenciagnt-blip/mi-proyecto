@@ -199,6 +199,15 @@ export type MensajeReaccionItem = {
   usuarios: string[];
 };
 
+/** Sprint Chat · menciones — referencia simple al usuario mencionado.
+ *  La UI usa el `name` para reemplazar la primera ocurrencia de `@<name>`
+ *  en el texto por un chip; el `id` lo necesita para destacar cuando el
+ *  mencionado soy yo. */
+export type MensajeMencionItem = {
+  id: string;
+  name: string;
+};
+
 export type MensajeItem = {
   id: string;
   contenido: string;
@@ -211,6 +220,9 @@ export type MensajeItem = {
    *  reaccionado, o si el mensaje está borrado (la BD las conserva pero la
    *  UI las oculta). */
   reacciones: MensajeReaccionItem[];
+  /** Sprint Chat · menciones — users mencionados con @<nombre>. Vacío en
+   *  mensajes borrados aunque la BD las conserve. */
+  menciones: MensajeMencionItem[];
 };
 
 export type ConversacionMeta = {
@@ -349,6 +361,12 @@ export async function listarMensajesAction(
         },
         orderBy: { createdAt: 'asc' },
       },
+      menciones: {
+        select: {
+          user: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -380,6 +398,9 @@ export async function listarMensajesAction(
             })),
         // En borrados ocultamos las reacciones aunque existan en BD.
         reacciones: m.borradoAt ? [] : agruparReacciones(m.reacciones, userId),
+        menciones: m.borradoAt
+          ? []
+          : m.menciones.map((x) => ({ id: x.user.id, name: x.user.name })),
       }))
       .reverse(), // viejo → nuevo para render
   };
@@ -407,6 +428,34 @@ function agruparReacciones(
     if (r.userId === meId) item.miReaccion = true;
   }
   return Array.from(byEmoji.values());
+}
+
+/**
+ * Sprint Chat · menciones — dado un FormData ya validado, extrae el array
+ * `mencion` (varias entries) y devuelve los userIds validados como
+ * participantes de la conversación. Filtra duplicados y al propio actor
+ * (auto-mencionarse no genera notif).
+ */
+async function extraerMencionesValidas(
+  formData: FormData,
+  conversacionId: string,
+  autorId: string,
+): Promise<{ id: string; name: string }[]> {
+  const raw = formData
+    .getAll('mencion')
+    .map((v) => String(v))
+    .filter(Boolean);
+  if (raw.length === 0) return [];
+  // Dedup + filtra al autor.
+  const candidatos = Array.from(new Set(raw)).filter((id) => id !== autorId);
+  if (candidatos.length === 0) return [];
+
+  // Solo aceptamos IDs que sean participantes ACTUALES de la conversación.
+  const validos = await prisma.conversacionParticipante.findMany({
+    where: { conversacionId, userId: { in: candidatos } },
+    select: { user: { select: { id: true, name: true } } },
+  });
+  return validos.map((p) => p.user);
 }
 
 // ============ Enviar mensaje ============
@@ -517,6 +566,12 @@ export async function enviarMensajeAction(
     });
   }
 
+  // Sprint Chat · menciones — extraemos las menciones validadas antes
+  // de la transacción para fallar temprano si no hay participantes.
+  // Lista de { id, name } — vacía si no había `mencion` en el FormData
+  // o ninguno era participante.
+  const menciones = await extraerMencionesValidas(formData, conversacionId, userId);
+
   const ahora = new Date();
   const mensaje = await prisma.$transaction(async (tx) => {
     const m = await tx.mensaje.create({
@@ -525,6 +580,9 @@ export async function enviarMensajeAction(
         autorId: userId,
         contenido,
         adjuntos: adjuntosGuardados.length ? { create: adjuntosGuardados } : undefined,
+        menciones: menciones.length
+          ? { create: menciones.map((u) => ({ userId: u.id })) }
+          : undefined,
       },
       select: {
         id: true,
@@ -589,6 +647,28 @@ export async function enviarMensajeAction(
     ahora,
   }).catch(() => {});
 
+  // Sprint Chat · menciones — emitimos `CHAT_MENCION` a cada mencionado.
+  // SIN dedup ni umbral frío: una mención es una llamada directa, debe
+  // notificarse aunque ya haya otra notif del chat reciente.
+  if (menciones.length > 0) {
+    const previewMencion =
+      contenido.length > 0
+        ? contenido.length > 120
+          ? `${contenido.slice(0, 117)}…`
+          : contenido
+        : `📷 ${archivos.length} imagen${archivos.length > 1 ? 'es' : ''}`;
+    for (const u of menciones) {
+      void emitirNotificacion({
+        tipo: 'CHAT_MENCION',
+        destinoUserId: u.id,
+        titulo: `${mensaje.autor.name} te mencionó`,
+        mensaje: previewMencion,
+        href: `/admin?chatconv=${conversacionId}`,
+        metadatos: { conversacionId, mensajeId: mensaje.id },
+      }).catch(() => {});
+    }
+  }
+
   revalidatePath('/admin/chat');
   return {
     ok: true,
@@ -610,6 +690,7 @@ export async function enviarMensajeAction(
       })),
       // Mensaje recién creado — todavía no tiene reacciones.
       reacciones: [],
+      menciones: menciones.map((u) => ({ id: u.id, name: u.name })),
     },
   };
 }
@@ -627,6 +708,49 @@ export async function marcarLeidoAction(conversacionId: string): Promise<ActionS
     data: { lastReadAt: new Date() },
   });
   return { ok: true };
+}
+
+// ============ Participantes (para autocomplete de @menciones) ============
+
+/** Sprint Chat · menciones — item del autocomplete de `@` en el composer. */
+export type ParticipanteAutocomplete = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+};
+
+/**
+ * Devuelve los participantes de una conversación (excluyendo al actor)
+ * para el autocomplete de menciones del composer. El cliente filtra por
+ * prefijo de `name` localmente — la lista es pequeña (<20 típico).
+ */
+export async function listarParticipantesAction(
+  conversacionId: string,
+): Promise<{ ok: true; items: ParticipanteAutocomplete[] } | { ok: false; error: string }> {
+  const session = await requirePermiso('chat');
+  const userId = session.user.id;
+  const part = await asegurarParticipante(userId, conversacionId);
+  if (!part) return { ok: false, error: 'No participas en esta conversación' };
+
+  const rows = await prisma.conversacionParticipante.findMany({
+    where: { conversacionId, userId: { not: userId } },
+    select: {
+      user: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+    },
+    orderBy: { user: { name: 'asc' } },
+  });
+  return {
+    ok: true,
+    items: rows.map((r) => ({
+      id: r.user.id,
+      name: r.user.name,
+      email: r.user.email,
+      role: r.user.role,
+    })),
+  };
 }
 
 // ============ Crear conversación ============
@@ -916,6 +1040,10 @@ export async function editarMensajeAction(
         },
         orderBy: { createdAt: 'asc' },
       },
+      menciones: {
+        select: { user: { select: { id: true, name: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -952,6 +1080,9 @@ export async function editarMensajeAction(
         url: `/api/chat/adjuntos/${a.id}`,
       })),
       reacciones: agruparReacciones(actualizado.reacciones, userId),
+      // En v1 las menciones quedan fijadas al envío inicial: editar el
+      // texto no recalcula menciones (no abrimos puerta a spam de notif).
+      menciones: actualizado.menciones.map((x) => ({ id: x.user.id, name: x.user.name })),
     },
   };
 }
