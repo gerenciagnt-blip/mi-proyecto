@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import {
   Send,
@@ -15,6 +15,9 @@ import {
   Pencil,
   Trash2,
   Check as CheckIcon,
+  Search,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -58,6 +61,35 @@ function fmtFecha(iso: string): string {
   if (diff === 0) return 'Hoy';
   if (diff === 1) return 'Ayer';
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/**
+ * Sprint Chat búsqueda — escapa caracteres de regex para usar el query
+ * literal en `new RegExp(...)`.
+ */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Resalta coincidencias de `query` dentro de `texto`, retornando un
+ * fragmento React con `<mark>` envolviendo cada match. Case-insensitive.
+ * Si no hay query, devuelve el texto crudo.
+ */
+function resaltarTexto(texto: string, query: string): React.ReactNode {
+  if (!query) return texto;
+  const re = new RegExp(`(${escapeRegex(query)})`, 'gi');
+  const partes = texto.split(re);
+  // split con grupo captura preserva los matches en posiciones impares.
+  return partes.map((p, i) =>
+    i % 2 === 1 ? (
+      <mark key={i} className="rounded bg-yellow-200 px-0.5 text-slate-900">
+        {p}
+      </mark>
+    ) : (
+      <span key={i}>{p}</span>
+    ),
+  );
 }
 
 type FetchMensajesResult = { items: MensajeItem[]; meta: ConversacionMeta };
@@ -142,11 +174,50 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
   const [cerrando, startCerrar] = useTransition();
   const [mostrarRating, setMostrarRating] = useState(false);
 
-  // Auto-scroll al fondo cuando llega contenido nuevo.
+  // ─── Búsqueda dentro de la conversación ─────────────────────────────
+  // Toggle, query y match activo. Calculamos los matches con useMemo
+  // (lista de mensajeIds que contienen el query). El scroll automático
+  // al match activo lo hace un useEffect.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+
+  const matches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || !items) return [] as string[];
+    const out: string[] = [];
+    for (const m of items) {
+      if (!m.contenido) continue;
+      if (m.borradoAt) continue;
+      if (m.contenido.toLowerCase().includes(q)) out.push(m.id);
+    }
+    return out;
+  }, [items, searchQuery]);
+
+  // Reset del índice cuando cambia la lista de matches.
+  useEffect(() => {
+    setActiveMatchIdx(0);
+  }, [searchQuery]);
+
+  const activeMatchId = matches[activeMatchIdx] ?? null;
+
+  // Auto-scroll al fondo cuando llega contenido nuevo. Se desactiva
+  // mientras hay búsqueda activa — en ese caso, el scroll lo controla
+  // el match activo (efecto debajo).
   useEffect(() => {
     if (!scrollRef.current) return;
+    if (searchOpen && searchQuery) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [items?.length]);
+  }, [items?.length, searchOpen, searchQuery]);
+
+  // Scrollea el match activo a la vista.
+  useEffect(() => {
+    if (!activeMatchId) return;
+    const el = document.getElementById(`msg-${activeMatchId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeMatchId]);
 
   // Marca como leído al abrir/recibir mensajes; revalida la sidebar para
   // que el badge baje. Best-effort, sin bloquear UI.
@@ -294,8 +365,42 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header con estado + acciones de cierre */}
-      {meta && <HeaderConversacion meta={meta} cerrando={cerrando} onCerrar={cerrarChat} />}
+      {/* Header con estado + acciones de cierre + lupa de búsqueda */}
+      {meta && (
+        <HeaderConversacion
+          meta={meta}
+          cerrando={cerrando}
+          onCerrar={cerrarChat}
+          busquedaActiva={searchOpen}
+          onToggleBusqueda={() => {
+            setSearchOpen((v) => {
+              const nuevo = !v;
+              if (!nuevo) setSearchQuery('');
+              return nuevo;
+            });
+          }}
+        />
+      )}
+      {searchOpen && (
+        <BarraBusqueda
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          matchesCount={matches.length}
+          activeIdx={activeMatchIdx}
+          onPrev={() =>
+            setActiveMatchIdx((i) =>
+              matches.length === 0 ? 0 : (i - 1 + matches.length) % matches.length,
+            )
+          }
+          onNext={() =>
+            setActiveMatchIdx((i) => (matches.length === 0 ? 0 : (i + 1) % matches.length))
+          }
+          onClose={() => {
+            setSearchOpen(false);
+            setSearchQuery('');
+          }}
+        />
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
         {isLoading && !items && (
@@ -316,6 +421,8 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
             items={items}
             meta={meta}
             onAbrirLightbox={(url) => setPreviewLightbox(url)}
+            searchQuery={searchOpen ? searchQuery : ''}
+            activeMatchId={searchOpen ? activeMatchId : null}
           />
         )}
       </div>
@@ -463,10 +570,14 @@ function MensajesLista({
   items,
   meta,
   onAbrirLightbox,
+  searchQuery,
+  activeMatchId,
 }: {
   items: MensajeItem[];
   meta: ConversacionMeta;
   onAbrirLightbox: (url: string) => void;
+  searchQuery: string;
+  activeMatchId: string | null;
 }) {
   // Agrupa por día para insertar separadores.
   const dias = new Map<string, MensajeItem[]>();
@@ -493,6 +604,8 @@ function MensajesLista({
                 meta={meta}
                 mostrarAutor={!mismoAutor}
                 onAbrirLightbox={onAbrirLightbox}
+                searchQuery={searchQuery}
+                esMatchActivo={activeMatchId === m.id}
               />
             );
           })}
@@ -511,11 +624,15 @@ function Mensaje({
   meta,
   mostrarAutor,
   onAbrirLightbox,
+  searchQuery,
+  esMatchActivo,
 }: {
   m: MensajeItem;
   meta: ConversacionMeta;
   mostrarAutor: boolean;
   onAbrirLightbox: (url: string) => void;
+  searchQuery: string;
+  esMatchActivo: boolean;
 }) {
   const borrado = !!m.borradoAt;
   const esMio = m.autor.id === meta.meId;
@@ -579,7 +696,14 @@ function Mensaje({
   }
 
   return (
-    <div className={cn('group flex flex-col', mostrarAutor && 'mt-3')}>
+    <div
+      id={`msg-${m.id}`}
+      className={cn(
+        'group flex flex-col',
+        mostrarAutor && 'mt-3',
+        esMatchActivo && 'rounded-md ring-2 ring-yellow-400/70',
+      )}
+    >
       {mostrarAutor && (
         <p className="px-1 text-[11px] font-semibold text-slate-700">{m.autor.name}</p>
       )}
@@ -639,7 +763,7 @@ function Mensaje({
                 borrando && 'opacity-50',
               )}
             >
-              {m.contenido}
+              {borrado ? m.contenido : resaltarTexto(m.contenido, searchQuery)}
             </p>
             <span className="text-[10px] text-slate-400">
               {fmtHora(m.createdAt)}
@@ -742,10 +866,14 @@ function HeaderConversacion({
   meta,
   cerrando,
   onCerrar,
+  onToggleBusqueda,
+  busquedaActiva,
 }: {
   meta: ConversacionMeta;
   cerrando: boolean;
   onCerrar: () => void;
+  onToggleBusqueda: () => void;
+  busquedaActiva: boolean;
 }) {
   const cerrada = meta.estado === 'CERRADA';
   return (
@@ -779,18 +907,118 @@ function HeaderConversacion({
           </span>
         )}
       </div>
-      {!cerrada && (
+      <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={onCerrar}
-          disabled={cerrando}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition hover:bg-slate-50 hover:text-red-600 disabled:opacity-60"
-          title="Cierra la conversación y dispara la calificación"
+          onClick={onToggleBusqueda}
+          className={cn(
+            'inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-brand-blue',
+            busquedaActiva && 'bg-brand-blue/10 text-brand-blue ring-1 ring-brand-blue/30',
+          )}
+          title="Buscar en la conversación"
+          aria-label="Buscar"
         >
-          <Lock className="h-3 w-3" />
-          {cerrando ? 'Cerrando…' : 'Cerrar chat'}
+          <Search className="h-3.5 w-3.5" />
         </button>
-      )}
+        {!cerrada && (
+          <button
+            type="button"
+            onClick={onCerrar}
+            disabled={cerrando}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition hover:bg-slate-50 hover:text-red-600 disabled:opacity-60"
+            title="Cierra la conversación y dispara la calificación"
+          >
+            <Lock className="h-3 w-3" />
+            {cerrando ? 'Cerrando…' : 'Cerrar chat'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============ Barra de búsqueda dentro de la conversación ============
+
+function BarraBusqueda({
+  query,
+  onQueryChange,
+  matchesCount,
+  activeIdx,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  query: string;
+  onQueryChange: (v: string) => void;
+  matchesCount: number;
+  activeIdx: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+  const hayMatches = matchesCount > 0;
+  return (
+    <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+      <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      <input
+        ref={inputRef}
+        type="search"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+          }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.shiftKey) onPrev();
+            else onNext();
+          }
+        }}
+        placeholder="Buscar en esta conversación…"
+        className="h-7 flex-1 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-[2px] focus:ring-brand-blue/15"
+      />
+      <span className="min-w-[44px] text-right text-[11px] tabular-nums text-slate-500">
+        {query.trim() === ''
+          ? ''
+          : hayMatches
+            ? `${activeIdx + 1} / ${matchesCount}`
+            : 'Sin resultados'}
+      </span>
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={!hayMatches}
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30"
+        title="Anterior (Shift+Enter)"
+        aria-label="Anterior"
+      >
+        <ChevronUp className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={!hayMatches}
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30"
+        title="Siguiente (Enter)"
+        aria-label="Siguiente"
+      >
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-200"
+        title="Cerrar búsqueda (Esc)"
+        aria-label="Cerrar búsqueda"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
