@@ -2,10 +2,25 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
-import { Send, Paperclip, X, ImageIcon, Star, Lock, Unlock, CheckCircle2 } from 'lucide-react';
+import {
+  Send,
+  Paperclip,
+  X,
+  ImageIcon,
+  Star,
+  Lock,
+  Unlock,
+  CheckCircle2,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Check as CheckIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   enviarMensajeAction,
+  editarMensajeAction,
+  borrarMensajeAction,
   listarMensajesAction,
   marcarLeidoAction,
   type MensajeItem,
@@ -296,8 +311,12 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
             Aún no hay mensajes. Escribe el primero abajo 👇
           </p>
         )}
-        {items && (
-          <MensajesLista items={items} onAbrirLightbox={(url) => setPreviewLightbox(url)} />
+        {items && meta && (
+          <MensajesLista
+            items={items}
+            meta={meta}
+            onAbrirLightbox={(url) => setPreviewLightbox(url)}
+          />
         )}
       </div>
 
@@ -442,9 +461,11 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
 
 function MensajesLista({
   items,
+  meta,
   onAbrirLightbox,
 }: {
   items: MensajeItem[];
+  meta: ConversacionMeta;
   onAbrirLightbox: (url: string) => void;
 }) {
   // Agrupa por día para insertar separadores.
@@ -469,6 +490,7 @@ function MensajesLista({
               <Mensaje
                 key={m.id}
                 m={m}
+                meta={meta}
                 mostrarAutor={!mismoAutor}
                 onAbrirLightbox={onAbrirLightbox}
               />
@@ -480,16 +502,82 @@ function MensajesLista({
   );
 }
 
+/** Ventana del cliente para mostrar el botón "Editar" (debe coincidir
+ *  con `VENTANA_EDIT_MS` del server: 15 min). */
+const VENTANA_EDIT_CLIENT_MS = 15 * 60 * 1000;
+
 function Mensaje({
   m,
+  meta,
   mostrarAutor,
   onAbrirLightbox,
 }: {
   m: MensajeItem;
+  meta: ConversacionMeta;
   mostrarAutor: boolean;
   onAbrirLightbox: (url: string) => void;
 }) {
   const borrado = !!m.borradoAt;
+  const esMio = m.autor.id === meta.meId;
+  const dentroVentanaEdit = Date.now() - new Date(m.createdAt).getTime() < VENTANA_EDIT_CLIENT_MS;
+  const convAbierta = meta.estado === 'ABIERTA';
+  // Reglas de menú (mismas que el server):
+  //   - Editar: solo el autor, conv abierta, mensaje no borrado, dentro ventana
+  //   - Borrar: autor siempre; ADMIN-conv si autor no es ADMIN/SOPORTE (no validamos rol del autor acá — el server rechaza)
+  const puedeEditar = esMio && convAbierta && !borrado && dentroVentanaEdit;
+  const puedeBorrar = (esMio || meta.soyAdminConv) && !borrado;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [borrando, startBorrar] = useTransition();
+  const [editTexto, setEditTexto] = useState(m.contenido);
+  const [editPending, startEdit] = useTransition();
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const { mutate } = useSWRConfig();
+
+  function cancelarEdit() {
+    setEditando(false);
+    setEditTexto(m.contenido);
+    setEditErr(null);
+  }
+
+  function guardarEdit() {
+    const nuevo = editTexto.trim();
+    if (!nuevo) {
+      setEditErr('No puede quedar vacío');
+      return;
+    }
+    if (nuevo === m.contenido) {
+      cancelarEdit();
+      return;
+    }
+    setEditErr(null);
+    startEdit(async () => {
+      const r = await editarMensajeAction(m.id, nuevo);
+      if (!r.ok) {
+        setEditErr(r.error);
+        return;
+      }
+      setEditando(false);
+      void mutate(['chat:mensajes', meta.id]);
+      void mutate('chat:conversaciones');
+    });
+  }
+
+  function borrar() {
+    if (!confirm('¿Borrar este mensaje? No se puede deshacer.')) return;
+    setMenuOpen(false);
+    startBorrar(async () => {
+      const r = await borrarMensajeAction(m.id);
+      if (r.error) {
+        alert(r.error);
+        return;
+      }
+      void mutate(['chat:mensajes', meta.id]);
+      void mutate('chat:conversaciones');
+    });
+  }
+
   return (
     <div className={cn('group flex flex-col', mostrarAutor && 'mt-3')}>
       {mostrarAutor && (
@@ -502,23 +590,108 @@ function Mensaje({
           ))}
         </div>
       )}
-      {m.contenido && (
-        <div className="flex items-baseline gap-2">
-          <p
-            className={cn(
-              'whitespace-pre-wrap rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-800',
-              borrado && 'italic text-slate-400',
-            )}
-          >
-            {m.contenido}
-          </p>
-          <span className="text-[10px] text-slate-400">
-            {fmtHora(m.createdAt)}
-            {m.editadoAt && !borrado ? ' · editado' : ''}
-          </span>
+      {editando ? (
+        <div className="flex flex-col gap-1">
+          <textarea
+            value={editTexto}
+            onChange={(e) => setEditTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancelarEdit();
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                guardarEdit();
+              }
+            }}
+            rows={2}
+            maxLength={4000}
+            className="rounded-lg border border-brand-blue/40 bg-white px-2 py-1 text-sm text-slate-800 focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+            autoFocus
+          />
+          {editErr && <p className="text-[10px] text-red-700">{editErr}</p>}
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <button
+              type="button"
+              onClick={guardarEdit}
+              disabled={editPending}
+              className="inline-flex items-center gap-0.5 rounded bg-brand-blue px-1.5 py-0.5 text-white hover:bg-brand-blue-dark disabled:opacity-50"
+            >
+              <CheckIcon className="h-2.5 w-2.5" />
+              {editPending ? 'Guardando…' : 'Guardar'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelarEdit}
+              disabled={editPending}
+              className="rounded px-1.5 py-0.5 text-slate-600 hover:bg-slate-100"
+            >
+              Cancelar
+            </button>
+            <span className="ml-1">Esc para cancelar · Ctrl+Enter para guardar</span>
+          </div>
         </div>
+      ) : (
+        m.contenido && (
+          <div className="flex items-baseline gap-2">
+            <p
+              className={cn(
+                'whitespace-pre-wrap rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-800',
+                borrado && 'italic text-slate-400',
+                borrando && 'opacity-50',
+              )}
+            >
+              {m.contenido}
+            </p>
+            <span className="text-[10px] text-slate-400">
+              {fmtHora(m.createdAt)}
+              {m.editadoAt && !borrado ? ' · editado' : ''}
+            </span>
+            {(puedeEditar || puedeBorrar) && (
+              <div className="relative opacity-0 transition group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  aria-label="Opciones del mensaje"
+                >
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 top-5 z-20 flex flex-col rounded-md border border-slate-200 bg-white py-1 shadow-md ring-1 ring-slate-200">
+                      {puedeEditar && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setEditando(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Editar
+                        </button>
+                      )}
+                      {puedeBorrar && (
+                        <button
+                          type="button"
+                          onClick={borrar}
+                          disabled={borrando}
+                          className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          {borrando ? 'Borrando…' : 'Borrar'}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )
       )}
-      {!m.contenido && m.adjuntos.length > 0 && (
+      {!editando && !m.contenido && m.adjuntos.length > 0 && (
         <span className="px-1 text-[10px] text-slate-400">{fmtHora(m.createdAt)}</span>
       )}
     </div>
