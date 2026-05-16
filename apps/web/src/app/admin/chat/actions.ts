@@ -205,6 +205,12 @@ export type ConversacionMeta = {
   tieneStaff: boolean;
   /** True si el actor es no-staff Y la conv tiene staff Y aún no calificó este ciclo. */
   debeCalificar: boolean;
+  /** Sprint Chat · edit/delete — userId del actor actual, para que la UI
+   *  decida si mostrar el menú "Editar/Borrar" en cada mensaje. */
+  meId: string;
+  /** True si el actor es ADMIN de la conv (puede borrar mensajes ajenos
+   *  de no-staff). */
+  soyAdminConv: boolean;
 };
 
 /**
@@ -265,6 +271,16 @@ export async function listarMensajesAction(
     // el modal.
     debeCalificar = !yaCalifico && conv.estado === 'CERRADA';
   }
+  // Sprint Chat · edit/delete — el cliente necesita saber si soy ADMIN
+  // de la conv (para mostrar "Borrar" en mensajes ajenos no-staff).
+  // `part` ya fue cargado en `asegurarParticipante`; lo reusamos vía
+  // findUnique para tener el `rolEnConv`. Es 1 query extra barata.
+  const miParticipacion = await prisma.conversacionParticipante.findUnique({
+    where: { conversacionId_userId: { conversacionId, userId } },
+    select: { rolEnConv: true },
+  });
+  const soyAdminConv = miParticipacion?.rolEnConv === 'ADMIN';
+
   const meta: ConversacionMeta = {
     id: conv.id,
     estado: conv.estado,
@@ -274,6 +290,8 @@ export async function listarMensajesAction(
     cerradaPorNombre: conv.cerradaPor?.name ?? null,
     tieneStaff,
     debeCalificar,
+    meId: userId,
+    soyAdminConv,
   };
 
   const limit = Math.min(opts?.limit ?? 50, MAX_MENSAJES_PAGE);
@@ -761,4 +779,185 @@ async function emitirNotificacionesChat(params: {
       metadatos: { conversacionId },
     });
   }
+}
+
+// ============ Editar / Borrar mensaje ============
+
+/**
+ * Sprint Chat · edit — ventana para editar un mensaje. Después de N
+ * minutos del envío, el botón "Editar" desaparece (la edición no debe
+ * cambiar mensajes muy viejos que la otra parte ya leyó/citó).
+ */
+const VENTANA_EDIT_MS = 15 * 60 * 1000; // 15 min
+
+/**
+ * Edita el contenido de un mensaje propio. Solo el autor puede editar,
+ * solo si la conv está ABIERTA y el mensaje no está borrado, y solo
+ * dentro de los primeros 15 min desde el envío.
+ *
+ * Marca `editadoAt = now` para que la UI muestre "(editado)". El
+ * contenido viejo se pierde (no hay historial).
+ */
+export async function editarMensajeAction(
+  mensajeId: string,
+  nuevoContenido: string,
+): Promise<{ ok: true; mensaje: MensajeItem } | { ok: false; error: string }> {
+  const session = await requirePermiso('chat');
+  const userId = session.user.id;
+
+  const contenido = nuevoContenido.trim();
+  if (!contenido) return { ok: false, error: 'El mensaje no puede quedar vacío' };
+  if (contenido.length > MAX_CONTENIDO) {
+    return { ok: false, error: `Excede ${MAX_CONTENIDO} caracteres` };
+  }
+
+  const m = await prisma.mensaje.findUnique({
+    where: { id: mensajeId },
+    select: {
+      autorId: true,
+      borradoAt: true,
+      createdAt: true,
+      conversacionId: true,
+      conversacion: { select: { estado: true } },
+    },
+  });
+  if (!m) return { ok: false, error: 'Mensaje no encontrado' };
+  if (m.autorId !== userId) return { ok: false, error: 'Solo el autor puede editar el mensaje' };
+  if (m.borradoAt) return { ok: false, error: 'El mensaje fue borrado' };
+  if (m.conversacion.estado === 'CERRADA') {
+    return { ok: false, error: 'No se pueden editar mensajes de una conversación cerrada' };
+  }
+  if (Date.now() - m.createdAt.getTime() > VENTANA_EDIT_MS) {
+    return { ok: false, error: 'Ventana de edición expirada (15 min desde envío)' };
+  }
+
+  const actualizado = await prisma.mensaje.update({
+    where: { id: mensajeId },
+    data: { contenido, editadoAt: new Date() },
+    select: {
+      id: true,
+      contenido: true,
+      createdAt: true,
+      editadoAt: true,
+      borradoAt: true,
+      conversacionId: true,
+      autor: { select: { id: true, name: true } },
+      adjuntos: {
+        where: { eliminado: null },
+        select: {
+          id: true,
+          archivoNombre: true,
+          archivoMime: true,
+          archivoTamano: true,
+          ancho: true,
+          alto: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  });
+
+  // Empuja al bus para que todos los clientes refresquen.
+  try {
+    const todos = await prisma.conversacionParticipante.findMany({
+      where: { conversacionId: actualizado.conversacionId },
+      select: { userId: true },
+    });
+    publishMany(
+      todos.map((p) => p.userId),
+      { tipo: 'mensaje', conversacionId: actualizado.conversacionId },
+    );
+  } catch {
+    // ignorar — la mutación SWR del cliente que llamó la action funciona como fallback
+  }
+
+  return {
+    ok: true,
+    mensaje: {
+      id: actualizado.id,
+      contenido: actualizado.contenido,
+      createdAt: actualizado.createdAt.toISOString(),
+      editadoAt: actualizado.editadoAt?.toISOString() ?? null,
+      borradoAt: actualizado.borradoAt?.toISOString() ?? null,
+      autor: actualizado.autor,
+      adjuntos: actualizado.adjuntos.map((a) => ({
+        id: a.id,
+        nombre: a.archivoNombre,
+        mime: a.archivoMime,
+        tamano: a.archivoTamano,
+        ancho: a.ancho,
+        alto: a.alto,
+        url: `/api/chat/adjuntos/${a.id}`,
+      })),
+    },
+  };
+}
+
+/**
+ * Borra un mensaje (soft-delete). Pueden borrar:
+ *   - El autor del mensaje, en cualquier momento.
+ *   - Un participante con rol `ADMIN` en la conversación (moderador del
+ *     grupo), si el autor del mensaje NO es staff (el staff es
+ *     intocable para moderadores externos — para borrar mensajes de
+ *     soporte hay que ir vía la propia cuenta de soporte).
+ *
+ * Marca `borradoAt = now`. El contenido queda en BD pero la UI muestra
+ * "(Mensaje borrado)". Los adjuntos asociados también se ocultan
+ * (`listarMensajesAction` ya filtra cuando el mensaje está borrado).
+ */
+export async function borrarMensajeAction(mensajeId: string): Promise<ActionState> {
+  const session = await requirePermiso('chat');
+  const userId = session.user.id;
+
+  const m = await prisma.mensaje.findUnique({
+    where: { id: mensajeId },
+    select: {
+      autorId: true,
+      borradoAt: true,
+      conversacionId: true,
+      autor: { select: { role: true } },
+    },
+  });
+  if (!m) return { error: 'Mensaje no encontrado' };
+  if (m.borradoAt) return { ok: true }; // idempotente
+
+  const esAutor = m.autorId === userId;
+  let permitido = esAutor;
+
+  if (!permitido) {
+    // Chequear si es ADMIN de la conv (moderador). Solo aplica si el
+    // autor NO es staff.
+    if (m.autor.role !== 'ADMIN' && m.autor.role !== 'SOPORTE') {
+      const part = await prisma.conversacionParticipante.findUnique({
+        where: { conversacionId_userId: { conversacionId: m.conversacionId, userId } },
+        select: { rolEnConv: true },
+      });
+      if (part?.rolEnConv === 'ADMIN') permitido = true;
+    }
+  }
+
+  if (!permitido) {
+    return { error: 'No tienes permiso para borrar este mensaje' };
+  }
+
+  await prisma.mensaje.update({
+    where: { id: mensajeId },
+    data: { borradoAt: new Date() },
+  });
+
+  // Bus: empuja a todos los participantes.
+  try {
+    const todos = await prisma.conversacionParticipante.findMany({
+      where: { conversacionId: m.conversacionId },
+      select: { userId: true },
+    });
+    publishMany(
+      todos.map((p) => p.userId),
+      { tipo: 'mensaje', conversacionId: m.conversacionId },
+    );
+  } catch {
+    // ignorar
+  }
+
+  return { ok: true };
 }
