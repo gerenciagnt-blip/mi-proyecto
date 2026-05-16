@@ -14,6 +14,7 @@ import {
 import { autoCerrarInactivasAction } from './cierre-actions';
 import { emitirNotificacion } from '@/lib/notificaciones';
 import { publishMany } from '@/lib/chat/bus';
+import { esEmojiReaccionValido } from './constants';
 
 /**
  * Sprint Chat · notif bandeja — umbral en ms para considerar a un
@@ -185,6 +186,19 @@ export type MensajeAdjuntoItem = {
   url: string;
 };
 
+/** Sprint Chat · reacciones — reacción de un emoji agrupada sobre un mensaje.
+ *  - `count`: cuántos usuarios reaccionaron con este emoji.
+ *  - `miReaccion`: true si el actor actual está entre ellos.
+ *  - `usuarios`: nombres para tooltip (máximo razonable; si llegamos a
+ *    grupos masivos truncar en cliente).
+ */
+export type MensajeReaccionItem = {
+  emoji: string;
+  count: number;
+  miReaccion: boolean;
+  usuarios: string[];
+};
+
 export type MensajeItem = {
   id: string;
   contenido: string;
@@ -193,6 +207,10 @@ export type MensajeItem = {
   borradoAt: string | null;
   autor: { id: string; name: string };
   adjuntos: MensajeAdjuntoItem[];
+  /** Sprint Chat · reacciones — agrupadas por emoji. Vacío si nadie ha
+   *  reaccionado, o si el mensaje está borrado (la BD las conserva pero la
+   *  UI las oculta). */
+  reacciones: MensajeReaccionItem[];
 };
 
 export type ConversacionMeta = {
@@ -323,6 +341,14 @@ export async function listarMensajesAction(
         },
         orderBy: { createdAt: 'asc' },
       },
+      reacciones: {
+        select: {
+          emoji: true,
+          userId: true,
+          user: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -352,9 +378,35 @@ export async function listarMensajesAction(
               alto: a.alto,
               url: `/api/chat/adjuntos/${a.id}`,
             })),
+        // En borrados ocultamos las reacciones aunque existan en BD.
+        reacciones: m.borradoAt ? [] : agruparReacciones(m.reacciones, userId),
       }))
       .reverse(), // viejo → nuevo para render
   };
+}
+
+/**
+ * Sprint Chat · reacciones — agrupa la lista cruda de reacciones por emoji
+ * y marca si el actor actual está dentro. Conserva el orden de aparición
+ * del primer emoji (que es como salieron de Prisma con orderBy createdAt
+ * asc).
+ */
+function agruparReacciones(
+  raw: { emoji: string; userId: string; user: { name: string } }[],
+  meId: string,
+): MensajeReaccionItem[] {
+  const byEmoji = new Map<string, MensajeReaccionItem>();
+  for (const r of raw) {
+    let item = byEmoji.get(r.emoji);
+    if (!item) {
+      item = { emoji: r.emoji, count: 0, miReaccion: false, usuarios: [] };
+      byEmoji.set(r.emoji, item);
+    }
+    item.count += 1;
+    item.usuarios.push(r.user.name);
+    if (r.userId === meId) item.miReaccion = true;
+  }
+  return Array.from(byEmoji.values());
 }
 
 // ============ Enviar mensaje ============
@@ -556,6 +608,8 @@ export async function enviarMensajeAction(
         alto: a.alto,
         url: `/api/chat/adjuntos/${a.id}`,
       })),
+      // Mensaje recién creado — todavía no tiene reacciones.
+      reacciones: [],
     },
   };
 }
@@ -854,6 +908,14 @@ export async function editarMensajeAction(
         },
         orderBy: { createdAt: 'asc' },
       },
+      reacciones: {
+        select: {
+          emoji: true,
+          userId: true,
+          user: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -889,6 +951,7 @@ export async function editarMensajeAction(
         alto: a.alto,
         url: `/api/chat/adjuntos/${a.id}`,
       })),
+      reacciones: agruparReacciones(actualizado.reacciones, userId),
     },
   };
 }
@@ -946,6 +1009,80 @@ export async function borrarMensajeAction(mensajeId: string): Promise<ActionStat
   });
 
   // Bus: empuja a todos los participantes.
+  try {
+    const todos = await prisma.conversacionParticipante.findMany({
+      where: { conversacionId: m.conversacionId },
+      select: { userId: true },
+    });
+    publishMany(
+      todos.map((p) => p.userId),
+      { tipo: 'mensaje', conversacionId: m.conversacionId },
+    );
+  } catch {
+    // ignorar
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Sprint Chat · reacciones — togglea la reacción del actor sobre un
+ * mensaje:
+ *   - Si ya tiene esa reacción (mismo emoji), la quita.
+ *   - Si no la tiene, la crea.
+ *
+ * Reglas:
+ *   - Actor debe ser participante de la conversación.
+ *   - El emoji debe estar en `EMOJIS_REACCION_VALIDOS`.
+ *   - No se permite reaccionar a un mensaje borrado.
+ *   - No se permite reaccionar a un mensaje de una conversación cerrada
+ *     (mantiene el invariante "conv cerrada = no mutaciones").
+ *
+ * Publica al bus para que el resto de participantes refresquen.
+ */
+export async function toggleReaccionAction(mensajeId: string, emoji: string): Promise<ActionState> {
+  const session = await requirePermiso('chat');
+  const userId = session.user.id;
+
+  if (!esEmojiReaccionValido(emoji)) {
+    return { error: 'Emoji no permitido' };
+  }
+
+  const m = await prisma.mensaje.findUnique({
+    where: { id: mensajeId },
+    select: {
+      conversacionId: true,
+      borradoAt: true,
+      conversacion: { select: { estado: true } },
+    },
+  });
+  if (!m) return { error: 'Mensaje no encontrado' };
+  if (m.borradoAt) return { error: 'No puedes reaccionar a un mensaje borrado' };
+  if (m.conversacion.estado === 'CERRADA') {
+    return { error: 'No puedes reaccionar en una conversación cerrada' };
+  }
+
+  // El actor debe ser participante.
+  const part = await prisma.conversacionParticipante.findUnique({
+    where: { conversacionId_userId: { conversacionId: m.conversacionId, userId } },
+    select: { conversacionId: true },
+  });
+  if (!part) return { error: 'No participas en esta conversación' };
+
+  // Toggle por unique (mensajeId, userId, emoji): si existe, borra; si no, crea.
+  const existente = await prisma.mensajeReaccion.findUnique({
+    where: { mensajeId_userId_emoji: { mensajeId, userId, emoji } },
+    select: { id: true },
+  });
+  if (existente) {
+    await prisma.mensajeReaccion.delete({ where: { id: existente.id } });
+  } else {
+    await prisma.mensajeReaccion.create({
+      data: { mensajeId, userId, emoji },
+    });
+  }
+
+  // Bus: empuja a todos los participantes para refrescar.
   try {
     const todos = await prisma.conversacionParticipante.findMany({
       where: { conversacionId: m.conversacionId },
