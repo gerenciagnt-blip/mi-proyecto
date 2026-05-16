@@ -345,6 +345,8 @@ model User {
   conversacionCalificaciones ConversacionCalificacion[] @relation("ConversacionCalificacionUser")
   // Sprint Chat · reacciones — un user puede reaccionar a varios mensajes.
   mensajeReacciones        MensajeReaccion[]           @relation("MensajeReaccionUser")
+  // Sprint Chat · menciones — un user puede ser mencionado en varios mensajes.
+  mensajeMenciones         MensajeMencion[]            @relation("MensajeMencionUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -2424,6 +2426,12 @@ enum NotificacionTipo {
    * hay una de hace <5 min.
    */
   CHAT_MENSAJE_NUEVO
+  /**
+   * Sprint Chat · menciones — alguien escribió @<nombre> y este user es
+   * el referido. Se emite una notif por cada mención, sin dedup ni
+   * umbral frío: una mención es una llamada directa.
+   */
+  CHAT_MENCION
 }
 
 model Notificacion {
@@ -3274,6 +3282,7 @@ model Mensaje {
   autor        User               @relation("MensajeAutor", fields: [autorId], references: [id], onDelete: Restrict)
   adjuntos     MensajeAdjunto[]
   reacciones   MensajeReaccion[]
+  menciones    MensajeMencion[]
 
   @@index([conversacionId, createdAt])
   @@map("mensajes")
@@ -3299,6 +3308,29 @@ model MensajeReaccion {
   @@index([mensajeId])
   @@index([userId])
   @@map("mensaje_reacciones")
+}
+
+/// Sprint Chat · menciones — registra que un user fue mencionado (@nombre)
+/// en un mensaje. Solo participantes de la conversación pueden ser
+/// mencionados (validación en la app). Cada mención dispara una notificación
+/// "chat_mencion" en la bandeja del mencionado (sin dedup, sin email).
+///
+/// Si el mensaje se borra (`borradoAt`), las menciones quedan en BD pero
+/// la UI las ignora (al render del mensaje no se muestran chips). Si se
+/// edita, el server reemplaza el set completo de menciones.
+model MensajeMencion {
+  id        String   @id @default(cuid())
+  mensajeId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  mensaje Mensaje @relation(fields: [mensajeId], references: [id], onDelete: Cascade)
+  user    User    @relation("MensajeMencionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([mensajeId, userId])
+  @@index([mensajeId])
+  @@index([userId, createdAt])
+  @@map("mensaje_menciones")
 }
 
 /// Adjuntos del chat — solo imágenes en v1 (jpeg/png/webp/gif). Sigue el

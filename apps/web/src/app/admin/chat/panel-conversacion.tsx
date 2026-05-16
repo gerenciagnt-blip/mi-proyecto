@@ -27,10 +27,13 @@ import {
   borrarMensajeAction,
   toggleReaccionAction,
   listarMensajesAction,
+  listarParticipantesAction,
   marcarLeidoAction,
   type MensajeItem,
   type MensajeAdjuntoItem,
   type MensajeReaccionItem,
+  type MensajeMencionItem,
+  type ParticipanteAutocomplete,
   type ConversacionMeta,
 } from './actions';
 import { EMOJIS_REACCION_VALIDOS } from './constants';
@@ -94,6 +97,60 @@ function resaltarTexto(texto: string, query: string): React.ReactNode {
       <span key={i}>{p}</span>
     ),
   );
+}
+
+/**
+ * Sprint Chat · menciones — renderiza el contenido reemplazando cada
+ * `@<nombre>` por un chip azul. Como las menciones vienen del server
+ * (validadas), confiamos en que `m.menciones[i].name` aparece literal en
+ * el texto. Si hay un @nombre que no está mencionado en BD (porque el
+ * autor escribió "@juan" libre), se renderiza como texto plano.
+ *
+ * Toma el resultado de `resaltarTexto` (que ya parte el string para el
+ * highlight de búsqueda) — para evitar conflicto entre los dos features,
+ * priorizamos las menciones sobre la búsqueda en el match: si el chip
+ * incluye el query no lo resaltamos (es marginal y mantiene el DOM más
+ * limpio).
+ *
+ * Si `meId` está mencionado, el chip lleva un tono más fuerte (yellow).
+ */
+function renderConMencionesYBusqueda(
+  texto: string,
+  menciones: MensajeMencionItem[],
+  searchQuery: string,
+  meId: string,
+): React.ReactNode {
+  if (menciones.length === 0) return resaltarTexto(texto, searchQuery);
+  // Construir regex con los nombres ordenados de más largo a más corto
+  // para que el matcher prefiera "Juan Pérez" sobre "Juan".
+  const sorted = [...menciones].sort((a, b) => b.name.length - a.name.length);
+  const escapedNames = sorted.map((m) => escapeRegex(`@${m.name}`));
+  const re = new RegExp(`(${escapedNames.join('|')})`, 'g');
+  const partes = texto.split(re);
+  return partes.map((p, i) => {
+    if (i % 2 === 1) {
+      // Coincidencia con un @<nombre> — buscamos el item correspondiente.
+      const nombre = p.slice(1); // quita "@"
+      const m = sorted.find((x) => x.name === nombre);
+      const esYo = m?.id === meId;
+      return (
+        <span
+          key={i}
+          title={m?.name ?? nombre}
+          className={cn(
+            'inline rounded px-1 py-0 font-medium ring-1 ring-inset',
+            esYo
+              ? 'bg-yellow-100 text-yellow-900 ring-yellow-300'
+              : 'bg-brand-blue/10 text-brand-blue ring-brand-blue/30',
+          )}
+        >
+          @{nombre}
+        </span>
+      );
+    }
+    // Texto plano — todavía aplicamos el highlight de búsqueda.
+    return <span key={i}>{resaltarTexto(p, searchQuery)}</span>;
+  });
 }
 
 type FetchMensajesResult = { items: MensajeItem[]; meta: ConversacionMeta };
@@ -168,8 +225,21 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
   const estado = meta?.estado ?? 'ABIERTA';
   const cerrada = estado === 'CERRADA';
 
+  // Sprint Chat · menciones — participantes de la conv para el autocomplete
+  // del composer. Una sola carga (revalidate al focus).
+  const { data: participantesData } = useSWR(['chat:participantes', conversacionId], async () => {
+    const r = await listarParticipantesAction(conversacionId);
+    if (!r.ok) throw new Error(r.error);
+    return r.items;
+  });
+  const participantes = useMemo<ParticipanteAutocomplete[]>(
+    () => participantesData ?? [],
+    [participantesData],
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [borrador, setBorrador] = useState('');
   const [adjuntos, setAdjuntos] = useState<AdjuntoPendiente[]>([]);
   const [enviando, startEnvio] = useTransition();
@@ -177,6 +247,21 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
   const [previewLightbox, setPreviewLightbox] = useState<string | null>(null);
   const [cerrando, startCerrar] = useTransition();
   const [mostrarRating, setMostrarRating] = useState(false);
+
+  // Sprint Chat · menciones — estado del autocomplete y lista de elegidas
+  // pendientes de envío. El picker se abre cuando el cursor está justo
+  // después de un `@<prefijo>` y se cierra al elegir o al borrar el @.
+  const [mencionPickerOpen, setMencionPickerOpen] = useState(false);
+  const [mencionPrefijo, setMencionPrefijo] = useState('');
+  const [mencionStart, setMencionStart] = useState(0); // pos del @
+  const [mencionIdx, setMencionIdx] = useState(0);
+  const [mencionesElegidas, setMencionesElegidas] = useState<{ id: string; name: string }[]>([]);
+
+  const mencionesFiltradas = useMemo(() => {
+    if (!mencionPickerOpen) return [];
+    const q = mencionPrefijo.toLowerCase();
+    return participantes.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [mencionPickerOpen, mencionPrefijo, participantes]);
 
   // ─── Búsqueda dentro de la conversación ─────────────────────────────
   // Toggle, query y match activo. Calculamos los matches con useMemo
@@ -327,6 +412,12 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
         fd.append(`dim:${i}`, `${a.ancho}x${a.alto}`);
       }
     });
+    // Sprint Chat · menciones — solo enviamos las que el usuario eligió y
+    // que aún aparecen literalmente en el texto (si borró el @<nombre>
+    // después de elegirlo, no enviamos esa mención).
+    for (const u of mencionesElegidas) {
+      if (texto.includes(`@${u.name}`)) fd.append('mencion', u.id);
+    }
 
     startEnvio(async () => {
       const r = await enviarMensajeAction(fd);
@@ -338,6 +429,8 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
       adjuntos.forEach((a) => URL.revokeObjectURL(a.previewUrl));
       setAdjuntos([]);
       setBorrador('');
+      setMencionesElegidas([]);
+      setMencionPickerOpen(false);
       void mutate(['chat:mensajes', conversacionId]);
       void mutate('chat:conversaciones');
     });
@@ -363,6 +456,56 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
         void mutate('chat:conversaciones');
       } else {
         setEnviarErr(r.error);
+      }
+    });
+  }
+
+  /**
+   * Sprint Chat · menciones — dado el valor del textarea y la posición
+   * del cursor, mira el "token" inmediato antes del cursor. Si comienza
+   * con `@` (y el char previo es inicio o whitespace) abre el picker con
+   * el prefijo capturado. Sino, lo cierra.
+   */
+  function detectarMencion(valor: string, cursor: number) {
+    const antes = valor.slice(0, cursor);
+    // /(^|\s)@(\S*)$/ — `@` solo abre si está al inicio o tras whitespace.
+    const m = /(^|\s)@([^\s@]*)$/.exec(antes);
+    if (!m) {
+      if (mencionPickerOpen) setMencionPickerOpen(false);
+      return;
+    }
+    const prefijo = m[2] ?? '';
+    const startPos = cursor - prefijo.length - 1; // posición del `@`
+    setMencionPickerOpen(true);
+    setMencionPrefijo(prefijo);
+    setMencionStart(startPos);
+    setMencionIdx(0);
+  }
+
+  /**
+   * Sprint Chat · menciones — reemplaza el token `@<prefijo>` por
+   * `@<nombre> ` en el textarea, registra la mención y cierra el picker.
+   */
+  function elegirMencion(u: { id: string; name: string }) {
+    const inicio = mencionStart;
+    const fin = inicio + 1 + mencionPrefijo.length;
+    const antes = borrador.slice(0, inicio);
+    const despues = borrador.slice(fin);
+    const inserto = `@${u.name} `;
+    const nuevo = antes + inserto + despues;
+    setBorrador(nuevo);
+    setMencionPickerOpen(false);
+    // Dedup: si ya estaba elegido no lo añado dos veces.
+    setMencionesElegidas((prev) =>
+      prev.find((x) => x.id === u.id) ? prev : [...prev, { id: u.id, name: u.name }],
+    );
+    // Reenfoca el textarea y posiciona el cursor después de la inserción.
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        const newPos = (antes + inserto).length;
+        ta.setSelectionRange(newPos, newPos);
       }
     });
   }
@@ -490,21 +633,80 @@ export function PanelConversacion({ conversacionId }: { conversacionId: string }
               onChange={onFileChange}
             />
 
-            <textarea
-              value={borrador}
-              onChange={(e) => setBorrador(e.target.value)}
-              onPaste={onPaste}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  enviar();
-                }
-              }}
-              rows={2}
-              placeholder="Escribe un mensaje… (Enter envía, Ctrl+V pega imagen)"
-              className="flex-1 resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
-              maxLength={4000}
-            />
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={borrador}
+                onChange={(e) => {
+                  const valor = e.target.value;
+                  setBorrador(valor);
+                  // Sprint Chat · menciones — detectar @<prefijo> al cursor
+                  const cursor = e.target.selectionStart ?? valor.length;
+                  detectarMencion(valor, cursor);
+                }}
+                onPaste={onPaste}
+                onKeyDown={(e) => {
+                  // Navegación del picker (solo cuando está abierto y hay
+                  // resultados). Si está cerrado, fallback al envío normal.
+                  if (mencionPickerOpen && mencionesFiltradas.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setMencionIdx((i) => (i + 1) % mencionesFiltradas.length);
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setMencionIdx(
+                        (i) => (i - 1 + mencionesFiltradas.length) % mencionesFiltradas.length,
+                      );
+                      return;
+                    }
+                    if (e.key === 'Enter' || e.key === 'Tab') {
+                      e.preventDefault();
+                      const u = mencionesFiltradas[mencionIdx];
+                      if (u) elegirMencion(u);
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setMencionPickerOpen(false);
+                      return;
+                    }
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    enviar();
+                  }
+                }}
+                rows={2}
+                placeholder="Escribe un mensaje… (Enter envía, @ menciona, Ctrl+V pega imagen)"
+                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-brand-blue focus:outline-none focus:ring-[3px] focus:ring-brand-blue/15"
+                maxLength={4000}
+              />
+              {mencionPickerOpen && mencionesFiltradas.length > 0 && (
+                <div className="absolute bottom-full left-0 z-20 mb-1 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg ring-1 ring-slate-200">
+                  {mencionesFiltradas.map((p, idx) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        // mousedown (no click) para no perder foco del textarea
+                        e.preventDefault();
+                        elegirMencion(p);
+                      }}
+                      onMouseEnter={() => setMencionIdx(idx)}
+                      className={cn(
+                        'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs',
+                        idx === mencionIdx ? 'bg-brand-blue/10 text-brand-blue' : 'text-slate-700',
+                      )}
+                    >
+                      <span className="font-medium">{p.name}</span>
+                      <span className="text-[10px] text-slate-400">{p.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               type="submit"
               disabled={enviando || (!borrador.trim() && adjuntos.length === 0)}
@@ -783,7 +985,9 @@ function Mensaje({
                 borrando && 'opacity-50',
               )}
             >
-              {borrado ? m.contenido : resaltarTexto(m.contenido, searchQuery)}
+              {borrado
+                ? m.contenido
+                : renderConMencionesYBusqueda(m.contenido, m.menciones, searchQuery, meta.meId)}
             </p>
             <span className="text-[10px] text-slate-400">
               {fmtHora(m.createdAt)}

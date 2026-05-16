@@ -18,6 +18,7 @@ const TIPO_LABEL: Record<NotificacionTipo, string> = {
   ALIADO_CARTERA_ASIGNADA: 'Cartera asignada',
   ALIADO_GESTION_INCAPACIDAD: 'Gestión incapacidad',
   CHAT_MENSAJE_NUEVO: 'Nuevo mensaje',
+  CHAT_MENCION: 'Te mencionaron',
 };
 
 const TIPO_TONE: Record<NotificacionTipo, string> = {
@@ -28,6 +29,7 @@ const TIPO_TONE: Record<NotificacionTipo, string> = {
   ALIADO_CARTERA_ASIGNADA: 'bg-orange-50 text-orange-700 ring-orange-200',
   ALIADO_GESTION_INCAPACIDAD: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   CHAT_MENSAJE_NUEVO: 'bg-brand-blue/10 text-brand-blue-dark ring-brand-blue/30',
+  CHAT_MENCION: 'bg-amber-50 text-amber-700 ring-amber-200',
 };
 
 const TIPOS_ALL: NotificacionTipo[] = [
@@ -38,6 +40,7 @@ const TIPOS_ALL: NotificacionTipo[] = [
   'ALIADO_CARTERA_ASIGNADA',
   'ALIADO_GESTION_INCAPACIDAD',
   'CHAT_MENSAJE_NUEVO',
+  'CHAT_MENCION',
 ];
 
 type SP = {
