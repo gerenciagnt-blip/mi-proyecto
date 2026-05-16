@@ -343,6 +343,8 @@ model User {
   // Sprint Chat · cierre+rating
   conversacionesCerradasPor Conversacion[]              @relation("ConversacionCerradaPor")
   conversacionCalificaciones ConversacionCalificacion[] @relation("ConversacionCalificacionUser")
+  // Sprint Chat · reacciones — un user puede reaccionar a varios mensajes.
+  mensajeReacciones        MensajeReaccion[]           @relation("MensajeReaccionUser")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -3271,9 +3273,32 @@ model Mensaje {
   conversacion Conversacion       @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
   autor        User               @relation("MensajeAutor", fields: [autorId], references: [id], onDelete: Restrict)
   adjuntos     MensajeAdjunto[]
+  reacciones   MensajeReaccion[]
 
   @@index([conversacionId, createdAt])
   @@map("mensajes")
+}
+
+/// Sprint Chat · reacciones — un user reacciona a un mensaje con un emoji
+/// (set fijo en la app: 👍 ❤️ 😂 🎉 😮 😢). Único por (mensaje, user, emoji)
+/// para que cada user pueda alternar varias caritas sobre el mismo mensaje
+/// pero no duplicar la misma. Cualquier participante de la conversación
+/// puede reaccionar (validación a nivel de app). Si el mensaje está borrado
+/// las reacciones quedan en BD pero la UI las oculta.
+model MensajeReaccion {
+  id        String   @id @default(cuid())
+  mensajeId String
+  userId    String
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  mensaje Mensaje @relation(fields: [mensajeId], references: [id], onDelete: Cascade)
+  user    User    @relation("MensajeReaccionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([mensajeId, userId, emoji])
+  @@index([mensajeId])
+  @@index([userId])
+  @@map("mensaje_reacciones")
 }
 
 /// Adjuntos del chat — solo imágenes en v1 (jpeg/png/webp/gif). Sigue el

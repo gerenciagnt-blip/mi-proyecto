@@ -18,18 +18,22 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  SmilePlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   enviarMensajeAction,
   editarMensajeAction,
   borrarMensajeAction,
+  toggleReaccionAction,
   listarMensajesAction,
   marcarLeidoAction,
   type MensajeItem,
   type MensajeAdjuntoItem,
+  type MensajeReaccionItem,
   type ConversacionMeta,
 } from './actions';
+import { EMOJIS_REACCION_VALIDOS } from './constants';
 import {
   cerrarConversacionAction,
   reabrirConversacionAction,
@@ -650,6 +654,10 @@ function Mensaje({
   const [editTexto, setEditTexto] = useState(m.contenido);
   const [editPending, startEdit] = useTransition();
   const [editErr, setEditErr] = useState<string | null>(null);
+  // Sprint Chat · reacciones
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [reaccPending, startReacc] = useTransition();
+  const puedeReaccionar = !borrado && convAbierta;
   const { mutate } = useSWRConfig();
 
   function cancelarEdit() {
@@ -692,6 +700,18 @@ function Mensaje({
       }
       void mutate(['chat:mensajes', meta.id]);
       void mutate('chat:conversaciones');
+    });
+  }
+
+  function toggleReaccion(emoji: string) {
+    setPickerOpen(false);
+    startReacc(async () => {
+      const r = await toggleReaccionAction(m.id, emoji);
+      if (r.error) {
+        alert(r.error);
+        return;
+      }
+      void mutate(['chat:mensajes', meta.id]);
     });
   }
 
@@ -769,56 +789,136 @@ function Mensaje({
               {fmtHora(m.createdAt)}
               {m.editadoAt && !borrado ? ' · editado' : ''}
             </span>
-            {(puedeEditar || puedeBorrar) && (
-              <div className="relative opacity-0 transition group-hover:opacity-100">
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                  aria-label="Opciones del mensaje"
-                >
-                  <MoreVertical className="h-3 w-3" />
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-5 z-20 flex flex-col rounded-md border border-slate-200 bg-white py-1 shadow-md ring-1 ring-slate-200">
-                      {puedeEditar && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            setEditando(true);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Editar
-                        </button>
-                      )}
-                      {puedeBorrar && (
-                        <button
-                          type="button"
-                          onClick={borrar}
-                          disabled={borrando}
-                          className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          {borrando ? 'Borrando…' : 'Borrar'}
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+            {/* Acciones hover: añadir reacción + menú ⋮ (editar/borrar). */}
+            <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+              {puedeReaccionar && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen((v) => !v)}
+                    disabled={reaccPending}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50"
+                    aria-label="Añadir reacción"
+                    title="Añadir reacción"
+                  >
+                    <SmilePlus className="h-3.5 w-3.5" />
+                  </button>
+                  {pickerOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
+                      <div className="absolute right-0 top-5 z-20 flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-md ring-1 ring-slate-200">
+                        {EMOJIS_REACCION_VALIDOS.map((e) => (
+                          <button
+                            key={e}
+                            type="button"
+                            onClick={() => toggleReaccion(e)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-base leading-none transition hover:scale-125 hover:bg-slate-100"
+                            title={e}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {(puedeEditar || puedeBorrar) && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpen((v) => !v)}
+                    className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    aria-label="Opciones del mensaje"
+                  >
+                    <MoreVertical className="h-3 w-3" />
+                  </button>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                      <div className="absolute right-0 top-5 z-20 flex flex-col rounded-md border border-slate-200 bg-white py-1 shadow-md ring-1 ring-slate-200">
+                        {puedeEditar && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              setEditando(true);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Editar
+                          </button>
+                        )}
+                        {puedeBorrar && (
+                          <button
+                            type="button"
+                            onClick={borrar}
+                            disabled={borrando}
+                            className="flex items-center gap-1.5 px-3 py-1 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            {borrando ? 'Borrando…' : 'Borrar'}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )
       )}
       {!editando && !m.contenido && m.adjuntos.length > 0 && (
         <span className="px-1 text-[10px] text-slate-400">{fmtHora(m.createdAt)}</span>
       )}
+      {/* Chips de reacciones agrupadas por emoji. Click togglea: si ya
+         reaccioné con ese emoji, lo quita; sino lo añade. Las del actor
+         se destacan con borde brand-blue. */}
+      {!borrado && m.reacciones.length > 0 && (
+        <div className="mt-0.5 flex flex-wrap gap-1 px-1">
+          {m.reacciones.map((r) => (
+            <ChipReaccion
+              key={r.emoji}
+              r={r}
+              disabled={reaccPending || !convAbierta}
+              onClick={() => toggleReaccion(r.emoji)}
+            />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ChipReaccion({
+  r,
+  disabled,
+  onClick,
+}: {
+  r: MensajeReaccionItem;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const tooltip = r.usuarios.length > 0 ? r.usuarios.join(', ') : r.emoji;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={tooltip}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-1.5 py-0 text-[11px] leading-5 transition disabled:opacity-50',
+        r.miReaccion
+          ? 'border-brand-blue/50 bg-brand-blue/10 text-brand-blue'
+          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+      )}
+      aria-label={`${r.emoji} (${r.count})${r.miReaccion ? ' — tu reacción' : ''}`}
+    >
+      <span>{r.emoji}</span>
+      <span className="font-mono">{r.count}</span>
+    </button>
   );
 }
 
