@@ -5,6 +5,41 @@
 > entender qué expone el sistema, con qué autenticación y qué garantías de
 > seguridad ofrece. Toda la información proviene de la lectura directa del
 > código fuente.
+>
+> Última actualización: **2026-05-17** (v2.1).
+
+## Endpoints nuevos en v2.1
+
+### `GET/POST /api/cron/colpatria-health`
+
+Health check de la cola de jobs del bot Colpatria. Disparado por el
+workflow `bot-colpatria-health-check.yml` cada 30 min en horario
+laboral. Si hay jobs PENDING > 30 min o RUNNING > 15 min, el endpoint
+los reporta como `error` al logger pino, que los reenvía
+automáticamente a Sentry. Si la cola está sana, no se emite nada a
+Sentry (no se quema cuota).
+
+- **Auth**: `Authorization: Bearer <CRON_SECRET>` (o localhost en dev).
+- **Returns**: JSON con snapshot completo de la cola para debugging.
+
+### `POST /api/cron/backup-alert`
+
+Webhook one-shot llamado solo cuando el workflow `db-backup.yml`
+falla (`needs: backup` + `if: failure()`). Recibe
+`{workflow, runUrl, step?, details?}` y loggea como `error` → forward
+automático a Sentry.
+
+- **Auth**: `Authorization: Bearer <CRON_SECRET>`.
+- **Body**: JSON con detalle del fallo.
+
+### Cambio de comportamiento en `/admin/planos`
+
+El módulo paralelo `/admin/soporte/planillas-errores` se eliminó en
+v2.1 (PR #29). La validación de planillas con errores PagoSimple
+vive ahora dentro de `/admin/planos` como **tab "Validación"** con un
+botón "Ver errores" por planilla. El endpoint
+`POST inconsistenciasPlanillaPagosimpleAction` no cambió, solo migró
+de carpeta.
 
 ## Convenciones generales
 
