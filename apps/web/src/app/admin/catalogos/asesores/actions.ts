@@ -39,12 +39,23 @@ export async function createAsesorAction(
   const errSuc = await validarSucursalIdAsignable(sucursalId);
   if (errSuc) return { error: errSuc };
 
+  // Sprint Comisiones — toggle + meta opcionales en la creación.
+  const generaComision = formData.get('generaComision') === 'on';
+  const metaMensualRaw = String(formData.get('metaMensual') ?? '').trim();
+  const metaMensual = metaMensualRaw === '' ? null : Number(metaMensualRaw.replace(/[\s,]/g, ''));
+
   const baseRaw = {
     nombre: String(formData.get('nombre') ?? '').trim(),
     email: String(formData.get('email') ?? '').trim(),
     telefono: String(formData.get('telefono') ?? '').trim(),
     sucursalId,
+    generaComision,
+    metaMensual: Number.isFinite(metaMensual) ? metaMensual : null,
   };
+
+  if (generaComision && (!Number.isFinite(metaMensual) || (metaMensual as number) <= 0)) {
+    return { error: 'Para generar comisión debes definir una meta mensual > 0' };
+  }
 
   // Código consecutivo global AS-NNNN — lo asigna el server. Reintentamos
   // una vez por si dos peticiones colisionan en el @unique.
@@ -63,6 +74,8 @@ export async function createAsesorAction(
           email: parsed.data.email,
           telefono: parsed.data.telefono,
           sucursalId: parsed.data.sucursalId ?? null,
+          generaComision: parsed.data.generaComision ?? false,
+          metaMensual: parsed.data.metaMensual ?? null,
         },
       });
       await auditarCreate({
@@ -196,6 +209,63 @@ export async function createAsesorLoginAction(asesorId: string): Promise<CreateL
 
   revalidatePath('/admin/catalogos/asesores');
   return { ok: true, tempPassword, email: creado.email };
+}
+
+/**
+ * Sprint Comisiones — actualiza solo los campos de comisión del asesor
+ * (generaComision + metaMensual). Llamado desde el botón "Editar comisión"
+ * del listado o desde una página de detalle.
+ */
+export async function updateAsesorComisionAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAuth();
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) return { error: 'ID requerido' };
+
+  const a = await prisma.asesorComercial.findUnique({
+    where: { id },
+    select: { id: true, sucursalId: true, generaComision: true, metaMensual: true, codigo: true },
+  });
+  if (!a) return { error: 'Asesor no encontrado' };
+
+  const err = await validarSucursalIdAsignable(a.sucursalId);
+  if (err) return { error: err };
+
+  const generaComision = formData.get('generaComision') === 'on';
+  const metaMensualRaw = String(formData.get('metaMensual') ?? '').trim();
+  const metaMensual = metaMensualRaw === '' ? null : Number(metaMensualRaw.replace(/[\s,]/g, ''));
+
+  if (generaComision && (!Number.isFinite(metaMensual) || (metaMensual as number) <= 0)) {
+    return { error: 'Para generar comisión debes definir una meta mensual > 0' };
+  }
+
+  await prisma.asesorComercial.update({
+    where: { id },
+    data: {
+      generaComision,
+      metaMensual: generaComision ? (metaMensual as number) : (metaMensual ?? null),
+    },
+  });
+
+  await auditarEvento({
+    entidad: 'AsesorComercial',
+    entidadId: id,
+    accion: 'UPDATE',
+    entidadSucursalId: a.sucursalId,
+    descripcion: `Comisión asesor ${a.codigo}: ${generaComision ? 'activa' : 'inactiva'}${
+      generaComision ? ` · meta ${metaMensual}` : ''
+    }`,
+    cambios: {
+      antes: { generaComision: a.generaComision, metaMensual: a.metaMensual?.toString() ?? null },
+      despues: { generaComision, metaMensual: metaMensual?.toString() ?? null },
+      campos: ['generaComision', 'metaMensual'],
+    },
+  });
+
+  revalidatePath('/admin/catalogos/asesores');
+  return { ok: true };
 }
 
 export async function toggleAsesorAction(id: string) {

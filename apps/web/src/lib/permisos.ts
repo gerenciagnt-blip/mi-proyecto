@@ -256,6 +256,21 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Soporte',
     rolesAplica: STAFF,
   },
+  // Sprint Comisiones — vista global de ADMIN para cerrar comisiones por
+  // periodo. Solo STAFF (admin) cierra; el asesor accede a su propia
+  // vista vía `admin.asesor_comisiones`.
+  {
+    key: 'admin.comisiones',
+    label: 'Comisiones (admin)',
+    grupo: 'Administrativo',
+    rolesAplica: ['ADMIN'],
+  },
+  {
+    key: 'admin.asesor_comisiones',
+    label: 'Mis comisiones',
+    grupo: 'Asesor',
+    rolesAplica: ['ASESOR_COMERCIAL'],
+  },
 ] as const;
 
 /** Agrupa los módulos por su campo `grupo` preservando el orden. */

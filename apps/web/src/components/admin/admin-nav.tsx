@@ -30,6 +30,7 @@ import {
   ClipboardList,
   Star,
   FileWarning,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@pila/db';
@@ -232,7 +233,23 @@ const NAV: NavItem[] = [
         icon: ClipboardList,
         modulo: 'admin.reporte_at',
       },
+      // Sprint Comisiones — vista global para ADMIN; el asesor accede a la
+      // suya por su propia entrada (debajo).
+      {
+        label: 'Comisiones',
+        href: '/admin/administrativo/comisiones',
+        icon: TrendingUp,
+        modulo: 'admin.comisiones',
+      },
     ],
+  },
+  // Sprint Comisiones — entrada dedicada para el asesor. Aparece solo
+  // si el modulo `admin.asesor_comisiones` está habilitado para su rol.
+  {
+    label: 'Mis comisiones',
+    href: '/admin/asesor/comisiones',
+    icon: TrendingUp,
+    modulo: 'admin.asesor_comisiones',
   },
 ];
 

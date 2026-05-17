@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useRef, useEffect } from 'react';
+import { useActionState, useRef, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -19,9 +19,14 @@ export function CreateAsesorForm({
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createAsesorAction, {});
   const ref = useRef<HTMLFormElement>(null);
+  // Sprint Comisiones — toggle controlado para mostrar/ocultar input de meta.
+  const [generaComision, setGeneraComision] = useState(false);
 
   useEffect(() => {
-    if (state.ok) ref.current?.reset();
+    if (state.ok) {
+      ref.current?.reset();
+      setGeneraComision(false);
+    }
   }, [state.ok]);
 
   return (
@@ -58,6 +63,35 @@ export function CreateAsesorForm({
           </Select>
         </div>
       )}
+      {/* Sprint Comisiones — bloque opcional. Solo si el toggle está ON
+         se muestra y se exige la meta mensual. */}
+      <div className="sm:col-span-4 flex flex-wrap items-end gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="generaComision"
+            checked={generaComision}
+            onChange={(e) => setGeneraComision(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          <span>Genera comisión</span>
+        </label>
+        {generaComision && (
+          <div className="flex-1 min-w-[200px]">
+            <Label htmlFor="metaMensual">Meta mensual (COP)</Label>
+            <Input
+              id="metaMensual"
+              name="metaMensual"
+              type="number"
+              min="0"
+              step="1000"
+              required={generaComision}
+              placeholder="1500000"
+              className="mt-1"
+            />
+          </div>
+        )}
+      </div>
       <div className="sm:col-span-4 sm:flex sm:justify-end">
         <Button type="submit" disabled={pending} className="w-full sm:w-auto">
           {pending ? 'Creando…' : 'Crear asesor'}
