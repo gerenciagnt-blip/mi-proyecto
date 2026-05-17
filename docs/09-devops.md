@@ -2,6 +2,36 @@
 
 Esta sección documenta cómo se construye, ejecuta, monitorea y mantiene el Sistema PILA: setup local, variables de entorno, integración continua, jobs programados (cron) en GitHub Actions, deploy, logging, monitoreo, backups, retención de datos y pruebas de carga. Toda la información está derivada del repositorio (`.github/workflows/*.yml`, `package.json`, `.env.example`, `.husky/pre-commit`, `apps/web/src/lib/logger.ts`, `tests/load/`); no se inventa nada.
 
+> Última actualización: **2026-05-17** (v2.1). 16 workflows en total
+> (antes 12 en v2.0).
+
+## 0. Cambios desde v2.0
+
+- **Workflow `ci.yml`** ahora incluye job `db-migrations-check`:
+  levanta Postgres 16 efímero como service, aplica todas las
+  migraciones con `prisma migrate deploy` y ejecuta
+  `prisma migrate diff --from-url <db> --to-schema-datamodel
+prisma/schema.prisma --exit-code`. Si alguien editó el schema sin
+  generar migración, el PR falla.
+- **Workflow `db-backup.yml`** ahora es **diario** (antes semanal).
+  Schedule adicional el día 1 de cada mes que dispara con
+  `verify_restore=true` para probar restore automático sin
+  intervención. Job nuevo `notify-on-failure` con `if: failure()`
+  que postea al endpoint `/api/cron/backup-alert` para que el
+  incidente quede en Sentry.
+- **Workflow nuevo `bot-colpatria-health-check.yml`**: cada 30 min en
+  horario laboral Colombia (lun-vie 13:00–22:30 UTC). Llama a
+  `POST /api/cron/colpatria-health` con `Bearer CRON_SECRET`. El
+  endpoint detecta jobs PENDING > 30 min o RUNNING > 15 min y
+  reenvía el incidente a Sentry vía el logger.
+- **Workflow nuevo `e2e-manual.yml`**: `workflow_dispatch` para correr
+  Playwright contra una instancia efímera. Levanta Postgres + corre
+  seed (`cli seed:test-data --force`) + build + `next start` y
+  ejecuta los E2E. Sube `playwright-report/` como artifact si falla.
+- **Secrets nuevos requeridos** en GitHub: `APP_URL` y `CRON_SECRET`
+  para los workflows de health-check del bot y backup-alert.
+  Documentados inline en cada `.yml`.
+
 ---
 
 ## 1. Cómo correr localmente

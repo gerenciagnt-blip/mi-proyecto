@@ -2,8 +2,27 @@
 
 Sección de la documentación técnica enterprise. Describe cómo se prueba el sistema PILA: qué framework se usa, qué tipos de tests están presentes, cuál es el inventario completo, cómo correrlos y los gaps reales que aún no están cubiertos.
 
-> Fecha de auditoría del inventario: **2026-04-28**.
-> Total de archivos `*.test.ts` en el monorepo (excluyendo `node_modules`): **21**.
+> Fecha de auditoría del inventario: **2026-05-17** (v2.1).
+> Archivos `*.test.ts` en el monorepo: **26** (24 en `apps/web`, 2 en `apps/bot-colpatria`).
+> Tests unitarios pasando: **395** en `@pila/web` + **57** en `@pila/bot-colpatria`.
+> Tests E2E (Playwright): **5** en `apps/web/e2e/*.e2e.ts`.
+
+## 12.0 Cambios desde v2.0
+
+- **Motor de liquidación SGSS cubierto** (PR #34): `lib/liquidacion/calcular.ts`
+  era la pieza crítica del negocio (calcula el dinero de cada transacción) y
+  no tenía tests. Se agregaron **33 tests** que cubren VINCULACION,
+  MENSUALIDAD dependiente/independiente, exoneración Ley 1607, FSP por
+  tramos, plan SGSS parcial, ARL nivel I interna obligatoria, días
+  proporcionales, override de días, casos límite y `periodoAporte` distinto
+  del periodo contable. Sin cambios al motor.
+- **`config-resolver` movido a `@pila/core`** (PR #30): el resolver Colpatria
+  (16 tests) ahora vive en `packages/core/src/colpatria/`.
+- **Setup E2E con Playwright** (PR #37): `@playwright/test ^1.60`,
+  `playwright.config.ts` con pattern `*.e2e.ts` (no choca con `*.test.ts`
+  de vitest), 2 happy paths iniciales: `smoke-landing.e2e.ts` (sin auth)
+  y `auth-login.e2e.ts` (con seed). Workflow manual `e2e-manual.yml`
+  levanta Postgres efímero + seed + build + `next start`.
 
 ---
 
@@ -11,12 +30,13 @@ Sección de la documentación técnica enterprise. Describe cómo se prueba el s
 
 El monorepo usa una sola herramienta para todos los tests automatizados de TypeScript:
 
-| Pieza             | Versión  | Dónde está                                             |
-| ----------------- | -------- | ------------------------------------------------------ |
-| **Vitest**        | `^4.1.5` | `apps/web` (devDep) y `apps/bot-colpatria` (devDep)    |
-| **@vitest/ui**    | `^4.1.5` | `apps/web` (UI opcional para `pnpm test:ui`)           |
-| **k6**            | externo  | `tests/load/*.k6.js`                                   |
-| **Lighthouse CI** | externo  | `tests/load/lighthouse.config.js` (config para `lhci`) |
+| Pieza                | Versión   | Dónde está                                             |
+| -------------------- | --------- | ------------------------------------------------------ |
+| **Vitest**           | `^4.1.5`  | `apps/web` (devDep) y `apps/bot-colpatria` (devDep)    |
+| **@vitest/ui**       | `^4.1.5`  | `apps/web` (UI opcional para `pnpm test:ui`)           |
+| **@playwright/test** | `^1.60.0` | `apps/web` (devDep, agregado v2.1 para E2E)            |
+| **k6**               | externo   | `tests/load/*.k6.js`                                   |
+| **Lighthouse CI**    | externo   | `tests/load/lighthouse.config.js` (config para `lhci`) |
 
 Las apps `@pila/cli` y los paquetes `@pila/core`, `@pila/db` **no tienen test runner instalado** — su validación pasa por `tsc --noEmit` (typecheck) y por los tests de las apps que los consumen. El runner del workspace (`pnpm -r --if-present test`) los ignora silenciosamente porque no tienen script `test`.
 

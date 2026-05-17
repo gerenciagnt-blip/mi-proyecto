@@ -6,6 +6,105 @@ commits clave y los documentos técnicos afectados (sección de `docs/`).
 
 ---
 
+## 2.1.0 · 2026-05-17
+
+Release de mejora estructural y observabilidad. Cierra 10 PRs (#28–#37)
+en una sesión de barrido del backlog post-2.0. No agrega módulos
+funcionales nuevos: refuerza performance, observabilidad, tests,
+mantenibilidad y prepara la app para E2E sistemático.
+
+### Highlights
+
+- **Barrido HIGH — performance + zod + índices** (PR #28): N+1 fix en
+  `listarConversacionesAction` (de 100 counts a 1 query + JS grouping),
+  4 índices Prisma compuestos nuevos. Migración
+  `20260517191138_perf_indices_barrido` aplicada.
+- **Limpieza estructural** (PR #29): elimina 5 permisos huérfanos del
+  catálogo. Fusión: el módulo paralelo
+  `/admin/soporte/planillas-errores` desaparece — la validación de
+  planillas vive ahora dentro de Planos como tab "Validación" con
+  botón "Ver errores" por planilla.
+- **`config-resolver` unificado en `@pila/core`** (PR #30): la lógica
+  de resolución Colpatria que estaba duplicada **dos veces** se
+  centraliza en `packages/core/src/colpatria/`. Bot importa de core
+  con un adapter `toConfigSnapshot()`. -227 LOC de duplicación.
+  También se reducen los `include` profundos del query de planos
+  (`periodo: true` y `conceptos: true` → `select` explícito).
+- **Logger estructurado en server actions críticas** (PR #31): 8
+  `console.error`/`console.warn` migrados a `createLogger` (pino).
+  Logs filtrables por scope + forward automático a Sentry en nivel ≥
+  error. Nuevo job CI `db-migrations-check` que levanta Postgres
+  efímero y corre `prisma migrate diff` contra `schema.prisma`.
+- **Monitoreo bot Colpatria** (PR #32): `JobsHealthBar` arriba del
+  listado en `/admin/configuracion/colpatria-jobs` con contadores y
+  alerta visual si hay jobs colgados (PENDING > 30 min o RUNNING > 15
+  min). Endpoint `GET/POST /api/cron/colpatria-health` que reenvía a
+  Sentry. Workflow `bot-colpatria-health-check.yml` cada 30 min en
+  horario laboral.
+- **Backup BD reforzado** (PR #33): cron semanal → **diario** a las
+  5 AM UTC (RPO de 7 → 1 día). Schedule mensual adicional que dispara
+  con `verify_restore=true`. Job nuevo `notify-on-failure` que postea
+  al endpoint `/api/cron/backup-alert` → forward a Sentry si falla.
+- **Tests del motor de liquidación SGSS** (PR #34): 33 tests sobre
+  `lib/liquidacion/calcular.ts`. El motor calcula el dinero de cada
+  transacción y antes tenía 0 tests. Total repo: 362 → 395 tests
+  passing.
+- **Split de archivos monstruo** (PR #35, #36):
+  - `admin/planos/page.tsx`: **1070 → 354 LOC** (-67%) extrayendo
+    `_helpers.ts` y 5 sub-componentes en `_components/`.
+  - `admin/chat/actions.ts`: **1242 → 1012 LOC** (-19%) extrayendo
+    tipos a `_shared.ts` y helpers internos a `_helpers.ts`.
+- **Setup E2E con Playwright** (PR #37): `@playwright/test`,
+  `playwright.config.ts`, `apps/web/e2e/` con 2 happy paths iniciales
+  (`smoke-landing`, `auth-login`), workflow manual `e2e-manual.yml`.
+
+### Schema / migraciones
+
+- `20260517191138_perf_indices_barrido` — 4 índices compuestos:
+  `afiliacion[asesorComercialId, modalidad]`,
+  `[asesorComercialId, fechaRetiro]`,
+  `comprobante[periodoId, estado]`,
+  `mensaje[conversacionId, autorId, createdAt]`.
+
+### Workflows GitHub Actions
+
+- **Nuevos**: `bot-colpatria-health-check.yml` (cada 30 min lun-vie),
+  `e2e-manual.yml` (workflow_dispatch).
+- **Modificados**: `db-backup.yml` (diario + mensual con test restore
+  - job de alerta), `ci.yml` (job nuevo `db-migrations-check` con
+    Postgres efímero).
+- **Endpoints nuevos**: `/api/cron/colpatria-health`,
+  `/api/cron/backup-alert`.
+
+### Tests
+
+- 395 unit tests (24 archivos en `apps/web/src/lib/`) — antes 362.
+- 57 unit tests en el bot.
+- 5 tests E2E en `apps/web/e2e/` (smoke-landing + auth-login).
+- Cobertura crítica nueva: motor de liquidación (33 casos).
+
+### Acciones operativas pendientes
+
+- Configurar secrets GitHub `APP_URL` + `CRON_SECRET` para que los
+  crons de health-check del bot y de backup-alert puedan postear al
+  endpoint de la app desplegada.
+
+### Pendientes vivos
+
+- 5 archivos quedan en >1000 LOC: `chat/panel-conversacion.tsx`,
+  `base-datos/afiliacion-form.tsx`, `landing/page.tsx`,
+  `transacciones/nueva-transaccion/actions.ts`,
+  `base-datos/actions.ts`.
+- TODOs comunicaciones: PQRS por email vía Resend, por WhatsApp.
+- `WHATSAPP_NUMBER` placeholder en landing.
+
+### Documentos afectados
+
+- `04-apis.md`, `05-bot-colpatria.md`, `09-devops.md`,
+  `10-testing.md`, `11-performance-riesgos-roadmap.md`.
+
+---
+
 ## 2.0.0 · 2026-05-07
 
 Segundo release mayor. Consolida los sprints abril–mayo de 2026:

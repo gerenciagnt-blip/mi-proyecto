@@ -3,6 +3,33 @@
 > Documento técnico enterprise — secciones 13, 14 y 15 del manual de arquitectura de `mi-proyecto` (monorepo PILA / SGSS).
 > Audiencia: CTO, líder técnico, arquitecto de plataforma. El propósito es dar contexto suficiente para tomar decisiones de inversión en infraestructura, refactor y producto.
 > Toda la información se basa en el código real del repo, los commits recientes (`git log`) y la memoria del proyecto. No hay especulación.
+>
+> Última actualización: **2026-05-17** (v2.1).
+
+## 0. Cambios desde v2.0 (items del roadmap cerrados)
+
+- ✅ **N+1 en `listarConversacionesAction`** (HIGH): fix en PR #28.
+- ✅ **4 índices Prisma compuestos** (HIGH) para caminos calientes
+  (comisiones, chat unread, planos por estado).
+- ✅ **Profundidad de `include` en planos** (MEDIUM): PR #30.
+- ✅ **Logger estructurado en server actions críticas** (MEDIUM): PR #31.
+- ✅ **Backup BD diario** (HIGH ops): PR #33. RPO 7 → 1 día.
+- ✅ **Observabilidad bot Colpatria** (MEDIUM): PR #32. Jobs colgados
+  → alerta a Sentry sin intervención humana.
+- ✅ **Tests del motor de liquidación** (HIGH): PR #34. 33 tests.
+- ✅ **Refactor estructural planos/chat** (MEDIUM): PRs #35 y #36.
+- ✅ **Setup E2E Playwright** (MEDIUM): PR #37.
+- ✅ **CI db-migrations-check** (HIGH): PR #31.
+
+### Items HIGH/MEDIUM aún abiertos
+
+- **5 archivos del refactor estructural** quedan en >1000 LOC.
+- **TODOs comunicaciones**: PQRS por email (Resend) y por WhatsApp
+  Business — bloqueados por credenciales, no por código.
+- **`WHATSAPP_NUMBER` placeholder** en landing.
+- **Migración storage local → S3/R2**: módulo ya abstracto, falta
+  el adapter S3.
+- **CSRF en server actions**: gap declarado en `08-seguridad.md`.
 
 ---
 
