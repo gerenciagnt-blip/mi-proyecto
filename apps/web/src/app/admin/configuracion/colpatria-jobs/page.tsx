@@ -3,7 +3,9 @@ import { Bot, ListChecks, KeyRound } from 'lucide-react';
 import { requirePermiso } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { JobsSection, type JobsSectionParams } from './_components/jobs-section';
+import { JobsHealthBar } from './_components/jobs-health-bar';
 import { SesionesSection } from './_components/sesiones-section';
+import { obtenerSaludJobsColpatria } from '@/lib/colpatria/salud-jobs';
 
 export const metadata = { title: 'Bot Colpatria — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -78,8 +80,16 @@ export default async function BotColpatriaPage({ searchParams }: { searchParams:
         </div>
       </nav>
 
-      {/* Contenido */}
-      {seccion === 'jobs' ? <JobsSection sp={sp} /> : <SesionesSection />}
+      {/* Contenido. Para la sección Jobs mostramos un health-bar arriba
+          con contadores y alerta si hay jobs colgados. */}
+      {seccion === 'jobs' ? (
+        <>
+          <JobsHealthBar salud={await obtenerSaludJobsColpatria()} />
+          <JobsSection sp={sp} />
+        </>
+      ) : (
+        <SesionesSection />
+      )}
     </div>
   );
 }
