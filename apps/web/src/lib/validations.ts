@@ -133,10 +133,19 @@ export const UserUpdateSchema = z
     sucursalId: z.string().nullable(),
     rolCustomId: z.string().nullable().optional(),
     active: z.boolean(),
+    // Sprint barrido HIGH H1 — al editar un user vinculado a un asesor
+    // comercial, ADMIN puede cambiar el vínculo (mover el login a otro
+    // asesor del catálogo). Solo aplica a rol ASESOR_COMERCIAL; para
+    // otros roles debe quedar null.
+    asesorComercialId: z.string().nullable().optional(),
   })
   .refine((v) => esStaffRole(v.role) || !!v.sucursalId, {
     message: 'Sucursal obligatoria para roles de aliado',
     path: ['sucursalId'],
+  })
+  .refine((v) => v.role === 'ASESOR_COMERCIAL' || !v.asesorComercialId, {
+    message: 'asesorComercialId solo aplica al rol ASESOR_COMERCIAL',
+    path: ['asesorComercialId'],
   });
 
 export const UserPasswordSchema = z.object({

@@ -158,12 +158,19 @@ export async function updateUserAction(
   const active = bloqueado ? existing.active : formData.get('active') === 'on';
   const esStaff = role === 'ADMIN' || role === 'SOPORTE';
 
+  // Sprint barrido HIGH H1 — el vínculo asesor → user es inmutable por
+  // diseño en este form (ver comentario arriba sobre `bloqueado`). Si
+  // hay que reasignar, se borra el login y se recrea desde el catálogo.
+  // Aún así pasamos el valor actual al schema para que la validación lo
+  // contemple y el update lo preserve explícitamente (antes el campo
+  // quedaba fuera del Update payload).
   const parsed = UserUpdateSchema.safeParse({
     name: titleCase(String(formData.get('name') ?? '').trim()),
     role,
     sucursalId: esStaff ? null : sucursalRaw || null,
     rolCustomId: rolCustomRaw || null,
     active,
+    asesorComercialId: existing.asesorComercialId ?? null,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' };

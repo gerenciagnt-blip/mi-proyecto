@@ -119,56 +119,71 @@ export async function listarConversacionesAction(): Promise<
     },
   });
 
-  const items: ConversacionListItem[] = await Promise.all(
-    convs.map(async (c) => {
-      const me = c.participantes.find((p) => p.userId === userId);
-      const otros = c.participantes.filter((p) => p.userId !== userId);
-      const otherUserId = c.tipo === 'DM' && otros[0] ? otros[0].userId : null;
-      const tituloDM = otros.map((p) => p.user.name).join(', ');
-      const titulo =
-        c.tipo === 'GRUPO' ? (c.nombre ?? '(Grupo sin nombre)') : tituloDM || '(Sin nombre)';
-      const ultimo = c.mensajes[0] ?? null;
-      const adjuntosUltimo = ultimo?._count.adjuntos ?? 0;
-      const preview = ultimo
-        ? ultimo.borradoAt
-          ? '(Mensaje borrado)'
-          : ultimo.contenido
-            ? ultimo.contenido.length > 80
-              ? `${ultimo.contenido.slice(0, 77)}…`
-              : ultimo.contenido
-            : adjuntosUltimo > 0
-              ? `📷 ${adjuntosUltimo === 1 ? 'Imagen' : `${adjuntosUltimo} imágenes`}`
-              : null
-        : null;
+  // Sprint barrido HIGH H3 — antes: por cada conv hacíamos un
+  // `prisma.mensaje.count()` (N+1 → 100 round-trips para 100 convs aun
+  // dentro de Promise.all). Ahora hacemos UNA sola findMany de mensajes
+  // no propios y agrupamos en JS aplicando el filtro `lastReadAt` por
+  // conv. Trae solo {conversacionId, createdAt} → muy barato en bytes.
+  const convIds = convs.map((c) => c.id);
+  const lastReadByConv = new Map<string, Date | null>();
+  for (const c of convs) {
+    const me = c.participantes.find((p) => p.userId === userId);
+    lastReadByConv.set(c.id, me?.lastReadAt ?? null);
+  }
+  const mensajesNoPropios =
+    convIds.length === 0
+      ? []
+      : await prisma.mensaje.findMany({
+          where: {
+            conversacionId: { in: convIds },
+            autorId: { not: userId },
+            borradoAt: null,
+          },
+          select: { conversacionId: true, createdAt: true },
+        });
+  const unreadByConv = new Map<string, number>();
+  for (const m of mensajesNoPropios) {
+    const lastRead = lastReadByConv.get(m.conversacionId);
+    if (!lastRead || m.createdAt > lastRead) {
+      unreadByConv.set(m.conversacionId, (unreadByConv.get(m.conversacionId) ?? 0) + 1);
+    }
+  }
 
-      // unreadCount = mensajes en la conv con createdAt > lastReadAt del user,
-      // del autor distinto al user (los propios siempre cuentan como leídos).
-      const lastReadAt = me?.lastReadAt;
-      const unread = await prisma.mensaje.count({
-        where: {
-          conversacionId: c.id,
-          autorId: { not: userId },
-          borradoAt: null,
-          ...(lastReadAt ? { createdAt: { gt: lastReadAt } } : {}),
-        },
-      });
+  const items: ConversacionListItem[] = convs.map((c) => {
+    const otros = c.participantes.filter((p) => p.userId !== userId);
+    const otherUserId = c.tipo === 'DM' && otros[0] ? otros[0].userId : null;
+    const tituloDM = otros.map((p) => p.user.name).join(', ');
+    const titulo =
+      c.tipo === 'GRUPO' ? (c.nombre ?? '(Grupo sin nombre)') : tituloDM || '(Sin nombre)';
+    const ultimo = c.mensajes[0] ?? null;
+    const adjuntosUltimo = ultimo?._count.adjuntos ?? 0;
+    const preview = ultimo
+      ? ultimo.borradoAt
+        ? '(Mensaje borrado)'
+        : ultimo.contenido
+          ? ultimo.contenido.length > 80
+            ? `${ultimo.contenido.slice(0, 77)}…`
+            : ultimo.contenido
+          : adjuntosUltimo > 0
+            ? `📷 ${adjuntosUltimo === 1 ? 'Imagen' : `${adjuntosUltimo} imágenes`}`
+            : null
+      : null;
 
-      return {
-        id: c.id,
-        tipo: c.tipo,
-        titulo,
-        otherUserId,
-        ultimoMensajeAt: c.ultimoMensajeAt?.toISOString() ?? null,
-        ultimoMensajePreview: preview,
-        ultimoMensajeAutorNombre: ultimo?.autor.name ?? null,
-        unreadCount: unread,
-        totalParticipantes: c.participantes.length,
-        estado: c.estado,
-        cerradaAt: c.cerradaAt?.toISOString() ?? null,
-        ciclo: c.ciclo,
-      };
-    }),
-  );
+    return {
+      id: c.id,
+      tipo: c.tipo,
+      titulo,
+      otherUserId,
+      ultimoMensajeAt: c.ultimoMensajeAt?.toISOString() ?? null,
+      ultimoMensajePreview: preview,
+      ultimoMensajeAutorNombre: ultimo?.autor.name ?? null,
+      unreadCount: unreadByConv.get(c.id) ?? 0,
+      totalParticipantes: c.participantes.length,
+      estado: c.estado,
+      cerradaAt: c.cerradaAt?.toISOString() ?? null,
+      ciclo: c.ciclo,
+    };
+  });
 
   return { ok: true, items };
 }
@@ -267,6 +282,11 @@ export async function listarMensajesAction(
   const part = await asegurarParticipante(userId, conversacionId);
   if (!part) return { ok: false, error: 'No participas en esta conversación' };
 
+  // Sprint barrido HIGH H2 — `asegurarParticipante` ya cargó `rolEnConv`,
+  // reusarlo evita un findUnique extra que estaba duplicado. Antes había
+  // una 3ª query a `conversacionParticipante.findUnique` para lo mismo.
+  const soyAdminConv = part.rolEnConv === 'ADMIN';
+
   // Meta de la conversación (estado, ciclo, etc.) + chequeo de
   // "debe calificar" (no-staff + hay staff + ya cerrada + no calificó).
   const conv = await prisma.conversacion.findUnique({
@@ -301,15 +321,6 @@ export async function listarMensajesAction(
     // el modal.
     debeCalificar = !yaCalifico && conv.estado === 'CERRADA';
   }
-  // Sprint Chat · edit/delete — el cliente necesita saber si soy ADMIN
-  // de la conv (para mostrar "Borrar" en mensajes ajenos no-staff).
-  // `part` ya fue cargado en `asegurarParticipante`; lo reusamos vía
-  // findUnique para tener el `rolEnConv`. Es 1 query extra barata.
-  const miParticipacion = await prisma.conversacionParticipante.findUnique({
-    where: { conversacionId_userId: { conversacionId, userId } },
-    select: { rolEnConv: true },
-  });
-  const soyAdminConv = miParticipacion?.rolEnConv === 'ADMIN';
 
   const meta: ConversacionMeta = {
     id: conv.id,
