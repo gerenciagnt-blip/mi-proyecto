@@ -197,6 +197,15 @@ const NAV: NavItem[] = [
         icon: FileWarning,
         modulo: 'soporte.planillas_errores',
       },
+      // Sprint Comisiones — vista global para ADMIN. El asesor accede a la
+      // suya por su propia entrada en el navbar (item "Mis comisiones"
+      // al final del menú).
+      {
+        label: 'Comisiones',
+        href: '/admin/administrativo/comisiones',
+        icon: TrendingUp,
+        modulo: 'admin.comisiones',
+      },
     ],
   },
   { label: 'Base de datos', href: '/admin/base-datos', icon: FolderArchive, modulo: 'base_datos' },
@@ -232,14 +241,6 @@ const NAV: NavItem[] = [
         href: '/admin/administrativo/reporte-at',
         icon: ClipboardList,
         modulo: 'admin.reporte_at',
-      },
-      // Sprint Comisiones — vista global para ADMIN; el asesor accede a la
-      // suya por su propia entrada (debajo).
-      {
-        label: 'Comisiones',
-        href: '/admin/administrativo/comisiones',
-        icon: TrendingUp,
-        modulo: 'admin.comisiones',
       },
     ],
   },

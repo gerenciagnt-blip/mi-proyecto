@@ -5,6 +5,15 @@ import { scopeWhereOpt, getUserScope } from '@/lib/sucursal-scope';
 import { CreateAsesorForm } from './create-form';
 import { toggleAsesorAction } from './actions';
 import { CrearLoginButton } from './crear-login-button';
+import { EditComisionButton } from './edit-comision-button';
+
+function formatoCOP(n: number): string {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(n);
+}
 
 export const metadata = { title: 'Asesores comerciales — Sistema PILA' };
 export const dynamic = 'force-dynamic';
@@ -24,6 +33,8 @@ export default async function AsesoresPage() {
         // ocultar el botón "Crear login" cuando ya existe el User asociado.
         user: { select: { id: true, email: true, active: true } },
       },
+      // Aseguramos que se carguen los nuevos campos generaComision + metaMensual
+      // (vienen por defecto al no usar `select`).
     }),
     scope?.tipo === 'STAFF'
       ? prisma.sucursal.findMany({
@@ -65,6 +76,7 @@ export default async function AsesoresPage() {
               <th className="px-4 py-2">Correo</th>
               <th className="px-4 py-2">Teléfono</th>
               <th className="px-4 py-2">Login</th>
+              <th className="px-4 py-2">Comisión</th>
               <th className="px-4 py-2">Estado</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -72,7 +84,7 @@ export default async function AsesoresPage() {
           <tbody className="divide-y divide-slate-100">
             {asesores.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-6 text-center text-slate-400">
                   Aún no hay asesores
                 </td>
               </tr>
@@ -108,6 +120,39 @@ export default async function AsesoresPage() {
                     <CrearLoginButton asesorId={a.id} />
                   ) : (
                     <span className="text-[10px] text-slate-400">Sin login</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-xs">
+                  {a.generaComision ? (
+                    <div className="space-y-1">
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                        Genera · {a.metaMensual ? formatoCOP(Number(a.metaMensual)) : '—'}
+                      </span>
+                      <div>
+                        <EditComisionButton
+                          asesorId={a.id}
+                          asesorCodigo={a.codigo}
+                          asesorNombre={a.nombre}
+                          generaComision={a.generaComision}
+                          metaMensual={a.metaMensual ? Number(a.metaMensual) : null}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-inset ring-slate-200">
+                        No genera
+                      </span>
+                      <div>
+                        <EditComisionButton
+                          asesorId={a.id}
+                          asesorCodigo={a.codigo}
+                          asesorNombre={a.nombre}
+                          generaComision={a.generaComision}
+                          metaMensual={a.metaMensual ? Number(a.metaMensual) : null}
+                        />
+                      </div>
+                    </div>
                   )}
                 </td>
                 <td className="px-4 py-3">
