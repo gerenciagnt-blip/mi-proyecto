@@ -57,3 +57,63 @@ jobs:
 
       - name: Tests
         run: pnpm test
+
+  db-migrations-check:
+    name: DB · Migrations in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Levantamos Postgres efímero para correr las migraciones contra una
+    # BD limpia y verificar que el schema.prisma coincide bit-for-bit con
+    # el estado resultante. Si alguien editó el schema sin generar la
+    # migración correspondiente, `migrate diff` retorna diff y este step
+    # falla, evitando que el cambio entre a master.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pila
+          POSTGRES_PASSWORD: pila
+          POSTGRES_DB: pila_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U pila"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: 'postgresql://pila:pila@localhost:5432/pila_ci?schema=public'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm -F @pila/db exec prisma migrate deploy
+
+      - name: Check schema matches migrations (no pending diff)
+        # `migrate diff` con exit-code != 0 si la BD (con migraciones
+        # aplicadas) difiere del schema.prisma. Detecta: campo agregado
+        # al schema sin migración, índice modificado sin migración, etc.
+        run: |
+          pnpm -F @pila/db exec prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code
+        continue-on-error: false

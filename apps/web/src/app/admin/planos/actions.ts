@@ -10,6 +10,9 @@ import { nextPlanillaConsecutivo } from '@/lib/consecutivo';
 import { planillasParaAfiliacion, banderasSubsistemas } from '@/lib/planos/politicas';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 import { validatePlanillaInPagosimple } from '@/lib/pagosimple/planillas';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('admin/planos/actions');
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -393,7 +396,7 @@ export async function generarPlanillasAction(periodoId: string): Promise<ActionS
     } catch (err) {
       const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       errores.push({ key, mensaje });
-      console.error(`[generarPlanillas] bucket=${key} error:`, mensaje);
+      log.error({ err, bucketKey: key }, 'generarPlanillas: fallo al crear planilla del bucket');
     }
   }
 
@@ -410,7 +413,7 @@ export async function generarPlanillasAction(periodoId: string): Promise<ActionS
         else pagosimpleFalla++;
       } catch (err) {
         pagosimpleFalla++;
-        console.error(`[generarPlanillas] PagoSimple validate falló para ${planillaId}:`, err);
+        log.error({ err, planillaId }, 'generarPlanillas: PagoSimple validate falló');
       }
     }
   }
