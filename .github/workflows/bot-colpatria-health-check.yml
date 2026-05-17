@@ -1,0 +1,62 @@
+name: Bot Colpatria — health check (jobs colgados)
+
+# Corre cada 30 min en horario laboral Colombia (8 AM–6 PM, lun–vie).
+# Llama al endpoint /api/cron/colpatria-health que evalúa la cola y
+# reenvía a Sentry como `error` cualquier job colgado (PENDING > 30
+# min o RUNNING > 15 min). Si la cola está sana, no se manda nada a
+# Sentry (no se quema cuota).
+#
+# Secrets requeridos (configurar en Settings → Secrets and variables → Actions):
+#   - APP_URL — URL base de la app desplegada (ej: https://pila.example.com)
+#   - CRON_SECRET — el mismo que setearon en la app como env var
+#                   (en .env.production de Vercel / Railway / etc.)
+
+on:
+  schedule:
+    # Cada 30 min en horario laboral COL (13:00-22:30 UTC = 8:00-17:30 COL)
+    - cron: '0,30 13-22 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Verifica jobs Colpatria colgados
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.APP_URL }}" ]; then
+            echo "::error::Secret APP_URL no configurado"
+            exit 1
+          fi
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "::error::Secret CRON_SECRET no configurado"
+            exit 1
+          fi
+          echo "✓ Secrets OK"
+
+      - name: Call health endpoint
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # -f hace que curl salga != 0 si el HTTP status es >= 400.
+          # --show-error muestra el error si falla, --silent suprime
+          # el progreso. -w imprime el código HTTP al final.
+          # La respuesta del endpoint la mostramos siempre para que el
+          # log de GitHub Actions tenga el snapshot de la cola.
+          RESPONSE=$(curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Accept: application/json" \
+            -w "\nHTTP_STATUS:%{http_code}" \
+            "$APP_URL/api/cron/colpatria-health")
+
+          echo "Response:"
+          echo "$RESPONSE"
+
+          # Si llegamos acá, curl devolvió 2xx. Si había jobs colgados,
+          # el endpoint ya los mandó a Sentry — no hace falta que este
+          # job falle. El status del job en GH refleja solo que el
+          # endpoint respondió, no la salud del bot.
