@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import type { ConversacionTipo, ConversacionEstado } from '@pila/db';
+import type { ConversacionTipo } from '@pila/db';
 import { prisma } from '@pila/db';
 import { requirePermiso } from '@/lib/auth-helpers';
 import { validarParticipantes, whereUsuariosElegibles } from '@/lib/chat/elegibles';
@@ -15,62 +15,46 @@ import { autoCerrarInactivasAction } from './cierre-actions';
 import { emitirNotificacion } from '@/lib/notificaciones';
 import { publishMany } from '@/lib/chat/bus';
 import { esEmojiReaccionValido } from './constants';
+import {
+  MAX_CONTENIDO,
+  MAX_MENSAJES_PAGE,
+  VENTANA_EDIT_MS,
+  esStaffRole,
+  type ActionState,
+  type ConversacionListItem,
+  type MensajeAdjuntoItem,
+  type MensajeReaccionItem,
+  type MensajeMencionItem,
+  type MensajeItem,
+  type ConversacionMeta,
+  type ParticipanteAutocomplete,
+  type CrearConversacionResult,
+  type UsuarioElegible,
+} from './_shared';
+import {
+  asegurarParticipante,
+  agruparReacciones,
+  extraerMencionesValidas,
+  emitirNotificacionesChat,
+} from './_helpers';
 
-/**
- * Sprint Chat · notif bandeja — umbral en ms para considerar a un
- * participante "frío" (no ha leído en X tiempo y por tanto se le emite
- * notificación al recibir un mensaje nuevo).
- */
-const UMBRAL_FRIO_MS = 2 * 60 * 1000; // 2 min
-
-/**
- * Ventana para dedup de notificaciones de chat: no se emite otra notif
- * para el mismo (user, conversacion) si hay una de hace <DEDUP_MS.
- */
-const DEDUP_MS = 5 * 60 * 1000; // 5 min
-
-export type ActionState = { error?: string; ok?: boolean };
-
-const MAX_CONTENIDO = 4000;
-const MAX_MENSAJES_PAGE = 100;
-
-/** Roles considerados "staff" para reglas de calificación. */
-function esStaffRole(role: string): boolean {
-  return role === 'ADMIN' || role === 'SOPORTE';
-}
-
-// ============ Helpers internos ============
-
-/**
- * Devuelve el ID de la conversación si el user actual es participante, o
- * null si no lo es (o no existe). Usado por todas las acciones que tocan
- * una conversación específica como guard.
- */
-async function asegurarParticipante(userId: string, conversacionId: string) {
-  const p = await prisma.conversacionParticipante.findUnique({
-    where: { conversacionId_userId: { conversacionId, userId } },
-    select: { conversacionId: true, rolEnConv: true },
-  });
-  return p;
-}
+// Re-exports — `actions.ts` sigue siendo la "fachada pública" del
+// módulo. Los callers existentes (`./conversaciones-sidebar`,
+// `./panel-conversacion`, etc.) siguen importando desde aquí.
+export type {
+  ActionState,
+  ConversacionListItem,
+  MensajeAdjuntoItem,
+  MensajeReaccionItem,
+  MensajeMencionItem,
+  MensajeItem,
+  ConversacionMeta,
+  ParticipanteAutocomplete,
+  CrearConversacionResult,
+  UsuarioElegible,
+};
 
 // ============ Listado de conversaciones ============
-
-export type ConversacionListItem = {
-  id: string;
-  tipo: ConversacionTipo;
-  titulo: string;
-  // Para DMs: el otherUserId — para abrir directo o linkar.
-  otherUserId: string | null;
-  ultimoMensajeAt: string | null;
-  ultimoMensajePreview: string | null;
-  ultimoMensajeAutorNombre: string | null;
-  unreadCount: number;
-  totalParticipantes: number;
-  estado: ConversacionEstado;
-  cerradaAt: string | null;
-  ciclo: number;
-};
 
 /**
  * Lista las conversaciones del user actual, ordenadas por última actividad.
@@ -189,74 +173,6 @@ export async function listarConversacionesAction(): Promise<
 }
 
 // ============ Listado de mensajes ============
-
-export type MensajeAdjuntoItem = {
-  id: string;
-  nombre: string;
-  mime: string;
-  tamano: number;
-  ancho: number | null;
-  alto: number | null;
-  /** URL relativa para mostrar el archivo (apunta al endpoint /api/chat/adjuntos/...). */
-  url: string;
-};
-
-/** Sprint Chat · reacciones — reacción de un emoji agrupada sobre un mensaje.
- *  - `count`: cuántos usuarios reaccionaron con este emoji.
- *  - `miReaccion`: true si el actor actual está entre ellos.
- *  - `usuarios`: nombres para tooltip (máximo razonable; si llegamos a
- *    grupos masivos truncar en cliente).
- */
-export type MensajeReaccionItem = {
-  emoji: string;
-  count: number;
-  miReaccion: boolean;
-  usuarios: string[];
-};
-
-/** Sprint Chat · menciones — referencia simple al usuario mencionado.
- *  La UI usa el `name` para reemplazar la primera ocurrencia de `@<name>`
- *  en el texto por un chip; el `id` lo necesita para destacar cuando el
- *  mencionado soy yo. */
-export type MensajeMencionItem = {
-  id: string;
-  name: string;
-};
-
-export type MensajeItem = {
-  id: string;
-  contenido: string;
-  createdAt: string;
-  editadoAt: string | null;
-  borradoAt: string | null;
-  autor: { id: string; name: string };
-  adjuntos: MensajeAdjuntoItem[];
-  /** Sprint Chat · reacciones — agrupadas por emoji. Vacío si nadie ha
-   *  reaccionado, o si el mensaje está borrado (la BD las conserva pero la
-   *  UI las oculta). */
-  reacciones: MensajeReaccionItem[];
-  /** Sprint Chat · menciones — users mencionados con @<nombre>. Vacío en
-   *  mensajes borrados aunque la BD las conserve. */
-  menciones: MensajeMencionItem[];
-};
-
-export type ConversacionMeta = {
-  id: string;
-  estado: ConversacionEstado;
-  ciclo: number;
-  cerradaAt: string | null;
-  cerradaPorInactividad: boolean;
-  cerradaPorNombre: string | null;
-  tieneStaff: boolean;
-  /** True si el actor es no-staff Y la conv tiene staff Y aún no calificó este ciclo. */
-  debeCalificar: boolean;
-  /** Sprint Chat · edit/delete — userId del actor actual, para que la UI
-   *  decida si mostrar el menú "Editar/Borrar" en cada mensaje. */
-  meId: string;
-  /** True si el actor es ADMIN de la conv (puede borrar mensajes ajenos
-   *  de no-staff). */
-  soyAdminConv: boolean;
-};
 
 /**
  * Devuelve los mensajes de una conversación. Por defecto paginados desde
@@ -415,58 +331,6 @@ export async function listarMensajesAction(
       }))
       .reverse(), // viejo → nuevo para render
   };
-}
-
-/**
- * Sprint Chat · reacciones — agrupa la lista cruda de reacciones por emoji
- * y marca si el actor actual está dentro. Conserva el orden de aparición
- * del primer emoji (que es como salieron de Prisma con orderBy createdAt
- * asc).
- */
-function agruparReacciones(
-  raw: { emoji: string; userId: string; user: { name: string } }[],
-  meId: string,
-): MensajeReaccionItem[] {
-  const byEmoji = new Map<string, MensajeReaccionItem>();
-  for (const r of raw) {
-    let item = byEmoji.get(r.emoji);
-    if (!item) {
-      item = { emoji: r.emoji, count: 0, miReaccion: false, usuarios: [] };
-      byEmoji.set(r.emoji, item);
-    }
-    item.count += 1;
-    item.usuarios.push(r.user.name);
-    if (r.userId === meId) item.miReaccion = true;
-  }
-  return Array.from(byEmoji.values());
-}
-
-/**
- * Sprint Chat · menciones — dado un FormData ya validado, extrae el array
- * `mencion` (varias entries) y devuelve los userIds validados como
- * participantes de la conversación. Filtra duplicados y al propio actor
- * (auto-mencionarse no genera notif).
- */
-async function extraerMencionesValidas(
-  formData: FormData,
-  conversacionId: string,
-  autorId: string,
-): Promise<{ id: string; name: string }[]> {
-  const raw = formData
-    .getAll('mencion')
-    .map((v) => String(v))
-    .filter(Boolean);
-  if (raw.length === 0) return [];
-  // Dedup + filtra al autor.
-  const candidatos = Array.from(new Set(raw)).filter((id) => id !== autorId);
-  if (candidatos.length === 0) return [];
-
-  // Solo aceptamos IDs que sean participantes ACTUALES de la conversación.
-  const validos = await prisma.conversacionParticipante.findMany({
-    where: { conversacionId, userId: { in: candidatos } },
-    select: { user: { select: { id: true, name: true } } },
-  });
-  return validos.map((p) => p.user);
 }
 
 // ============ Enviar mensaje ============
@@ -723,14 +587,6 @@ export async function marcarLeidoAction(conversacionId: string): Promise<ActionS
 
 // ============ Participantes (para autocomplete de @menciones) ============
 
-/** Sprint Chat · menciones — item del autocomplete de `@` en el composer. */
-export type ParticipanteAutocomplete = {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-};
-
 /**
  * Devuelve los participantes de una conversación (excluyendo al actor)
  * para el autocomplete de menciones del composer. El cliente filtra por
@@ -765,10 +621,6 @@ export async function listarParticipantesAction(
 }
 
 // ============ Crear conversación ============
-
-export type CrearConversacionResult =
-  | { ok: true; conversacionId: string; existente: boolean }
-  | { ok: false; error: string };
 
 export async function crearConversacionAction(params: {
   tipo: ConversacionTipo;
@@ -844,14 +696,6 @@ export async function crearConversacionAction(params: {
 
 // ============ Buscador de elegibles ============
 
-export type UsuarioElegible = {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  sucursalCodigo: string | null;
-};
-
 /**
  * Devuelve users elegibles para el actor, opcionalmente filtrados por
  * texto libre (busca en name + email). Usado por el modal "nuevo chat".
@@ -903,81 +747,7 @@ export async function buscarUsuariosElegiblesAction(
   };
 }
 
-// ============ Notificaciones bandeja (chat "frío") ============
-
-/**
- * Sprint Chat · notif bandeja — emite `CHAT_MENSAJE_NUEVO` a cada
- * participante destinatario que está "frío" (no leyó la conversación
- * en los últimos 2 min). Dedup de 5 min por (user, conv).
- *
- * Helper interno — invocado fire-and-forget desde `enviarMensajeAction`.
- * Errores se silencian; el mensaje ya está creado y la sidebar va a
- * mostrar el badge igual aunque la notif falle.
- */
-async function emitirNotificacionesChat(params: {
-  conversacionId: string;
-  autorId: string;
-  autorNombre: string;
-  contenidoPreview: string;
-  ahora: Date;
-}) {
-  const { conversacionId, autorId, autorNombre, contenidoPreview, ahora } = params;
-  const corteFrio = new Date(ahora.getTime() - UMBRAL_FRIO_MS);
-  const corteDedup = new Date(ahora.getTime() - DEDUP_MS);
-
-  // Participantes que NO son el autor y están "fríos".
-  const candidatos = await prisma.conversacionParticipante.findMany({
-    where: {
-      conversacionId,
-      userId: { not: autorId },
-      OR: [{ lastReadAt: null }, { lastReadAt: { lt: corteFrio } }],
-    },
-    select: { userId: true },
-  });
-  if (candidatos.length === 0) return;
-
-  // Para cada candidato, chequeo dedup y emito si aplica.
-  const titulo = `Nuevo mensaje de ${autorNombre}`;
-  const mensaje =
-    contenidoPreview.length > 120 ? `${contenidoPreview.slice(0, 117)}…` : contenidoPreview;
-
-  // Nota: hacemos las consultas en serie para no pisar el rate-limit
-  // accidentalmente. El N suele ser <10 — costo despreciable.
-  for (const p of candidatos) {
-    const reciente = await prisma.notificacion.findFirst({
-      where: {
-        tipo: 'CHAT_MENSAJE_NUEVO',
-        destinoUserId: p.userId,
-        createdAt: { gt: corteDedup },
-        metadatos: {
-          path: ['conversacionId'],
-          equals: conversacionId,
-        },
-      },
-      select: { id: true },
-    });
-    if (reciente) continue;
-
-    await emitirNotificacion({
-      tipo: 'CHAT_MENSAJE_NUEVO',
-      destinoUserId: p.userId,
-      titulo,
-      mensaje,
-      // Deep-link al widget de chat con la conv pre-abierta.
-      href: `/admin?chatconv=${conversacionId}`,
-      metadatos: { conversacionId },
-    });
-  }
-}
-
 // ============ Editar / Borrar mensaje ============
-
-/**
- * Sprint Chat · edit — ventana para editar un mensaje. Después de N
- * minutos del envío, el botón "Editar" desaparece (la edición no debe
- * cambiar mensajes muy viejos que la otra parte ya leyó/citó).
- */
-const VENTANA_EDIT_MS = 15 * 60 * 1000; // 15 min
 
 /**
  * Edita el contenido de un mensaje propio. Solo el autor puede editar,
