@@ -33,9 +33,14 @@ export const LINEA_LEN = COTIZANTE_LEN + PADDING_OPERADOR_LEN; // 693
 
 // ============ Tipo de datos esperado por el generador ============
 
+// El query original usaba `include: true` en `periodo` y `conceptos`,
+// arrastrando todas las columnas. Auditoría 2026-05-17 detectó que solo
+// se usan `smlvSnapshot` del periodo y `concepto`/`porcentaje`/`valor` de
+// los conceptos — el resto venía en cada plano sin necesidad. Cambiado
+// a `select` explícito para reducir bytes por planilla en el query.
 export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
   include: {
-    periodo: true;
+    periodo: { select: { smlvSnapshot: true } };
     empresa: {
       include: {
         departamentoRef: { select: { codigo: true } };
@@ -51,7 +56,7 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
     };
     sucursal: { select: { codigo: true; nombre: true } };
     createdBy: {
-      include: {
+      select: {
         sucursal: { select: { codigo: true; nombre: true } };
       };
     };
@@ -60,7 +65,7 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
         comprobante: {
           include: {
             cuentaCobro: {
-              include: {
+              select: {
                 sucursal: { select: { codigo: true; nombre: true } };
               };
             };
@@ -100,7 +105,9 @@ export type PlanillaConDatos = Prisma.PlanillaGetPayload<{
                         ccf: { select: { codigo: true; codigoMinSalud: true } };
                       };
                     };
-                    conceptos: true;
+                    conceptos: {
+                      select: { concepto: true; porcentaje: true; valor: true };
+                    };
                   };
                 };
               };

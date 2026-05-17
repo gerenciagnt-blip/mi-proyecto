@@ -1,7 +1,9 @@
-import type { NivelRiesgo } from '@pila/db';
-
 /**
  * Resolución de la config Colpatria que va a Ingreso Individual.
+ *
+ * Esta es la **fuente canónica** consumida tanto por `apps/web` (para
+ * validar config desde la UI) como por `apps/bot-colpatria` (para
+ * resolver los campos del form antes de llenarlo con Playwright).
  *
  * Reglas de mapeo:
  *
@@ -24,7 +26,18 @@ import type { NivelRiesgo } from '@pila/db';
  *
  * El objetivo es centralizar la conversión "afiliación PILA → campos
  * AXA" en una sola función pura, fácil de testear sin BD.
+ *
+ * Historia: antes vivía en `apps/web/src/lib/colpatria/config-resolver.ts`
+ * y el bot tenía 2 réplicas con drift. Migrado a `@pila/core` el
+ * 2026-05-17 para tener una sola fuente de verdad.
  */
+
+/**
+ * Niveles de riesgo SGSS — duplicado intencionalmente del enum
+ * `NivelRiesgo` de `@pila/db` para que `@pila/core` no dependa de
+ * `@pila/db`. El union es estructuralmente compatible con el enum.
+ */
+export type NivelRiesgo = 'I' | 'II' | 'III' | 'IV' | 'V';
 
 /** Valores hardcoded — no salen de empresa ni afiliación. */
 export const COLPATRIA_HARDCODED = {

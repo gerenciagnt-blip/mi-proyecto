@@ -4,7 +4,12 @@ import {
   validarConfigCompleta,
   COLPATRIA_HARDCODED,
   type EmpresaConfigSnapshot,
-} from './config-resolver';
+} from '@pila/core';
+
+// Estos tests cubren la fuente canónica del resolver Colpatria que vive
+// en `packages/core/src/colpatria/config-resolver.ts` y se consume desde
+// `apps/web` (validación de config en UI) y `apps/bot-colpatria` (worker).
+// Antes la lógica estaba duplicada en web y bot — se unificó el 2026-05-17.
 
 const snapshotCompleto: EmpresaConfigSnapshot = {
   nit: '900123456',

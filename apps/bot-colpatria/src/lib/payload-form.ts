@@ -64,22 +64,10 @@ export type ColpatriaPayload = {
   };
 };
 
-// Espejo de `apps/web/src/lib/colpatria/config-resolver.ts > ConfigResuelta`.
-export type ConfigResuelta = {
-  aplicacion: string;
-  perfil: string;
-  empresaIdInterno: string;
-  afiliacionId: string;
-  nitEmpresaMision: string;
-  codigoSucursal: string;
-  codigoCentroTrabajo: string | null;
-  tipoAfiliacion: string;
-  grupoOcupacion: string;
-  tipoOcupacion: string;
-  tipoSalario: string;
-  modalidadTrabajo: string;
-  tareaAltoRiesgo: string;
-};
+// `ConfigResuelta` y el resolver viven en `@pila/core` (fuente única
+// compartida con apps/web). Antes había duplicación bot ↔ web.
+import type { ConfigResuelta } from '@pila/core';
+export type { ConfigResuelta };
 
 // ============================================================================
 // Catálogos de mapeo PILA → AXA
