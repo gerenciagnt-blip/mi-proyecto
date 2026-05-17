@@ -3,6 +3,9 @@ import { prisma, Prisma } from '@pila/db';
 import type { Role } from '@pila/db';
 import { auth } from '@/auth';
 import { calcularDiff, type Diff } from './diff';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('auditoria/registrar');
 
 /**
  * Registra un evento en la bitácora.
@@ -104,8 +107,11 @@ export async function registrarAuditoria(input: RegistrarAuditoriaInput): Promis
     });
   } catch (err) {
     // No queremos que un fallo en la bitácora rompa la operación principal.
-    // Log a stderr (Pino lo capturará si está configurado).
-    console.error('[auditoria] registrarAuditoria falló:', err);
+    // El logger emite a Sentry automáticamente (nivel error → forwardToSentry).
+    log.error(
+      { err, entidad: input.entidad, entidadId: input.entidadId },
+      'registrarAuditoria falló',
+    );
   }
 }
 

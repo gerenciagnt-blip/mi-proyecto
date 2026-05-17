@@ -15,6 +15,9 @@ import {
   MIMES_PERMITIDOS as SOP_MIMES,
   TAMANO_MAX as SOP_TAMANO_MAX,
 } from '@/lib/soporte-af/storage';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('admin/base-datos/actions');
 
 /**
  * Toma los archivos adjuntados al FormData (input `documento`) y los guarda
@@ -34,11 +37,17 @@ async function adjuntarSoportesAliado(
 
   for (const f of files) {
     if (!(SOP_MIMES as readonly string[]).includes(f.type)) {
-      console.warn('[afiliacion/upload] MIME no permitido:', f.type, f.name);
+      log.warn(
+        { soporteAfId, mime: f.type, fileName: f.name },
+        'upload de soporte rechazado: MIME no permitido',
+      );
       continue;
     }
     if (f.size > SOP_TAMANO_MAX) {
-      console.warn('[afiliacion/upload] archivo > 5MB:', f.name);
+      log.warn(
+        { soporteAfId, fileName: f.name, size: f.size, max: SOP_TAMANO_MAX },
+        'upload de soporte rechazado: archivo excede tamaño máximo',
+      );
       continue;
     }
     try {
@@ -56,8 +65,8 @@ async function adjuntarSoportesAliado(
           userId,
         },
       });
-    } catch (e) {
-      console.error('[afiliacion/upload] fallo al subir', f.name, e);
+    } catch (err) {
+      log.error({ err, soporteAfId, fileName: f.name }, 'fallo al subir soporte de afiliación');
     }
   }
 }

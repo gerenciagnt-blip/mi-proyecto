@@ -8,6 +8,9 @@ import { registrarAuditoria } from '@/lib/auditoria';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
 import { puedeCerrarPeriodo, debeFacturarseEnPeriodo, opcionesFacturacion } from './helpers';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('admin/transacciones/cartera/actions');
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -273,7 +276,7 @@ export async function cerrarPeriodoMasivoAction(periodoId: string): Promise<Acti
       errores++;
       const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       erroresDetalle.push({ cotizanteId: c.id, mensaje });
-      console.error(`[cerrarPeriodoMasivo] cotizante=${c.id} error:`, mensaje);
+      log.error({ err, cotizanteId: c.id }, 'cerrarPeriodoMasivo: fallo al cerrar cotizante');
     }
   }
 

@@ -7,6 +7,9 @@ import { getUserScope } from '@/lib/sucursal-scope';
 import { registrarAuditoria, auditarEvento } from '@/lib/auditoria';
 import { persistirLiquidacion } from '@/lib/liquidacion/calcular';
 import { nextComprobanteConsecutivo } from '@/lib/consecutivo';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('admin/transacciones/actions');
 
 export type ActionState = { error?: string; ok?: boolean; mensaje?: string };
 
@@ -127,8 +130,7 @@ export async function liquidarPeriodoAction(periodoId: string): Promise<ActionSt
       errores++;
       const mensaje = err instanceof Error ? err.message : 'Error desconocido';
       erroresDetalle.push({ afiliacionId: a.id, mensaje });
-      // Log en consola (server) para debugging inmediato
-      console.error(`[liquidarPeriodo] afiliacion=${a.id} error:`, mensaje);
+      log.error({ err, afiliacionId: a.id }, 'liquidarPeriodo: fallo al liquidar afiliación');
     }
   }
 
