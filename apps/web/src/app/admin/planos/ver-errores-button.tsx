@@ -3,13 +3,19 @@
 import { useState, useTransition } from 'react';
 import { AlertTriangle, X, Loader2, ListChecks, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { inconsistenciasPlanillaPagosimpleAction } from '@/app/admin/planos/pagosimple-action';
+import { inconsistenciasPlanillaPagosimpleAction } from './pagosimple-action';
 import type { PayrollInconsistenciesResponse } from '@/lib/pagosimple/types';
 
 /**
  * Botón "Ver errores" + modal con el detalle de inconsistencias UGPP de
  * una planilla específica. La consulta se hace en vivo al operador al
  * abrir el modal (no cacheamos para que refleje correcciones recientes).
+ *
+ * Sprint Validación Planos (2026-05-17) — antes vivía en
+ * `/admin/soporte/planillas-errores` como bandeja paralela. Ahora se usa
+ * desde el tab "Validación" del módulo Planos, una fila por planilla con
+ * error. El módulo soporte/planillas-errores fue eliminado para evitar
+ * duplicar el flujo.
  */
 export function VerErroresButton({
   planillaId,
@@ -72,9 +78,10 @@ export function VerErroresButton({
       <button
         type="button"
         onClick={abrir}
-        className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100"
+        className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-medium text-amber-800 shadow-sm transition hover:bg-amber-100"
+        title="Ver detalle de inconsistencias UGPP"
       >
-        <AlertTriangle className="h-3 w-3" />
+        <AlertTriangle className="h-3.5 w-3.5" />
         Ver errores
       </button>
 
@@ -178,7 +185,8 @@ export function VerErroresButton({
 
             <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
               <span>
-                Los datos vienen en vivo del operador — actualizan correcciones aliado/staff.
+                Los datos vienen en vivo del operador — reflejan correcciones recientes en la
+                afiliación o el comprobante de origen.
               </span>
               <button
                 type="button"

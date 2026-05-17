@@ -21,6 +21,7 @@ import { GenerarPlanillasButton } from './generar-button';
 import { AnularPlanillaButton } from './anular-button';
 import { PagosimpleCell } from './pagosimple-cell';
 import { DetallePlanillaButton } from './detalle-button';
+import { VerErroresButton } from './ver-errores-button';
 import { PeriodoSelector, type PeriodoOption } from './periodo-selector';
 import { isPagosimpleEnabled } from '@/lib/pagosimple/config';
 
@@ -959,6 +960,25 @@ async function PlanillasTable({
                         tituloAportante={aportanteLabel}
                         tituloPeriodoAporte={mesLabel(p.periodoAporteAnio, p.periodoAporteMes)}
                       />
+                      {/* Sprint Validación Planos (2026-05-17) — el botón
+                          "Ver errores" reemplaza al módulo paralelo
+                          /admin/soporte/planillas-errores. Solo tiene
+                          sentido cuando la planilla tiene un número de
+                          PagoSimple (si nunca se envió, no hay nada que
+                          consultar) Y el operador devolvió ERROR de
+                          validación. */}
+                      {psEnabled &&
+                        pagosimpleFilter === 'con_error' &&
+                        p.pagosimpleNumero &&
+                        p.pagosimpleEstadoValidacion === 'ERROR' && (
+                          <VerErroresButton
+                            planillaId={p.id}
+                            consecutivo={p.consecutivo}
+                            aportante={
+                              aportanteSub ? `${aportanteLabel} · ${aportanteSub}` : aportanteLabel
+                            }
+                          />
+                        )}
                       {psEnabled && estado === 'CONSOLIDADO' && (
                         <PagosimpleCell
                           planillaId={p.id}

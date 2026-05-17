@@ -29,7 +29,6 @@ import {
   Scale,
   ClipboardList,
   Star,
-  FileWarning,
   TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
@@ -189,14 +188,10 @@ const NAV: NavItem[] = [
         icon: Star,
         modulo: 'soporte.calificaciones_chat',
       },
-      // Sprint PagoSimple Errores — bandeja staff de planillas que
-      // fallaron la validación contra el operador.
-      {
-        label: 'Planillas con errores',
-        href: '/admin/soporte/planillas-errores',
-        icon: FileWarning,
-        modulo: 'soporte.planillas_errores',
-      },
+      // Sprint Validación Planos (2026-05-17) — la bandeja de planillas
+      // con errores PagoSimple ya no es un módulo aparte: vive como tab
+      // "Validación" dentro de /admin/planos con un botón "Ver errores"
+      // por fila. Se eliminó esta entrada para evitar duplicar el flujo.
       // Sprint Comisiones — vista global para ADMIN. El asesor accede a la
       // suya por su propia entrada en el navbar (item "Mis comisiones"
       // al final del menú).

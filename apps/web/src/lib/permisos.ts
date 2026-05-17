@@ -22,6 +22,17 @@
  * Compat: agregar entradas no rompe filas existentes en la tabla
  * `Permiso` (modulo es String). Los nuevos módulos arrancan sin check
  * para todos los roles → comportamiento conservador.
+ *
+ * Barrido 2026-05-17 — se eliminaron 5 entradas huérfanas (declaradas
+ * pero nunca chequeadas con `requirePermiso` / `tienePermiso`):
+ *   - `config.empresas_cc` (duplicaba `cuentas_cobro`).
+ *   - `dashboard_ejecutivo` (Inicio es always-on, no se gateaba).
+ *   - `colpatria.certificado_vigente` (el botón nunca chequeó el permiso).
+ *   - `notificaciones` (la bandeja se filtra por scope, no por permiso).
+ *   - `soporte.planillas_errores` (módulo fusionado en `planos` → tab
+ *     "Validación", el gate efectivo es `planos`).
+ * Las filas residuales en `Permiso` para esos módulos quedan inertes
+ * (no las referencia nadie) — no requiere migración destructiva.
  */
 
 import type { Role } from '@pila/db';
@@ -70,15 +81,9 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Configuración',
     rolesAplica: STAFF,
   },
-  // Empresas CC se ve en aliado también (Receipt en el nav sin restricción).
-  // Excluye al ASESOR_COMERCIAL: no administra el catálogo, solo crea
-  // afiliaciones contra empresas existentes.
-  {
-    key: 'config.empresas_cc',
-    label: 'Empresas CC',
-    grupo: 'Configuración',
-    rolesAplica: NO_ASESOR,
-  },
+  // El acceso a "Empresas CC" en el nav (catálogo de cuentas de cobro) se
+  // controla con el módulo `cuentas_cobro` del grupo Operación — no hace
+  // falta un permiso duplicado de Configuración.
   {
     key: 'config.catalogos',
     label: 'Parametrización',
@@ -175,22 +180,15 @@ export const MODULOS: readonly ModuloDef[] = [
     grupo: 'Soporte',
     rolesAplica: STAFF,
   },
-  // Sprint PagoSimple Errores — bandeja de planillas con estado ERROR
-  // en validación (inconsistencias UGPP). Solo staff corrige.
-  {
-    key: 'soporte.planillas_errores',
-    label: 'Planillas con errores PagoSimple',
-    grupo: 'Soporte',
-    rolesAplica: STAFF,
-  },
-
   // ========================= Operación =========================
   // Operación es transversal: aliado y staff la usan.
-  // Para ASESOR_COMERCIAL: SOLO se le abre Dashboard, Base de datos
-  // (afiliaciones, filtradas a las suyas) y Notificaciones. El resto
-  // (Cuentas de cobro, Transacciones, Planos) lo administra el aliado
-  // tradicional.
-  { key: 'dashboard_ejecutivo', label: 'Dashboard ejecutivo', grupo: 'Operación' },
+  // Para ASESOR_COMERCIAL: SOLO se le abre Base de datos (afiliaciones
+  // filtradas a las suyas). El resto (Cuentas de cobro, Transacciones,
+  // Planos) lo administra el aliado tradicional.
+  //
+  // La sección "Inicio" del nav no tiene módulo asociado: es always-on
+  // para cualquier user autenticado. La validación PagoSimple vive ahora
+  // bajo `planos` (tab "Validación" con botón "Ver errores" por planilla).
   { key: 'base_datos', label: 'Base de datos', grupo: 'Operación' },
   {
     key: 'cuentas_cobro',
@@ -204,21 +202,6 @@ export const MODULOS: readonly ModuloDef[] = [
   // afiliaciones). NO ve "Transacción" (crear) ni "Cuadre de caja".
   { key: 'transacciones', label: 'Transacciones', grupo: 'Operación' },
   { key: 'planos', label: 'Planos', grupo: 'Operación', rolesAplica: NO_ASESOR },
-  // Sprint 8.6 — Permiso específico para solicitar el certificado de
-  // afiliación vigente desde el modal Consultar de cada afiliación. Si
-  // se quita, el botón "Certificado vigente" no debería aparecer.
-  // Aplica al mismo set que ve el modal de afiliación (todos los roles
-  // con acceso a la afiliación según scope de sucursal).
-  {
-    key: 'colpatria.certificado_vigente',
-    label: 'Bot Colpatria · Certificado vigente',
-    grupo: 'Operación',
-  },
-  // Bandeja de notificaciones del usuario (alertas de cartera, cobros,
-  // soportes, jobs Colpatria, etc.). Es personal — cualquier user
-  // autenticado ve solo las suyas; el módulo en sí está disponible
-  // para todos los roles base.
-  { key: 'notificaciones', label: 'Notificaciones', grupo: 'Operación' },
   // Sprint Chat interno — mensajería staff↔aliados (DM/grupos).
   // Disponible para todos los roles base; las reglas de "con quién puedo
   // chatear" viven en lib/chat/elegibles.ts (matriz por rol).
