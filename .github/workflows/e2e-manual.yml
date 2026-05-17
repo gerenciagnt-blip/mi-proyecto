@@ -1,0 +1,93 @@
+name: E2E (manual)
+
+# Tests end-to-end con Playwright contra una instancia efímera de la app
+# + Postgres seedeado. Lentos (~3-5 min) — por eso solo se disparan
+# manualmente con `gh workflow run e2e-manual.yml` o desde la UI de
+# Actions. NO se ejecutan en cada PR.
+#
+# Útil antes de un release o cuando un PR toca flujos UI críticos
+# (auth, transacciones, chat).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Playwright happy paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pila
+          POSTGRES_PASSWORD: pila
+          POSTGRES_DB: pila_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U pila"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: 'postgresql://pila:pila@localhost:5432/pila_e2e?schema=public'
+      AUTH_SECRET: 'e2e-ci-secret-at-least-32-characters-long-xxxxxxxxxx'
+      AUTH_URL: 'http://localhost:3000'
+      NODE_ENV: 'production'
+      CI: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm -F @pila/db exec prisma migrate deploy
+
+      - name: Seed test data
+        run: pnpm cli seed:test-data --force
+
+      - name: Build app
+        run: pnpm -F @pila/web build
+
+      - name: Install Playwright browsers
+        run: pnpm -F @pila/web exec playwright install --with-deps chromium
+
+      - name: Start app (background)
+        run: |
+          pnpm -F @pila/web start &
+          # Esperar a que el server arranque
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/api/health > /dev/null 2>&1; then
+              echo "✓ App up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run E2E tests
+        run: pnpm -F @pila/web e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

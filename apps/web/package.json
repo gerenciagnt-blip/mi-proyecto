@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "e2e": "dotenv -e ../../.env -- playwright test",
+    "e2e:ui": "dotenv -e ../../.env -- playwright test --ui",
+    "e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "@pila/core": "workspace:*",
@@ -38,6 +41,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^22.10.2",
     "@types/pdf-parse": "^1.1.5",
