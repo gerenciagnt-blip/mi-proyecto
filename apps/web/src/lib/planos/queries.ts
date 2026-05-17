@@ -22,8 +22,12 @@ import { Prisma, prisma } from '@pila/db';
  * tipado para que cualquiera que necesite la misma forma pueda hacer
  * `prisma.planilla.findUnique({ where: ..., include: PLANILLA_PARA_PLANO_INCLUDE })`.
  */
+// Auditoría 2026-05-17 — reemplazados `include: true` por `select`
+// explícito en `periodo` y `conceptos` (solo se usan campos puntuales),
+// y `include` por `select` en `createdBy` y `cuentaCobro` (solo se usa
+// la sucursal de cada uno). Reduce bytes por planilla en el query.
 export const PLANILLA_PARA_PLANO_INCLUDE = {
-  periodo: true,
+  periodo: { select: { smlvSnapshot: true } },
   empresa: {
     include: {
       departamentoRef: { select: { codigo: true } },
@@ -39,7 +43,7 @@ export const PLANILLA_PARA_PLANO_INCLUDE = {
   },
   sucursal: { select: { codigo: true, nombre: true } },
   createdBy: {
-    include: {
+    select: {
       sucursal: { select: { codigo: true, nombre: true } },
     },
   },
@@ -48,7 +52,7 @@ export const PLANILLA_PARA_PLANO_INCLUDE = {
       comprobante: {
         include: {
           cuentaCobro: {
-            include: {
+            select: {
               sucursal: { select: { codigo: true, nombre: true } },
             },
           },
@@ -88,7 +92,7 @@ export const PLANILLA_PARA_PLANO_INCLUDE = {
                       ccf: { select: { codigo: true, codigoMinSalud: true } },
                     },
                   },
-                  conceptos: true,
+                  conceptos: { select: { concepto: true, porcentaje: true, valor: true } },
                 },
               },
             },

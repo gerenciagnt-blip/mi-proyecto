@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { prisma } from '@pila/db';
+import { resolverConfigParaAfiliacion, type NivelRiesgo } from '@pila/core';
 import { decrypt } from '../lib/crypto.js';
 import { abrirBrowser, nuevoContext, cerrarTodo } from '../lib/browser.js';
 import { cargarSesion, guardarSesion, invalidarSesion } from '../lib/session.js';
@@ -9,8 +10,8 @@ import {
   prepararCamposIngreso,
   validarPayloadParaIngreso,
   type ColpatriaPayload,
-  type ConfigResuelta,
 } from '../lib/payload-form.js';
+import { toConfigSnapshot } from '../lib/config-adapter.js';
 import { decidirAccion, reactivarHabilitado } from '../lib/decidir-accion.js';
 import { createLogger } from '../lib/logger.js';
 import type { Page } from 'playwright';
@@ -143,11 +144,20 @@ export async function testIngresoCommand(options: {
     return 1;
   }
 
-  // Resolver config (replica config-resolver de @pila/web — el bot no
-  // puede importar de web cross-app, así que lo replicamos inline)
-  const config = resolverConfig(empresa, payload.afiliacion.nivelRiesgo);
-  if (!config) {
-    console.error('❌ Config Colpatria de empresa incompleta');
+  // Resolver config — la lógica vive en `@pila/core` (compartida con
+  // apps/web). El adapter convierte el shape de query Prisma al snapshot
+  // neutral. `resolverConfigParaAfiliacion` lanza si la config está
+  // incompleta — el catch convierte eso en exit code.
+  let config;
+  try {
+    config = resolverConfigParaAfiliacion(
+      toConfigSnapshot(empresa),
+      payload.afiliacion.nivelRiesgo as NivelRiesgo,
+    );
+  } catch (err) {
+    console.error(
+      `❌ Config Colpatria de empresa incompleta: ${err instanceof Error ? err.message : err}`,
+    );
     await prisma.$disconnect();
     return 1;
   }
@@ -293,64 +303,10 @@ export async function testIngresoCommand(options: {
 // Helpers
 // ============================================================================
 
-/**
- * Replica de `apps/web/src/lib/colpatria/config-resolver.ts > resolverConfigParaAfiliacion`.
- * El bot no puede importar de web, así que mantiene esta lógica espejo.
- * La función pura `prepararCamposIngreso` se queda en bot/lib.
- */
-type EmpresaConColpatria = {
-  nit: string;
-  colpatriaAplicacion: string | null;
-  colpatriaPerfil: string | null;
-  colpatriaEmpresaIdInterno: string | null;
-  colpatriaAfiliacionId: string | null;
-  colpatriaCodigoSucursalDefault: string | null;
-  colpatriaTipoAfiliacionDefault: string | null;
-  colpatriaGrupoOcupacionDefault: string | null;
-  colpatriaTipoOcupacionDefault: string | null;
-  nivelesPermitidos: Array<{
-    nivel: string;
-    colpatriaCentroTrabajo: string | null;
-    colpatriaGrupoOcupacion: string | null;
-    colpatriaTipoOcupacion: string | null;
-  }>;
-};
-
-function resolverConfig(
-  empresa: EmpresaConColpatria,
-  nivelAfiliacion: string,
-): ConfigResuelta | null {
-  if (
-    !empresa.colpatriaAplicacion ||
-    !empresa.colpatriaPerfil ||
-    !empresa.colpatriaEmpresaIdInterno ||
-    !empresa.colpatriaAfiliacionId ||
-    !empresa.colpatriaCodigoSucursalDefault ||
-    !empresa.colpatriaTipoAfiliacionDefault ||
-    !empresa.colpatriaGrupoOcupacionDefault ||
-    !empresa.colpatriaTipoOcupacionDefault
-  ) {
-    return null;
-  }
-
-  const mapeo = empresa.nivelesPermitidos.find((m) => m.nivel === nivelAfiliacion);
-  return {
-    aplicacion: empresa.colpatriaAplicacion,
-    perfil: empresa.colpatriaPerfil,
-    empresaIdInterno: empresa.colpatriaEmpresaIdInterno,
-    afiliacionId: empresa.colpatriaAfiliacionId,
-    nitEmpresaMision: empresa.nit,
-    codigoSucursal: empresa.colpatriaCodigoSucursalDefault,
-    codigoCentroTrabajo: mapeo?.colpatriaCentroTrabajo ?? empresa.colpatriaCodigoSucursalDefault,
-    tipoAfiliacion: empresa.colpatriaTipoAfiliacionDefault,
-    grupoOcupacion: mapeo?.colpatriaGrupoOcupacion ?? empresa.colpatriaGrupoOcupacionDefault,
-    tipoOcupacion: mapeo?.colpatriaTipoOcupacion ?? empresa.colpatriaTipoOcupacionDefault,
-    // Quemados — siempre del bot, no de empresa
-    tipoSalario: '1',
-    modalidadTrabajo: '01',
-    tareaAltoRiesgo: '0000001',
-  };
-}
+// Nota (2026-05-17): `resolverConfig` y su tipo `EmpresaConColpatria`
+// vivían aquí como réplica del de apps/web. Migrados a `@pila/core` —
+// importamos `resolverConfigParaAfiliacion` arriba y el adapter
+// `toConfigSnapshot` se encarga del shape.
 
 /**
  * Construye un payload Colpatria desde una afiliación existente. Útil

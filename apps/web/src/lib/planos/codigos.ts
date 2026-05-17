@@ -1,8 +1,4 @@
-import type {
-  TipoDocumento,
-  NivelRiesgo,
-  Modalidad,
-} from '@pila/db';
+import type { TipoDocumento, NivelRiesgo, Modalidad } from '@pila/db';
 
 /**
  * Mapeos entre los enums internos del sistema y los códigos oficiales
@@ -40,26 +36,14 @@ export function tipoDocAportantePila(td: TipoDocumento | 'NIT'): string {
   return tipoDocPila(td as TipoDocumento);
 }
 
-/**
- * Código de tipo de cotizante (campo 5 del registro 2).
- * Solo mapeamos los más comunes por ahora (1 = Dependiente, 3 = Indep).
- * Los demás se pueden ampliar cuando aparezcan casos.
- *
- * NOTA: se guarda como string "01" a "60" según resolución.
- */
-export function tipoCotizantePila(modalidad: Modalidad): string {
-  // TODO (futuro): si TipoCotizante.codigo del catálogo tiene un código
-  // PILA oficial (ej. "12" para aprendices lectiva, "51" tiempo parcial),
-  // usar ese. Por ahora inferimos desde la modalidad.
-  if (modalidad === 'DEPENDIENTE') return '01';
-  if (modalidad === 'INDEPENDIENTE') return '03';
-  return '00';
-}
-
-/** Subtipo cotizante — por default "00" (sin subtipo). */
-export function subtipoCotizantePila(): string {
-  return '00';
-}
+// Nota (2026-05-17): se eliminaron `tipoCotizantePila(modalidad)` y
+// `subtipoCotizantePila()`. El TODO original era "usar
+// TipoCotizante.codigo del catálogo en vez de inferir desde la
+// modalidad" — eso ya está resuelto en producción: `generar.ts` lee
+// `af.tipoCotizante?.codigo ?? '01'` y `af.subtipo?.codigo ?? '00'`
+// directamente del catálogo. Las funciones quedaron exportadas sin
+// caller real (verificado por grep en todo el repo) — código muerto
+// que prometía un TODO ya cumplido por otra ruta.
 
 /**
  * Clase de riesgo PILA (campo 78): I=1, II=2, III=3, IV=4, V=5.

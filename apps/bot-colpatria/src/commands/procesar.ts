@@ -1,4 +1,5 @@
 import { prisma } from '@pila/db';
+import { resolverConfigParaAfiliacion, type NivelRiesgo } from '@pila/core';
 import { decrypt } from '../lib/crypto.js';
 import { abrirBrowser, nuevoContext, cerrarTodo } from '../lib/browser.js';
 import { cargarSesion, guardarSesion, invalidarSesion } from '../lib/session.js';
@@ -8,8 +9,8 @@ import {
   prepararCamposIngreso,
   validarPayloadParaIngreso,
   type ColpatriaPayload,
-  type ConfigResuelta,
 } from '../lib/payload-form.js';
+import { toConfigSnapshot } from '../lib/config-adapter.js';
 import { decidirAccion, reactivarHabilitado } from '../lib/decidir-accion.js';
 import { guardarPdfComprobante, validarUploadsDirOAlertar } from '../lib/storage.js';
 import { createLogger } from '../lib/logger.js';
@@ -242,8 +243,14 @@ export async function procesarCommand(options: {
             continue;
           }
 
-          // Resolver config por nivel (Opción B: mapeo nivel→grupo/tipo/centro)
-          const config = resolverConfig(empresa, payload.afiliacion.nivelRiesgo);
+          // Resolver config por nivel (Opción B: mapeo nivel→grupo/tipo/centro).
+          // El resolver vive en `@pila/core` (fuente única compartida con
+          // apps/web). El adapter convierte el shape de query Prisma del
+          // bot al snapshot neutral que espera el resolver.
+          const config = resolverConfigParaAfiliacion(
+            toConfigSnapshot(empresa),
+            payload.afiliacion.nivelRiesgo as NivelRiesgo,
+          );
 
           const campos = prepararCamposIngreso(payload, config);
 
@@ -470,51 +477,6 @@ async function registrarGestionBot(
   }
 }
 
-// ============================================================================
-// Config resolver — espejo de apps/web/src/lib/colpatria/config-resolver.ts
-// ============================================================================
-//
-// El bot no puede importar de apps/web (cross-app). Si la lógica de
-// resolución cambia en web, hay que sincronizar aquí. Los tests del
-// resolver viven en apps/web (333 tests, suite ya estable).
-//
-
-type EmpresaConColpatria = {
-  nit: string;
-  colpatriaAplicacion: string | null;
-  colpatriaPerfil: string | null;
-  colpatriaEmpresaIdInterno: string | null;
-  colpatriaAfiliacionId: string | null;
-  colpatriaCodigoSucursalDefault: string | null;
-  colpatriaTipoAfiliacionDefault: string | null;
-  colpatriaGrupoOcupacionDefault: string | null;
-  colpatriaTipoOcupacionDefault: string | null;
-  nivelesPermitidos: Array<{
-    nivel: string;
-    colpatriaCentroTrabajo: string | null;
-    colpatriaGrupoOcupacion: string | null;
-    colpatriaTipoOcupacion: string | null;
-  }>;
-};
-
-function resolverConfig(empresa: EmpresaConColpatria, nivelAfiliacion: string): ConfigResuelta {
-  // Asume que el caller validó que todos los defaults están seteados
-  // (procesarCommand lo hace antes de llegar aquí).
-  const mapeo = empresa.nivelesPermitidos.find((m) => m.nivel === nivelAfiliacion);
-  return {
-    aplicacion: empresa.colpatriaAplicacion!,
-    perfil: empresa.colpatriaPerfil!,
-    empresaIdInterno: empresa.colpatriaEmpresaIdInterno!,
-    afiliacionId: empresa.colpatriaAfiliacionId!,
-    nitEmpresaMision: empresa.nit,
-    codigoSucursal: empresa.colpatriaCodigoSucursalDefault!,
-    codigoCentroTrabajo: mapeo?.colpatriaCentroTrabajo ?? empresa.colpatriaCodigoSucursalDefault!,
-    tipoAfiliacion: empresa.colpatriaTipoAfiliacionDefault!,
-    grupoOcupacion: mapeo?.colpatriaGrupoOcupacion ?? empresa.colpatriaGrupoOcupacionDefault!,
-    tipoOcupacion: mapeo?.colpatriaTipoOcupacion ?? empresa.colpatriaTipoOcupacionDefault!,
-    // Quemados — el bot decide
-    tipoSalario: '1',
-    modalidadTrabajo: '01',
-    tareaAltoRiesgo: '0000001',
-  };
-}
+// Nota (2026-05-17): El config resolver vive ahora en `@pila/core`.
+// Antes había una réplica inline aquí "espejo de apps/web" — borrada.
+// Si cambia la lógica, ajusta en `packages/core/src/colpatria/`.
