@@ -347,6 +347,8 @@ model User {
   mensajeReacciones        MensajeReaccion[]           @relation("MensajeReaccionUser")
   // Sprint Chat · menciones — un user puede ser mencionado en varios mensajes.
   mensajeMenciones         MensajeMencion[]            @relation("MensajeMencionUser")
+  // Sprint Comisiones — comisiones cerradas por este user (rol ADMIN).
+  comisionesCerradas       ComisionAsesor[]            @relation("ComisionAsesorCerradaPor")
 
   @@index([sucursalId])
   @@index([rolCustomId])
@@ -757,12 +759,21 @@ model AsesorComercial {
   email      String?
   telefono   String?
   active     Boolean  @default(true)
+  /// Sprint Comisiones — si está activo, el asesor entra al cálculo de
+  /// comisiones del periodo. Si false, las afiliaciones que radique no
+  /// generan comisión (igual quedan amarradas para reportería).
+  generaComision Boolean @default(false)
+  /// Meta mensual (en COP) del asesor para el cálculo de comisiones.
+  /// Base sobre la que se aplican los % (10/20/30/40). Null si todavía no
+  /// se le asignó meta (entonces no se calcula comisión).
+  metaMensual Decimal? @db.Decimal(15, 2)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   sucursal     Sucursal?     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
   afiliaciones Afiliacion[]
   comprobantes Comprobante[]
+  comisiones   ComisionAsesor[]
   /**
    * User opcional con login asociado a este asesor. 1:1. Si está seteado,
    * ese user (rol=ASESOR_COMERCIAL) verá las afiliaciones/cartera amarradas
@@ -774,6 +785,72 @@ model AsesorComercial {
   @@unique([sucursalId, codigo])
   @@index([sucursalId])
   @@map("asesores_comerciales")
+}
+
+/// Sprint Comisiones — snapshot del cálculo de comisión de un asesor en
+/// un periodo contable. Se crea cuando ADMIN cierra la comisión del
+/// periodo: congela el desglose de las 3 reglas + el bono y el monto
+/// final. Antes del cierre, el cálculo vive solo en `calcularComisionAction`
+/// (no hay fila).
+///
+/// Reglas (cada una 10%):
+///   A — valorAfiliacionesNuevas >= metaMensual (cumplimiento de meta)
+///   B — afiliacionesIndependientes >= 3
+///   C — porcentajeRetiros <= 8%
+/// Bono: +10% si se cumplen las 3 → total 40% máximo.
+/// `valorComision = metaMensual × porcentajeAplicado`.
+model ComisionAsesor {
+  id        String   @id @default(cuid())
+  asesorId  String
+  periodoId String
+  /// Meta del asesor al momento del snapshot (denormalizada — no leemos
+  /// `AsesorComercial.metaMensual` al mostrar histórico, por si cambió).
+  meta      Decimal  @db.Decimal(15, 2)
+
+  /// Σ Liquidacion.totalGeneral del periodo, donde tipo=VINCULACION y
+  /// la afiliación pertenece al asesor.
+  valorAfiliacionesNuevas Decimal @default(0) @db.Decimal(15, 2)
+  cumplimientoMeta        Boolean @default(false)
+
+  /// Cantidad de afiliaciones nuevas en el periodo con modalidad
+  /// INDEPENDIENTE (subconjunto de las que cuentan para meta).
+  afiliacionesIndependientes Int     @default(0)
+  cumplimientoIndependientes Boolean @default(false)
+
+  /// % de retiros sobre cotizantes activos al inicio del periodo.
+  /// retiros = COUNT(Afiliacion WHERE fechaRetiro en periodo AND asesor=X)
+  /// activosInicio = COUNT(Afiliacion ACTIVA antes del 1 del mes AND asesor=X)
+  porcentajeRetiros   Decimal @default(0) @db.Decimal(5, 2)
+  cumplimientoRetiros Boolean @default(false)
+
+  /// True si A && B && C. Dispara el bono del 10%.
+  cumpleLas3        Boolean @default(false)
+  /// Porcentaje aplicado: 0, 10, 20, 30 o 40.
+  porcentajeAplicado Decimal @default(0) @db.Decimal(5, 2)
+  /// Monto final: meta × porcentajeAplicado / 100. Snapshoteado al cerrar.
+  valorComision      Decimal @default(0) @db.Decimal(15, 2)
+
+  estado          EstadoComisionAsesor @default(CERRADA)
+  cerradaPorUserId String?
+  cerradaAt        DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  asesor       AsesorComercial @relation(fields: [asesorId], references: [id], onDelete: Restrict)
+  periodo      PeriodoContable @relation(fields: [periodoId], references: [id], onDelete: Restrict)
+  cerradaPor   User?           @relation("ComisionAsesorCerradaPor", fields: [cerradaPorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([asesorId, periodoId])
+  @@index([periodoId])
+  @@index([asesorId, periodoId])
+  @@map("comisiones_asesor")
+}
+
+enum EstadoComisionAsesor {
+  /// Por si en el futuro queremos un estado "calculada pero no cerrada".
+  /// Por ahora se crea directamente CERRADA cuando ADMIN dispara el cierre.
+  ABIERTA
+  CERRADA
 }
 
 // Medio de pago — scoped por sucursal
@@ -1116,6 +1193,7 @@ model PeriodoContable {
   planillas          Planilla[]
   soportesAfiliacion SoporteAfiliacion[]
   cobrosAliado       CobroAliado[]
+  comisionesAsesor   ComisionAsesor[]
 
   @@unique([anio, mes])
   @@index([estado])

@@ -223,6 +223,12 @@ export const AsesorSchema = z.object({
   email: optional.pipe(z.string().email('Correo no válido').optional()),
   telefono: optional,
   sucursalId: z.string().trim().nullable().optional(),
+  // Sprint Comisiones — bandera + meta. Si generaComision es true, la
+  // meta debe ser positiva. Si false, la meta puede quedar null.
+  generaComision: z.boolean().optional().default(false),
+  metaMensual: z
+    .union([z.number().nonnegative('La meta no puede ser negativa'), z.null()])
+    .optional(),
 });
 
 export const MedioPagoSchema = z.object({
