@@ -1,17 +1,32 @@
-name: DB Backup (semanal · Neon → S3)
+name: DB Backup (diario · Neon → S3)
 
 # Backup completo de la BD usando pg_dump y subida a S3.
-# Corre los domingos a las 5 AM UTC (≈ medianoche Bogotá del domingo).
-# También se puede disparar manualmente.
+#
+# Schedules:
+#   - Diario a las 5 AM UTC (≈ medianoche Bogotá): backup normal.
+#   - Día 1 de cada mes a las 6 AM UTC: backup + test automático de
+#     restore (verify_restore=true) para validar que los dumps son
+#     restaurables sin intervención manual.
+#
+# Antes era semanal — pasado a diario el 2026-05-17 para bajar el RPO
+# (recovery point objective) de 7 días a 1 día. El costo extra en S3
+# es marginal con storage class STANDARD_IA + lifecycle rule.
 #
 # El archivo queda en s3://$BACKUP_S3_BUCKET/$BACKUP_S3_PREFIX/<YYYY-MM-DD>.dump
 # Formato `custom` de pg_dump: comprimido y restaurable con pg_restore.
 #
 # Política de retención sugerida: lifecycle rule en S3 que mueva a Glacier
 # después de 30 días y elimine después de 365 días.
+#
+# Alerta en fallo: si cualquier step crítico falla, el job final
+# `notify-on-failure` postea al endpoint `/api/cron/backup-alert` que
+# loggea el incidente como error → reenvío automático a Sentry.
 on:
   schedule:
-    - cron: '0 5 * * 0'
+    # Diario a las 5 AM UTC (medianoche COL)
+    - cron: '0 5 * * *'
+    # Día 1 de cada mes a las 6 AM UTC: backup CON test de restore
+    - cron: '0 6 1 * *'
   workflow_dispatch:
     inputs:
       verify_restore:
@@ -111,8 +126,12 @@ jobs:
       # Test opcional de restore: levanta un Postgres efímero y prueba que
       # el dump se restaura sin errores. No reemplaza un restore manual,
       # pero detecta corrupción a tiempo.
+      #
+      # Se ejecuta automáticamente:
+      #   - El día 1 de cada mes (schedule '0 6 1 * *')
+      #   - O manualmente con workflow_dispatch + verify_restore=true
       - name: Test restore (opcional)
-        if: ${{ inputs.verify_restore == 'true' }}
+        if: ${{ inputs.verify_restore == 'true' || github.event.schedule == '0 6 1 * *' }}
         env:
           DUMP_FILE: ${{ steps.dump.outputs.file }}
         run: |
@@ -158,3 +177,34 @@ jobs:
             echo "pg_restore --no-owner --no-privileges -d \$DATABASE_URL ./pila.dump"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Si el job `backup` falla en cualquier step, postea al endpoint
+  # `/api/cron/backup-alert` para que la app loggee el incidente como
+  # error → reenvío automático a Sentry. Requiere los secrets:
+  #   - APP_URL (base de la app, ej. https://pila.tu-dominio.com)
+  #   - CRON_SECRET (el mismo configurado en la app)
+  # Si esos secrets no están, el job sale OK pero deja warning visible.
+  notify-on-failure:
+    name: Alerta si el backup falló
+    runs-on: ubuntu-latest
+    needs: backup
+    if: failure()
+    timeout-minutes: 2
+    steps:
+      - name: Post to backup-alert endpoint
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::warning::APP_URL o CRON_SECRET no configurados — no se envía alerta"
+            exit 0
+          fi
+          curl -fsS \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "{\"workflow\":\"db-backup\",\"runUrl\":\"$RUN_URL\",\"details\":\"Backup diario de Neon falló — revisar el run de GitHub Actions\"}" \
+            "$APP_URL/api/cron/backup-alert"
+          echo "✓ Alerta enviada"
