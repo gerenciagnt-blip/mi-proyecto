@@ -1065,6 +1065,12 @@ model Afiliacion {
   @@index([modalidad])
   @@index([actividadEconomicaId])
   @@index([arlId])
+  // Sprint barrido HIGH H6 — filtro frecuente en cálculo de comisiones
+  // (regla B: COUNT independientes del asesor X en el periodo).
+  @@index([asesorComercialId, modalidad])
+  // Sprint barrido HIGH H6 — filtro frecuente para retiros del periodo
+  // por asesor (regla C de comisiones).
+  @@index([asesorComercialId, fechaRetiro])
   @@map("afiliaciones")
 }
 
@@ -1390,6 +1396,9 @@ model Comprobante {
   @@index([procesadoEn])
   @@index([numeroPlanilla])
   @@index([createdById])
+  // Sprint barrido HIGH H5 — filtro combinado usado en planos/actions.ts
+  // (generación de planillas filtra por periodo + estado != ANULADO).
+  @@index([periodoId, estado])
   @@map("comprobantes")
 }
 
@@ -3363,6 +3372,9 @@ model Mensaje {
   menciones    MensajeMencion[]
 
   @@index([conversacionId, createdAt])
+  // Sprint barrido HIGH H4 — usado por `listarConversacionesAction` para
+  // contar unread por conversación con filtro `autorId != yo` + borradoAt.
+  @@index([conversacionId, autorId, createdAt])
   @@map("mensajes")
 }
 
