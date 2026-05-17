@@ -257,12 +257,13 @@ export const MODULOS: readonly ModuloDef[] = [
     rolesAplica: STAFF,
   },
   // Sprint Comisiones — vista global de ADMIN para cerrar comisiones por
-  // periodo. Solo STAFF (admin) cierra; el asesor accede a su propia
-  // vista vía `admin.asesor_comisiones`.
+  // periodo. Vive bajo el grupo Soporte en el navbar para que el ADMIN
+  // (staff) lo tenga junto a sus otras bandejas. Solo STAFF (admin)
+  // cierra; el asesor accede a su propia vista vía `admin.asesor_comisiones`.
   {
     key: 'admin.comisiones',
     label: 'Comisiones (admin)',
-    grupo: 'Administrativo',
+    grupo: 'Soporte',
     rolesAplica: ['ADMIN'],
   },
   {
